@@ -58,6 +58,7 @@ targets:
           - CFBundleURLName: nl.fullstackstudio.fsvoip
             CFBundleURLSchemes: [fsvoip]
         NSCameraUsageDescription: FSVoip gebruikt de camera om de QR-code te scannen waarmee je dit toestel koppelt.
+        ITSAppUsesNonExemptEncryption: false
         NSMicrophoneUsageDescription: FSVoip gebruikt de microfoon zodat de ander je kan horen tijdens een gesprek.
     entitlements:
       path: FSVoip/FSVoip.entitlements
