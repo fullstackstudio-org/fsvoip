@@ -1,0 +1,75 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+import Foundation
+import SipEngine
+
+/// Records what the phone asks; the test drives the engine's events by hand.
+final class FakeSipEngine: SipEngine {
+    weak var delegate: SipEngineDelegate?
+
+    final class Audio: SipAudioControl {
+        var log: [String] = []
+        func configure() { log.append("configure") }
+        func activate(_ active: Bool) { log.append(active ? "activate" : "deactivate") }
+    }
+
+    let fakeAudio = Audio()
+    var audio: SipAudioControl { fakeAudio }
+
+    var started = false
+    var registered: [SipAccountID: SipAccountConfig] = [:]
+    var registerCount = 0
+    var log: [String] = []
+    var muted = false
+    var failNextCall = false
+
+    func start() throws { started = true }
+    func stop() {}
+    func enterBackground() { log.append("background") }
+    func enterForeground() { log.append("foreground") }
+    func refreshRegistrations() { log.append("refresh") }
+
+    func register(_ account: SipAccountConfig) throws {
+        registerCount += 1
+        registered[account.id] = account
+    }
+
+    func unregister(_ account: SipAccountID) {
+        registered[account] = nil
+        log.append("unregister \(account)")
+    }
+
+    func registrationState(of account: SipAccountID) -> RegistrationState { .unregistered }
+
+    func call(number: String, from account: SipAccountID) throws -> CallID {
+        if failNextCall {
+            failNextCall = false
+            throw SipEngineError.engine("boom")
+        }
+
+        log.append("call \(number) from \(account)")
+        return CallID("out-1")
+    }
+
+    func answer(_ call: CallID) throws { log.append("answer \(call)") }
+    func decline(_ call: CallID) throws { log.append("decline \(call)") }
+    func hangup(_ call: CallID) throws { log.append("hangup \(call)") }
+    func setHold(_ call: CallID, onHold: Bool) throws { log.append("hold \(onHold)") }
+    func setMuted(_ muted: Bool) { self.muted = muted }
+    func sendDTMF(_ digit: DTMFDigit, on call: CallID) throws { log.append("dtmf \(digit.character)") }
+    func transfer(_ call: CallID, to number: String) throws {}
+    func calls() -> [CallInfo] { [] }
+
+    // MARK: Driving events
+
+    func emitRegistration(_ state: RegistrationState, _ account: String) {
+        delegate?.sipEngine(self, registrationChanged: state, for: SipAccountID(account))
+    }
+
+    func emitIncoming(id: String, from: String?, name: String?, account: String) {
+        delegate?.sipEngine(self, didReceiveIncomingCall: IncomingCall(id: CallID(id), from: from, displayName: name, accountId: SipAccountID(account), fssCallRef: nil))
+    }
+
+    func emitState(_ state: CallState, id: String, direction: CallDirection, account: String) {
+        delegate?.sipEngine(self, callChanged: CallInfo(id: CallID(id), direction: direction, accountId: SipAccountID(account), remoteNumber: nil, remoteName: nil, state: state))
+    }
+}

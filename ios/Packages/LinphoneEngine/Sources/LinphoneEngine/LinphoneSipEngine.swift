@@ -2,16 +2,22 @@
 //
 // `SipEngine` on top of linphone-sdk (liblinphone). THE ONLY FILE(S) in the repository that may `import linphonesw`.
 //
-// Deliberately switched off, see plan D3/D16:
-//   - linphone's own CallKit integration (`callkitEnabled = false`): CallKit belongs to `CallController`;
-//   - linphone's push model (`pushNotificationEnabled = false`, no `pn-*` parameters): that model needs a Flexisip
-//     push gateway in front of the PBX; FSVoip uses the PBX push gate + PushKit instead.
+// CallKit and the audio session (plan D3/D16):
+//   - liblinphone contains no CallKit UI of its own; the CXProvider is ours (`CallController`). Its flag
+//     `callkitEnabled` means "the APP owns the audio session through CallKit": mediastreamer2 then waits for
+//     `activateAudioSession(true)` (from `provider(_:didActivate:)`) instead of activating `AVAudioSession` itself.
+//     So it is switched ON here; with it off the SDK would grab the audio session behind CallKit's back.
+//   - linphone's push model (`pushNotificationEnabled = false`, no `pn-*` parameters) stays off: that model needs a
+//     Flexisip push gateway in front of the PBX; FSVoip uses the PBX push gate + PushKit instead.
+//
+// TLS: the server certificate is verified (chain and name) against the root CAs shipped in linphone.framework
+// (`rootca.pem`, includes ISRG Root X1/X2 for the Let's Encrypt certificate of `*.powervoip.nl`).
+//
+// No configuration file: the core runs on an empty in-memory config, so liblinphone never writes the SIP password
+// (auth info) to disk. The password lives in the Keychain only and is handed to the core at registration.
 //
 // Threading: liblinphone is not thread safe. Call every method on the main thread (the core iterates on it too);
 // the delegate callbacks arrive on the main thread.
-//
-// This is the Task 4 skeleton: it compiles against the real SDK and implements the protocol in full, but it has not
-// been exercised against a PBX yet (Task 5 does that on real devices).
 
 import Foundation
 import SipEngine
@@ -23,6 +29,7 @@ public final class LinphoneSipEngine: SipEngine {
 
     private let appName: String
     private let appVersion: String
+    private let installId: String?
 
     private var core: Core?
     private var coreDelegate: CoreDelegateStub?
@@ -35,9 +42,12 @@ public final class LinphoneSipEngine: SipEngine {
     private var answered: Set<CallID> = []
     private var callAccounts: [CallID: SipAccountID] = [:]
 
-    public init(appName: String = "FSVoip", appVersion: String = "0") {
+    /// - Parameter installId: identity of this installation; the User-Agent becomes `FSVoip/<version> (<installId>)`
+    ///   so the PBX (and the portal) can recognise the app (plan D4).
+    public init(appName: String = "FSVoip", appVersion: String = "0", installId: String? = nil) {
         self.appName = appName
         self.appVersion = appVersion
+        self.installId = installId
         audio = LinphoneAudio()
         (audio as? LinphoneAudio)?.engine = self
     }
@@ -52,10 +62,19 @@ public final class LinphoneSipEngine: SipEngine {
         do {
             let core = try Factory.Instance.createCore(configPath: "", factoryConfigPath: "", systemContext: nil)
 
-            core.callkitEnabled = false
+            core.callkitEnabled = true
             core.pushNotificationEnabled = false
-            core.setUserAgent(name: appName, version: appVersion)
+            core.setUserAgent(name: appName, version: installId.map { "\(appVersion) (\($0))" } ?? appVersion)
             core.maxCalls = 2
+            core.ipv6Enabled = true
+            core.keepAliveEnabled = true
+
+            if let rootCa = Self.bundledRootCa() {
+                core.rootCa = rootCa
+            }
+
+            core.verifyServerCertificates(yesno: true)
+            core.verifyServerCn(yesno: true)
 
             let stub = CoreDelegateStub(
                 onCallStateChanged: { [weak self] _, call, state, message in
@@ -322,6 +341,9 @@ public final class LinphoneSipEngine: SipEngine {
         switch state {
         case .IncomingReceived:
             guard let accountId = accountID(of: call, id: id) else {
+                // Not for one of our accounts: do not let it ring into the void.
+                localEndReasons[id] = .declined
+                try? call.decline(reason: .NotFound)
                 return
             }
 
@@ -409,10 +431,13 @@ public final class LinphoneSipEngine: SipEngine {
             return known
         }
 
+        // 1. The account liblinphone matched the call to; 2. the callee address; 3. never guess between several.
+        let byAccount = call.params?.account.flatMap { account in accounts.first { $0.value === account }?.key }
         let callee = call.toAddress
-        let match = accountConfigs.first { _, config in
+        let byAddress = accountConfigs.first { _, config in
             config.username == callee?.username && config.domain == callee?.domain
-        }?.key ?? accountConfigs.keys.first
+        }?.key
+        let match = byAccount ?? byAddress ?? (accountConfigs.count == 1 ? accountConfigs.keys.first : nil)
 
         if let match {
             callAccounts[id] = match
@@ -521,13 +546,32 @@ public final class LinphoneSipEngine: SipEngine {
         }
     }
 
-    /// Digits, `+`, `*`, `#`, 1 to 32 characters. Anything else could smuggle SIP syntax into the request URI.
+    /// Digits, `+` (first only), `*`, `#`, 1 to 32 characters. Anything else could smuggle SIP syntax into the
+    /// request URI. (The same rule as `DialNumber.isDialable` in CallController; repeated here on purpose, this package
+    /// must not depend on the app's packages.)
     static func isDialable(_ number: String) -> Bool {
-        guard (1 ... 32).contains(number.count) else {
+        guard (1 ... 32).contains(number.count), number != "+" else {
             return false
         }
 
-        return number.allSatisfy { $0.isASCII && ($0.isNumber || $0 == "+" || $0 == "*" || $0 == "#") }
+        return number.enumerated().allSatisfy { index, character in
+            character.isASCII && (character.isNumber || character == "*" || character == "#" || (character == "+" && index == 0))
+        }
+    }
+
+    /// `rootca.pem` from linphone.framework (embedded in the app).
+    static func bundledRootCa() -> String? {
+        let frameworks = Bundle.allFrameworks + [Bundle.main]
+
+        for bundle in frameworks where bundle.bundleURL.lastPathComponent == "linphone.framework" {
+            if let path = bundle.path(forResource: "rootca", ofType: "pem") {
+                return path
+            }
+        }
+
+        let embedded = Bundle.main.bundleURL.appendingPathComponent("Frameworks/linphone.framework/rootca.pem")
+
+        return FileManager.default.fileExists(atPath: embedded.path) ? embedded.path : nil
     }
 
     private static func nonEmpty(_ text: String?) -> String? {

@@ -49,8 +49,7 @@ public struct DeviceDescriptor: Sendable, Equatable {
     }
 }
 
-/// Exchanges a pairing link for a stored account. NOT called by the app shell yet (Task 5 wires it to the UI);
-/// it exists and is tested so the claim flow is one function.
+/// Exchanges a pairing link for a stored account (used by `AccountService.pair`).
 public struct PairingService: Sendable {
     private let api: FSVoipAPIClient
     private let accounts: AccountStore
@@ -69,7 +68,7 @@ public struct PairingService: Sendable {
         let account = StoredAccount(pairing: response, pairedAt: now)
 
         try accounts.save(account)
-        logger.notice("Paired account \(account.id) (\(account.label))")
+        logger.notice("Paired account \(account.id)")
 
         return account
     }

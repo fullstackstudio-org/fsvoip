@@ -253,3 +253,36 @@ public struct AccountStore: Sendable {
         try secrets.remove(Self.prefix + id)
     }
 }
+
+extension StoredAccount {
+    /// What the app shows for this account: the alias if set, otherwise the server label.
+    public var displayLabel: String {
+        if let labelOverride, !labelOverride.isEmpty {
+            return labelOverride
+        }
+
+        return label
+    }
+
+    /// The account after `GET /me`: labels and the server side of the SIP settings follow the server; the username,
+    /// password and device token stay (the server never sends them again). `sip == nil` keeps the stored server.
+    public func updated(with me: MeResponse) -> StoredAccount {
+        var copy = self
+        copy.label = me.account.label
+        copy.labelOverride = me.account.labelOverride
+        copy.pbxName = me.account.pbxName
+        copy.extensionName = me.account.extensionName
+        copy.extensionNumber = me.account.extensionNumber ?? extensionNumber
+        copy.customerName = me.account.customerName
+
+        if let server = me.sip {
+            copy.sip.domain = server.domain
+            copy.sip.proxy = server.proxy
+            copy.sip.port = server.port
+            copy.sip.transport = server.transport
+            copy.sip.srv = server.srv
+        }
+
+        return copy
+    }
+}

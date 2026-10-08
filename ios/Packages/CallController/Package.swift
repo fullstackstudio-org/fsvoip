@@ -9,11 +9,12 @@ let package = Package(
         .library(name: "CallController", targets: ["CallController"]),
     ],
     dependencies: [
+        .package(path: "../Core"),
         .package(path: "../SipEngine"),
     ],
-    // Depends on the SipEngine protocol package only. Must never depend on LinphoneEngine / the SIP stack.
+    // Depends on Core and the SipEngine protocol package only. Must never depend on LinphoneEngine / the SIP stack.
     targets: [
-        .target(name: "CallController", dependencies: ["SipEngine"]),
-        .testTarget(name: "CallControllerTests", dependencies: ["CallController", "SipEngine"]),
+        .target(name: "CallController", dependencies: ["Core", "SipEngine"]),
+        .testTarget(name: "CallControllerTests", dependencies: ["CallController", "Core", "SipEngine"]),
     ]
 )

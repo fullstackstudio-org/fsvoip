@@ -4,8 +4,7 @@ import Foundation
 /// What the system call screen shows (plan D10). CallKit only displays `localizedCallerName` and a handle, so the
 /// text is built here.
 public enum CallDisplay {
-    /// Standard: `<caller>`. With "show dialled account" (always on when several accounts are paired):
-    /// `<caller> → <account label>`.
+    /// Standard: `<caller>`. With "show dialled account": `<caller> → <account label>`.
     public static func callerText(callerName: String?, callerNumber: String?, accountLabel: String, showAccount: Bool, anonymous: String = "Onbekend") -> String {
         let name = callerName?.trimmingCharacters(in: .whitespacesAndNewlines)
         let number = callerNumber?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -26,8 +25,9 @@ public enum CallDisplay {
         return "\(caller) → \(accountLabel)"
     }
 
-    /// With several accounts the account is always shown, otherwise the user's setting decides.
-    public static func shouldShowAccount(setting: Bool, accountCount: Int) -> Bool {
-        setting || accountCount > 1
+    /// The per-account setting decides; when it was never set, the account is shown as soon as several accounts are
+    /// paired (otherwise you cannot tell which line is ringing).
+    public static func shouldShowAccount(setting: Bool?, accountCount: Int) -> Bool {
+        setting ?? (accountCount > 1)
     }
 }

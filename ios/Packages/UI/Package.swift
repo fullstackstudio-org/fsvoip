@@ -13,14 +13,17 @@ let package = Package(
         .package(path: "../Core"),
         .package(path: "../Pairing"),
         .package(path: "../Contacts"),
+        .package(path: "../SipEngine"),
+        .package(path: "../CallController"),
     ],
-    // SwiftUI screens. Depends on Core, Pairing and Contacts only, never on LinphoneEngine / the SIP stack.
+    // SwiftUI screens. Depends on Core, Pairing, Contacts, the SipEngine protocol and CallController only, never on
+    // LinphoneEngine / the SIP stack.
     targets: [
         .target(
             name: "UI",
-            dependencies: ["Core", "Pairing", "Contacts"],
+            dependencies: ["Core", "Pairing", "Contacts", "SipEngine", "CallController"],
             resources: [.process("Resources")]
         ),
-        .testTarget(name: "UITests", dependencies: ["UI", "Core", "Pairing"]),
+        .testTarget(name: "UITests", dependencies: ["UI", "Core", "Pairing", "SipEngine", "CallController"]),
     ]
 )

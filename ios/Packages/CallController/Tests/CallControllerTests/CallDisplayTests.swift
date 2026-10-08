@@ -17,9 +17,10 @@ final class CallDisplayTests: XCTestCase {
         XCTAssertEqual(CallDisplay.callerText(callerName: nil, callerNumber: nil, accountLabel: "", showAccount: true), "Onbekend")
     }
 
-    func testSeveralAccountsAlwaysShowTheAccount() {
-        XCTAssertFalse(CallDisplay.shouldShowAccount(setting: false, accountCount: 1))
+    func testTheSettingWinsAndDefaultsToSeveralAccounts() {
+        XCTAssertFalse(CallDisplay.shouldShowAccount(setting: nil, accountCount: 1))
+        XCTAssertTrue(CallDisplay.shouldShowAccount(setting: nil, accountCount: 2))
         XCTAssertTrue(CallDisplay.shouldShowAccount(setting: true, accountCount: 1))
-        XCTAssertTrue(CallDisplay.shouldShowAccount(setting: false, accountCount: 2))
+        XCTAssertFalse(CallDisplay.shouldShowAccount(setting: false, accountCount: 2), "an explicit choice per account wins")
     }
 }

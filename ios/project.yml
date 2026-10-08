@@ -41,6 +41,8 @@ targets:
       path: FSVoip/Info.plist
       properties:
         CFBundleDisplayName: FSVoip
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleDevelopmentRegion: nl
         CFBundleLocalizations: [nl, en]
         UILaunchScreen: {}
