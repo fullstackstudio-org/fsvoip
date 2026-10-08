@@ -22,7 +22,7 @@ shared/        platform-neutral contract: OpenAPI 3.1, push payload JSON Schema,
 ios/           the iOS app (Xcode project generated from project.yml)
   FSVoip/        app target: composition root, entitlements, assets
   Packages/      local Swift packages (see Architecture)
-android/       later
+android/       the Android app (Kotlin, Jetpack Compose), see android/README.md
 scripts/       build.sh, check-imports.sh, validate-contract.ts
 docs/          licensing notes
 ```

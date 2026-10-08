@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!-- DEBUG builds only. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application
+        android:networkSecurityConfig="@xml/network_security_config"
+        tools:ignore="UnusedAttribute">
+
+        <!-- Inject an FSVoip push from the development machine (there is no Firebase project yet), e.g.
+             adb shell am broadcast -n nl.fullstackstudio.fsvoip/.debug.DebugPushReceiver \
+               -a nl.fullstackstudio.fsvoip.DEBUG_PUSH -e fsvoip '<json of a push message>'
+             Guarded by DUMP: only the shell (adb) holds it, no installed app can send this. -->
+        <receiver
+            android:name=".debug.DebugPushReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="nl.fullstackstudio.fsvoip.DEBUG_PUSH" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

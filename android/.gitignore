@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+.gradle/
+.kotlin/
+build/
+local.properties
+.idea/
+*.iml
+captures/
+# Firebase config: per developer / CI secret, never committed (see README.md).
+app/google-services.json
+# Signing material
+*.jks
+*.keystore
+keystore.properties

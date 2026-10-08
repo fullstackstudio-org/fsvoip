@@ -45,8 +45,33 @@ Things to review before the first App Store release:
     docs/licensing.md). The fallback is a BSD-licensed engine behind the same `SipEngine` protocol.
 
 
+linphone-sdk on Android
+-----------------------
+The Android app links the same SDK release through Belledonne's Maven repository:
+
+    https://download.linphone.org/maven_repository
+    org.linphone.no-video:linphone-sdk-android:5.5.29 (audio-only variant)
+
+Licence, as read when this version was pinned (2026-10-08): the public headers of liblinphone carry the
+AGPL-3.0-or-later notice ("either version 3 of the License, or (at your option) any later version"); the POM of the
+Maven artifact names "GPL-3.0" in its metadata. FSVoip treats the SDK as AGPL-3.0-or-later, like on iOS, and does not
+modify it.
+
+The no-video AAR does not contain the AMR (msamr) or OpenH264 (msopenh264) plugins; the Android build also excludes
+their native libraries explicitly (android/app/build.gradle.kts) and CI checks that the APK has none. FSVoip only
+enables Opus, G.722, PCMA and PCMU (see LinphoneSipEngine).
+
+Other components of the Android app (all Apache-2.0):
+  - Kotlin standard library, kotlinx.coroutines, kotlinx.serialization (JetBrains)
+  - AndroidX (core, activity, lifecycle, Jetpack Compose, Material 3, Material icons) (Google / AOSP)
+  - Firebase Cloud Messaging (Google), only used when the build has a google-services.json
+  - OkHttp and Okio (Square)
+  - ZXing core and zxing-android-embedded (ZXing authors, JourneyApps) for the QR scanner
+
 Build and test tooling (not part of the app)
 --------------------------------------------
   - XcodeGen (MIT) generates the Xcode project from ios/project.yml; it is not bundled.
   - scripts/validate-contract.ts uses ajv (MIT), ajv-formats (MIT) and yaml (ISC) to validate the API
     fixtures; they are development dependencies only.
+  - The Gradle wrapper (Apache-2.0) builds the Android app; android/gradle/wrapper/gradle-wrapper.jar is part of
+    the repository, Gradle itself is downloaded at build time and not bundled.
