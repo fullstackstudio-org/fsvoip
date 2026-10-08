@@ -129,32 +129,37 @@ struct InCallView: View {
     // MARK: Controls
 
     private var controls: some View {
-        let columns = Array(repeating: GridItem(.flexible(), spacing: 24), count: 2)
         let connected = session.phase.isConnected || session.phase == .connecting
 
-        return LazyVGrid(columns: columns, spacing: 28) {
-            ControlButton(symbol: session.isMuted ? "mic.slash.fill" : "mic.fill", titleKey: "call.mute", isOn: session.isMuted) {
-                phone.setMuted(session.id, !session.isMuted)
-            }
-            .accessibilityIdentifier("mute-button")
+        // A plain Grid, not a LazyVGrid: lazy items are placed on their own and did not slide up with the call screen.
+        return Grid(horizontalSpacing: 24, verticalSpacing: 28) {
+            GridRow {
+                ControlButton(symbol: session.isMuted ? "mic.slash.fill" : "mic.fill", titleKey: "call.mute", isOn: session.isMuted) {
+                    phone.setMuted(session.id, !session.isMuted)
+                }
+                .accessibilityIdentifier("mute-button")
 
-            ControlButton(symbol: "circle.grid.3x3.fill", titleKey: "call.keypad", isOn: false) {
-                showsKeypad = true
+                ControlButton(symbol: "circle.grid.3x3.fill", titleKey: "call.keypad", isOn: false) {
+                    showsKeypad = true
+                }
+                .disabled(!connected)
+                .accessibilityIdentifier("keypad-button")
             }
-            .disabled(!connected)
-            .accessibilityIdentifier("keypad-button")
 
-            ControlButton(symbol: phone.isSpeakerOn ? "speaker.wave.3.fill" : "speaker.wave.2.fill", titleKey: "call.speaker", isOn: phone.isSpeakerOn) {
-                phone.setSpeaker(!phone.isSpeakerOn)
-            }
-            .accessibilityIdentifier("speaker-button")
+            GridRow {
+                ControlButton(symbol: phone.isSpeakerOn ? "speaker.wave.3.fill" : "speaker.wave.2.fill", titleKey: "call.speaker", isOn: phone.isSpeakerOn) {
+                    phone.setSpeaker(!phone.isSpeakerOn)
+                }
+                .accessibilityIdentifier("speaker-button")
 
-            ControlButton(symbol: "pause.fill", titleKey: "call.hold", isOn: session.isOnHold) {
-                phone.setHeld(session.id, !session.isOnHold)
+                ControlButton(symbol: "pause.fill", titleKey: "call.hold", isOn: session.isOnHold) {
+                    phone.setHeld(session.id, !session.isOnHold)
+                }
+                .disabled(!session.phase.isConnected)
+                .accessibilityIdentifier("hold-button")
             }
-            .disabled(!session.phase.isConnected)
-            .accessibilityIdentifier("hold-button")
         }
+        .frame(maxWidth: .infinity)
         .disabled(isEnded)
         .opacity(isEnded ? 0.4 : 1)
     }
@@ -238,6 +243,8 @@ private struct ControlButton: View {
             .opacity(isEnabled ? 1 : 0.35)
         }
         .buttonStyle(.plain)
+        // Equal columns, as the grid had before; only the button itself takes the tap.
+        .frame(maxWidth: .infinity)
         .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 }
