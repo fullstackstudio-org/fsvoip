@@ -1,0 +1,46 @@
+# Public-repository CI: cheap checks only (architecture gate, contract, package tests, secret scan).
+# The iOS app build runs locally on a Mac (scripts/build.sh) and later in Xcode Cloud; there is no iOS build here.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  architecture-and-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: SIP stack only inside LinphoneEngine
+        run: |
+          scripts/check-imports.sh --self-test
+          scripts/check-imports.sh
+      - uses: oven-sh/setup-bun@v2
+      - name: API fixtures against openapi.yaml and the push schema
+        run: |
+          bun install --cwd scripts --frozen-lockfile
+          bun scripts/validate-contract.ts
+
+  package-tests:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Core, SipEngine, Pairing, Contacts
+        run: |
+          for package in Core SipEngine Pairing Contacts; do
+            (cd ios/Packages/$package && swift test)
+          done
+
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

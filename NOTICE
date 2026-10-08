@@ -1,0 +1,49 @@
+FSVoip
+Copyright (C) 2026 FullStack Studio
+
+FSVoip is free software, licensed under the GNU Affero General Public License, version 3 or (at your option)
+any later version (AGPL-3.0-or-later). See the file LICENSE.
+
+The name "FSVoip", the name and logo of FullStack Studio and the app icon are not covered by that licence
+(see TRADEMARKS.md).
+
+
+Third-party components
+======================
+
+linphone-sdk  (Belledonne Communications SARL, https://linphone.org)
+--------------------------------------------------------------------
+FSVoip links the Linphone SDK through Belledonne's official Swift Package:
+
+    https://gitlab.linphone.org/BC/public/linphone-sdk-swift-ios
+    pinned to tag 5.5.29-novideo (audio-only variant, released 2026-10-01)
+
+Licence, as read when this version was pinned (2026-10-08):
+
+  * The package repository's LICENSE.txt at that tag is the GNU Affero General Public License, version 3.
+  * The public headers of liblinphone in the binary framework (for example core.h) carry the header
+    "either version 3 of the License, or (at your option) any later version", i.e. AGPL-3.0-or-later.
+
+FSVoip is therefore distributed under the AGPL-3.0-or-later as well. FSVoip does not modify the SDK. The complete
+corresponding source of FSVoip is at https://github.com/fullstackstudio-org/fullstackstudio-voip.
+Belledonne also sells a commercial licence for the SDK; FSVoip does not use it.
+
+The Swift Package ships these components (all part of the same SDK release, see the SDK's own notices for the
+details and for the licences of each):
+
+    liblinphone, mediastreamer2, belle-sip, ortp, bctoolbox, belr, belcard, lime,
+    mbedTLS (mbedcrypto, mbedtls, mbedx509), and the media plugins msamr, mscodec2, msopenh264, mssilk.
+
+Things to review before the first App Store release:
+  - msamr (AMR), mssilk (SILK), mscodec2 (Codec2) and msopenh264 (Cisco's binary OpenH264 module) bring codecs that
+    may carry their own licence or patent terms. FSVoip only enables Opus, G.722, PCMA and PCMU (see
+    LinphoneEngine); the final set of linked frameworks is reviewed when the app is prepared for release.
+  - The distribution of (A)GPL software through the Apple App Store is a known point of discussion (see
+    docs/licensing.md). The fallback is a BSD-licensed engine behind the same `SipEngine` protocol.
+
+
+Build and test tooling (not part of the app)
+--------------------------------------------
+  - XcodeGen (MIT) generates the Xcode project from ios/project.yml; it is not bundled.
+  - scripts/validate-contract.ts uses ajv (MIT), ajv-formats (MIT) and yaml (ISC) to validate the API
+    fixtures; they are development dependencies only.

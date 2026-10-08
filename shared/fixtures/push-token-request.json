@@ -1,0 +1,6 @@
+{
+  "pushKind": "apns_voip",
+  "pushToken": "abababababababababababababababababababababababababababababababab",
+  "pushEnv": "sandbox",
+  "alertPushToken": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+}

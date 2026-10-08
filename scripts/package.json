@@ -1,0 +1,12 @@
+{
+  "name": "fsvoip-contract-tools",
+  "private": true,
+  "description": "Tooling that validates the shared API contract fixtures. Not part of the app.",
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "dependencies": {
+    "ajv": "8.17.1",
+    "ajv-formats": "3.0.1",
+    "yaml": "2.6.1"
+  }
+}

@@ -1,0 +1,24 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+"onboarding.title" = "Pair your phone";
+"onboarding.subtitle" = "Scan the QR code in your portal, or tap the pairing link on this phone.";
+"onboarding.scan" = "Scan QR code";
+"onboarding.hint" = "No code yet? Open your device under Telephony in the portal and choose Pair FSVoip.";
+
+"scanner.title" = "Scan QR code";
+"scanner.placeholder" = "Camera scanning arrives in the next version. For now, paste the pairing link below.";
+"scanner.field" = "Pairing link";
+"scanner.use" = "Use link";
+"scanner.cancel" = "Cancel";
+
+"link.title" = "Pairing code recognised";
+"link.body" = "This phone can now be paired with your device. The pairing itself arrives in the next version.";
+"link.pair" = "Pair";
+"link.discard" = "Cancel";
+
+"accounts.title" = "My devices";
+"accounts.add" = "Pair a device";
+
+"error.notAPairingLink" = "This is not an FSVoip pairing code.";
+"error.missingToken" = "The pairing link has no code.";
+"error.malformedToken" = "The pairing code is not valid. Create a new one in the portal.";
+"error.generic" = "Something went wrong. Please try again.";

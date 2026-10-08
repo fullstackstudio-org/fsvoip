@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fullstackstudio.nl/fsvoip/push-payload.schema.json",
+  "title": "FSVoip push payload",
+  "description": "Everything FullStack Studio puts in a push to an FSVoip app lives in one object called `fsvoip`. APNs carries it as a top-level key of the payload, FCM as a JSON string in `data.fsvoip`. Platform neutral: both apps decode the same object. A push NEVER contains the SIP password, a device token or a push token.",
+  "$defs": {
+    "ring": {
+      "type": "object",
+      "description": "Incoming call. On iOS this is a PushKit (VoIP) push and the app MUST report a CallKit call immediately in the PushKit callback. The matching SIP INVITE carries the header `X-FSS-Call: <callRef>`. If no INVITE arrives before `expiresAt` the app ends the call as unanswered.",
+      "required": ["v", "type", "callRef", "from", "accountId", "accountLabel", "expiresAt"],
+      "additionalProperties": false,
+      "properties": {
+        "v": { "const": 1 },
+        "type": { "const": "ring" },
+        "callRef": {
+          "type": "string",
+          "description": "FreeSWITCH call UUID, equal to the `X-FSS-Call` SIP header of the INVITE.",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "from": {
+          "type": "object",
+          "required": ["number", "name"],
+          "additionalProperties": false,
+          "properties": {
+            "number": { "type": ["string", "null"], "description": "Caller number as the PBX knows it; null = anonymous." },
+            "name": { "type": ["string", "null"], "description": "Caller name from the PBX caller id; null = unknown." }
+          }
+        },
+        "accountId": { "type": "string", "format": "uuid", "description": "`account.id` from the pair response (the app pairing)." },
+        "accountLabel": { "type": "string", "description": "The label of the dialled account, for display on the call screen." },
+        "expiresAt": { "type": "string", "format": "date-time", "description": "Around 12 seconds after the push was created." }
+      }
+    },
+    "revoked": {
+      "type": "object",
+      "description": "The pairing was revoked server side (portal, admin, MCP, or another phone took over). Sent as a regular alert push (iOS: to the alert token), NEVER as a VoIP push. The app removes the account.",
+      "required": ["v", "type", "accountId", "accountLabel"],
+      "additionalProperties": false,
+      "properties": {
+        "v": { "const": 1 },
+        "type": { "const": "revoked" },
+        "accountId": { "type": "string", "format": "uuid" },
+        "accountLabel": { "type": "string" }
+      }
+    },
+    "refresh": {
+      "type": "object",
+      "description": "Labels or contact lists changed; the app re-reads `GET /me`. Regular push, never a VoIP push.",
+      "required": ["v", "type", "accountId"],
+      "additionalProperties": false,
+      "properties": {
+        "v": { "const": 1 },
+        "type": { "const": "refresh" },
+        "accountId": { "type": "string", "format": "uuid" }
+      }
+    },
+    "message": {
+      "oneOf": [
+        { "$ref": "#/$defs/ring" },
+        { "$ref": "#/$defs/revoked" },
+        { "$ref": "#/$defs/refresh" }
+      ]
+    },
+    "apnsVoipBody": {
+      "description": "APNs payload of a VoIP push (`apns-push-type: voip`, topic `nl.fullstackstudio.fsvoip.voip`, `apns-expiration: 0`). No `aps.alert`.",
+      "type": "object",
+      "required": ["aps", "fsvoip"],
+      "additionalProperties": false,
+      "properties": {
+        "aps": { "type": "object", "maxProperties": 0 },
+        "fsvoip": { "$ref": "#/$defs/ring" }
+      }
+    },
+    "apnsAlertBody": {
+      "description": "APNs payload of a regular notification (`apns-push-type: alert`, topic `nl.fullstackstudio.fsvoip`).",
+      "type": "object",
+      "required": ["aps", "fsvoip"],
+      "additionalProperties": false,
+      "properties": {
+        "aps": {
+          "type": "object",
+          "required": ["alert", "content-available"],
+          "additionalProperties": false,
+          "properties": {
+            "alert": {
+              "type": "object",
+              "required": ["title", "body"],
+              "additionalProperties": false,
+              "properties": { "title": { "type": "string" }, "body": { "type": "string" } }
+            },
+            "content-available": { "const": 1 }
+          }
+        },
+        "fsvoip": { "oneOf": [{ "$ref": "#/$defs/revoked" }, { "$ref": "#/$defs/refresh" }] }
+      }
+    },
+    "fcmMessage": {
+      "description": "FCM HTTP v1 request body. The `fsvoip` object travels as a JSON string in `data.fsvoip`.",
+      "type": "object",
+      "required": ["message"],
+      "properties": {
+        "message": {
+          "type": "object",
+          "required": ["token", "data", "android"],
+          "properties": {
+            "token": { "type": "string" },
+            "data": {
+              "type": "object",
+              "required": ["fsvoip"],
+              "properties": { "fsvoip": { "type": "string", "description": "JSON text of a `message`." } }
+            },
+            "android": {
+              "type": "object",
+              "properties": { "priority": { "const": "HIGH" }, "ttl": { "type": "string" } }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$ref": "#/$defs/message"
+}

@@ -1,0 +1,28 @@
+{
+  "deviceToken": "fss_vapp_FIXTUREdeviceFIXTUREdeviceFIXTUREdeviceFIXT",
+  "device": {
+    "id": "3f0c2b1e-8a4d-4d6f-9b7a-1c2d3e4f5a6b",
+    "installId": "a1b2c3d4e5f60718"
+  },
+  "account": {
+    "id": "3f0c2b1e-8a4d-4d6f-9b7a-1c2d3e4f5a6b",
+    "label": "Voorbeeld Bouw · Jan de Vries",
+    "pbxName": "Voorbeeld Bouw",
+    "extensionName": "Jan de Vries",
+    "extensionNumber": "102",
+    "customerName": "Voorbeeld Bouw B.V."
+  },
+  "sip": {
+    "username": "102",
+    "password": "fixture-not-a-real-password",
+    "domain": "voorbeeld-bouw.powervoip.nl",
+    "proxy": "sip.powervoip.nl",
+    "port": 5060,
+    "transport": "tcp",
+    "srv": true
+  },
+  "contacts": {
+    "internal": true,
+    "listsAvailable": 2
+  }
+}

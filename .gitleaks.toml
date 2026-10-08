@@ -1,0 +1,13 @@
+# Gitleaks configuration for FSVoip (public repository).
+# The contract fixtures contain obviously fake values in the exact shape of the real API
+# (prefixes fss_vapp_ / fss_vpair_, a fake SIP password). They are not secrets.
+title = "FSVoip gitleaks"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fake contract fixtures"
+paths = [
+  '''shared/fixtures/.*\.json''',
+]

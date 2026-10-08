@@ -1,0 +1,12 @@
+// Copy this file to `Local.xcconfig` (git-ignored) and adjust. NEVER commit Local.xcconfig.
+//
+// The team below is FullStack Studio's Apple Developer team. The Team ID is not a secret (it is also public in the
+// apple-app-site-association file of fullstackstudio.nl); signing certificates, provisioning profiles and
+// APNs keys are, and stay outside this repository.
+//
+// A fork must use its own team and its own bundle identifier (see TRADEMARKS.md).
+
+DEVELOPMENT_TEAM = FDGV4X8F27
+CODE_SIGN_STYLE = Automatic
+// A fork also sets, for example:
+// PRODUCT_BUNDLE_IDENTIFIER = com.example.mysoftphone

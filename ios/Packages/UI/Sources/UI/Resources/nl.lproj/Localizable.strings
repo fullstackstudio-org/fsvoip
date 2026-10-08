@@ -1,0 +1,24 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+"onboarding.title" = "Koppel je toestel";
+"onboarding.subtitle" = "Scan de QR-code in je portaal, of tik op de koppellink op deze telefoon.";
+"onboarding.scan" = "QR-code scannen";
+"onboarding.hint" = "Nog geen code? Open in het portaal je toestel onder Telefonie en kies FSVoip koppelen.";
+
+"scanner.title" = "QR-code scannen";
+"scanner.placeholder" = "De camera-scan volgt in de volgende versie. Plak intussen de koppellink hieronder.";
+"scanner.field" = "Koppellink";
+"scanner.use" = "Link gebruiken";
+"scanner.cancel" = "Annuleren";
+
+"link.title" = "Koppelcode herkend";
+"link.body" = "Deze telefoon kan nu aan je toestel gekoppeld worden. Het koppelen zelf volgt in de volgende versie.";
+"link.pair" = "Koppelen";
+"link.discard" = "Annuleren";
+
+"accounts.title" = "Mijn toestellen";
+"accounts.add" = "Toestel koppelen";
+
+"error.notAPairingLink" = "Dit is geen koppelcode van FSVoip.";
+"error.missingToken" = "De koppellink bevat geen code.";
+"error.malformedToken" = "De koppelcode is niet geldig. Maak in het portaal een nieuwe code.";
+"error.generic" = "Er ging iets mis. Probeer het opnieuw.";

@@ -1,0 +1,24 @@
+{
+  "account": {
+    "id": "3f0c2b1e-8a4d-4d6f-9b7a-1c2d3e4f5a6b",
+    "label": "Voorbeeld Bouw · Jan de Vries",
+    "labelOverride": null,
+    "pbxName": "Voorbeeld Bouw",
+    "extensionName": "Jan de Vries",
+    "extensionNumber": "102",
+    "customerName": "Voorbeeld Bouw B.V."
+  },
+  "sip": null,
+  "internal": [],
+  "contacts": {
+    "internal": true,
+    "listsAvailable": 0
+  },
+  "push": {
+    "registered": false,
+    "kind": null,
+    "env": null,
+    "invalid": false
+  },
+  "serverTime": "2026-10-08T12:34:56.789Z"
+}

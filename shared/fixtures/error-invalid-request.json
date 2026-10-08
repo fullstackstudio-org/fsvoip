@@ -1,0 +1,4 @@
+{
+  "error": "invalid_request",
+  "message": "device.platform moet ios of android zijn."
+}

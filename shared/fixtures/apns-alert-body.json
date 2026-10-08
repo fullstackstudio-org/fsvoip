@@ -1,0 +1,15 @@
+{
+  "aps": {
+    "alert": {
+      "title": "FSVoip",
+      "body": "Account ontkoppeld: Voorbeeld Bouw · Jan de Vries"
+    },
+    "content-available": 1
+  },
+  "fsvoip": {
+    "v": 1,
+    "type": "revoked",
+    "accountId": "3f0c2b1e-8a4d-4d6f-9b7a-1c2d3e4f5a6b",
+    "accountLabel": "Voorbeeld Bouw · Jan de Vries"
+  }
+}

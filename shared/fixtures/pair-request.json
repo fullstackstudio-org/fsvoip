@@ -1,0 +1,15 @@
+{
+  "token": "fss_vpair_FIXTUREpairingFIXTUREpairingFIXTUREpairingF",
+  "device": {
+    "platform": "ios",
+    "model": "iPhone17,1",
+    "osVersion": "26.5",
+    "appVersion": "1.0 (1)",
+    "sipInstanceId": "urn:uuid:7d2f6c1a-3b4e-4c58-9f10-5a6e8b0c2d34",
+    "installId": "a1b2c3d4e5f60718",
+    "pushToken": "abababababababababababababababababababababababababababababababab",
+    "pushKind": "apns_voip",
+    "pushEnv": "sandbox",
+    "alertPushToken": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+  }
+}

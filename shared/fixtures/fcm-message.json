@@ -1,0 +1,12 @@
+{
+  "message": {
+    "token": "fcm-fixture-token-1234567890:APA91bFIXTURE",
+    "data": {
+      "fsvoip": "{\"v\":1,\"type\":\"ring\",\"callRef\":\"9d3f5c52-7b1e-4a0c-8e6d-2f4a6b8c0d1e\",\"from\":{\"number\":\"+31701234567\",\"name\":\"Bakkerij Smit\"},\"accountId\":\"3f0c2b1e-8a4d-4d6f-9b7a-1c2d3e4f5a6b\",\"accountLabel\":\"Voorbeeld Bouw · Jan de Vries\",\"expiresAt\":\"2026-10-08T12:35:08.000Z\"}"
+    },
+    "android": {
+      "priority": "HIGH",
+      "ttl": "0s"
+    }
+  }
+}

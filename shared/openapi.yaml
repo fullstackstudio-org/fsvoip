@@ -1,0 +1,491 @@
+openapi: 3.1.0
+info:
+  title: FSVoip app API
+  version: "1.0.0"
+  summary: The platform API the FSVoip apps (iOS now, Android later) use to pair a phone with a PBX extension.
+  description: |
+    Platform-neutral contract of the FullStack Studio `voip-app` API, **v1**. The iOS and Android apps
+    share this file and the fixtures in `shared/fixtures/`; each app has contract tests that decode them.
+
+    Conventions (apply to every route):
+
+    - JSON, `camelCase`, error codes in English. Every response carries `Cache-Control: no-store`.
+    - The device token (`fss_vapp_...`) is sent **only** as `Authorization: Bearer <token>`, never in a query string.
+    - Additive changes only: clients must ignore unknown response fields. Requests are strict: an unknown
+      request field is a `400 invalid_request`.
+    - A `401 unauthorized` on a device-token route means the pairing was revoked (portal, admin, or
+      another phone took over the extension): the app removes the account.
+    - The SIP password is returned **exactly once**, in the `201` response of `POST /pair`. FullStack
+      Studio does not store it. `GET /me` never contains it.
+
+    Not documented here on purpose: `POST /push/ring` (PBX to server, HMAC-signed, internal).
+  license:
+    name: AGPL-3.0-or-later
+    identifier: AGPL-3.0-or-later
+servers:
+  - url: https://fullstackstudio.nl/api/voip-app/v1
+    description: Production
+tags:
+  - name: pairing
+    description: Exchange a one-time pairing token for a device token and SIP credentials.
+  - name: account
+    description: The paired account, internal contacts, push registration.
+paths:
+  /pair:
+    post:
+      tags: [pairing]
+      operationId: pair
+      summary: Exchange a pairing token (QR or deep link) for a device token and the SIP credentials.
+      description: |
+        The pairing token comes from the QR code / universal link
+        `https://fullstackstudio.nl/fsvoip/pair?t=<token>` (or `fsvoip://pair?t=<token>`). It is single use
+        and valid for 10 minutes. Rate limit: 20 per hour per IP.
+
+        An unknown, expired, used or malformed token is one neutral `404 not_found`. If the PBX could not
+        issue a new SIP password right now the response is `503` with `retryable: true` and the token is
+        **not** consumed: try again.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PairRequest"
+      responses:
+        "201":
+          description: Paired. Contains the SIP password; store it in the Keychain/Keystore only.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PairResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /me:
+    get:
+      tags: [account]
+      operationId: getMe
+      summary: Labels, internal contacts and the SIP server of this account (no password).
+      security:
+        - deviceToken: []
+      responses:
+        "200":
+          description: The account.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    patch:
+      tags: [account]
+      operationId: patchMe
+      summary: Set or clear the alias (label override) of this account.
+      security:
+        - deviceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MePatchRequest"
+      responses:
+        "200":
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MePatchResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /push-token:
+    put:
+      tags: [account]
+      operationId: putPushToken
+      summary: Register or replace the push token of this installation; send no token to unregister.
+      description: |
+        iOS sends the PushKit (VoIP) token as `pushToken` with `pushKind: apns_voip`, and the regular APNs
+        token as `alertPushToken` (used for "account removed" notices; a PushKit token can only receive
+        VoIP pushes). A new token clears an earlier "invalid" mark. Android uses `pushKind: fcm`.
+      security:
+        - deviceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushTokenUpdate"
+      responses:
+        "200":
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /unpair:
+    post:
+      tags: [account]
+      operationId: unpair
+      summary: The app removes itself. The device token dies and the SIP password is renewed on the PBX.
+      security:
+        - deviceToken: []
+      responses:
+        "200":
+          description: Unpaired.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+components:
+  securitySchemes:
+    deviceToken:
+      type: http
+      scheme: bearer
+      bearerFormat: "fss_vapp_<43 base64url characters>"
+      description: Device token returned by `POST /pair`. Only valid in the `Authorization` header.
+  schemas:
+    Platform:
+      type: string
+      enum: [ios, android]
+    PushKind:
+      type: string
+      enum: [apns_voip, fcm]
+      description: "`apns_voip` is iOS PushKit, `fcm` is Firebase Cloud Messaging (Android)."
+    PushEnv:
+      type: string
+      enum: [production, sandbox]
+      description: APNs environment of the build that registered the token.
+    Transport:
+      type: string
+      enum: [udp, tcp, tls]
+    PairRequest:
+      type: object
+      additionalProperties: false
+      required: [token, device]
+      properties:
+        token:
+          type: string
+          pattern: "^fss_vpair_[A-Za-z0-9_-]{43}$"
+        device:
+          $ref: "#/components/schemas/DeviceInfo"
+    DeviceInfo:
+      type: object
+      additionalProperties: false
+      required: [platform]
+      properties:
+        platform:
+          $ref: "#/components/schemas/Platform"
+        model:
+          type: string
+          maxLength: 64
+          description: Hardware model, for the portal's device list.
+        osVersion:
+          type: string
+          maxLength: 32
+        appVersion:
+          type: string
+          maxLength: 32
+        sipInstanceId:
+          type: string
+          description: "RFC 5626 `+sip.instance` value (`urn:uuid:...`). Stored for later use."
+          examples: ["urn:uuid:7d2f6c1a-3b4e-4c58-9f10-5a6e8b0c2d34"]
+        installId:
+          type: string
+          pattern: "^[a-f0-9]{8,32}$"
+          description: |
+            Stable id of this installation (8-32 hex characters). It becomes the Contact URI parameter
+            `fss-dev=<installId>` that the PBX push gate uses to recognise this app. If omitted the
+            server generates one and returns it in `device.installId`.
+        pushToken:
+          type: string
+          description: PushKit token (iOS, hex, lowercase) or FCM token (Android).
+        pushKind:
+          $ref: "#/components/schemas/PushKind"
+        pushEnv:
+          $ref: "#/components/schemas/PushEnv"
+        alertPushToken:
+          type: string
+          pattern: "^[a-fA-F0-9]{64,200}$"
+          description: iOS only. Regular APNs token for non-call notices.
+    PairResponse:
+      type: object
+      required: [deviceToken, device, account, sip, contacts]
+      properties:
+        deviceToken:
+          type: string
+          pattern: "^fss_vapp_[A-Za-z0-9_-]{43}$"
+          description: Store in the Keychain/Keystore. Shown only here.
+        device:
+          type: object
+          required: [id, installId]
+          properties:
+            id:
+              type: string
+              format: uuid
+            installId:
+              type: string
+              pattern: "^[a-f0-9]{8,32}$"
+        account:
+          $ref: "#/components/schemas/Account"
+        sip:
+          $ref: "#/components/schemas/SipCredentials"
+        contacts:
+          $ref: "#/components/schemas/ContactsInfo"
+    Account:
+      type: object
+      required: [id, label, pbxName, extensionName, extensionNumber, customerName]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The id of this app pairing (equals `device.id`). Used by pushes as `accountId`.
+        label:
+          type: string
+          description: "What the app shows: the alias if set, otherwise `<pbxName> · <extensionName>`."
+        labelOverride:
+          type: ["string", "null"]
+          description: The alias chosen on the phone. Only present in `GET /me`.
+        pbxName:
+          type: string
+        extensionName:
+          type: string
+        extensionNumber:
+          type: ["string", "null"]
+        customerName:
+          type: string
+    SipCredentials:
+      type: object
+      required: [username, password, domain, proxy, port, transport, srv]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          description: The SIP password. Returned once, in the `POST /pair` response only. Never log it.
+        domain:
+          type: string
+          description: SIP domain of the PBX tenant, e.g. `acme.powervoip.nl`. Use as the registrar domain / realm.
+        proxy:
+          type: string
+          description: Outbound proxy host, e.g. `sip.powervoip.nl`. Do NOT use as the domain.
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        transport:
+          $ref: "#/components/schemas/Transport"
+        srv:
+          type: boolean
+          const: true
+          description: DNS SRV records exist for the proxy; resolve them for failover between PBX nodes.
+    SipServer:
+      type: object
+      required: [domain, proxy, port, transport, srv]
+      description: The same as `SipCredentials` but without `username` and `password`.
+      properties:
+        domain:
+          type: string
+        proxy:
+          type: string
+        port:
+          type: integer
+        transport:
+          $ref: "#/components/schemas/Transport"
+        srv:
+          type: boolean
+          const: true
+    ContactsInfo:
+      type: object
+      required: [internal, listsAvailable]
+      properties:
+        internal:
+          type: boolean
+          const: true
+          description: Internal contacts (the other extensions of this PBX) are available via `GET /me`.
+        listsAvailable:
+          type: integer
+          minimum: 0
+          description: Number of customer contact lists in the portal (served by a later API route).
+    MeResponse:
+      type: object
+      required: [account, sip, internal, contacts, push, serverTime]
+      properties:
+        account:
+          $ref: "#/components/schemas/Account"
+        sip:
+          description: "`null` when the PBX connection details are not available right now."
+          oneOf:
+            - $ref: "#/components/schemas/SipServer"
+            - type: "null"
+        internal:
+          type: array
+          maxItems: 500
+          items:
+            $ref: "#/components/schemas/InternalContact"
+        contacts:
+          $ref: "#/components/schemas/ContactsInfo"
+        push:
+          $ref: "#/components/schemas/PushStatus"
+        serverTime:
+          type: string
+          format: date-time
+    InternalContact:
+      type: object
+      required: [number, name]
+      properties:
+        number:
+          type: string
+        name:
+          type: string
+    PushStatus:
+      type: object
+      required: [registered, kind, env, invalid]
+      properties:
+        registered:
+          type: boolean
+        kind:
+          oneOf:
+            - $ref: "#/components/schemas/PushKind"
+            - type: "null"
+        env:
+          oneOf:
+            - $ref: "#/components/schemas/PushEnv"
+            - type: "null"
+        invalid:
+          type: boolean
+          description: The push service rejected the token; the app must re-register it (`PUT /push-token`).
+    MePatchRequest:
+      type: object
+      additionalProperties: false
+      required: [labelOverride]
+      properties:
+        labelOverride:
+          type: ["string", "null"]
+          maxLength: 60
+          description: The alias. `null` or an empty string clears it.
+    MePatchResponse:
+      type: object
+      required: [label, labelOverride]
+      properties:
+        label:
+          type: string
+        labelOverride:
+          type: ["string", "null"]
+    PushTokenUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        pushKind:
+          $ref: "#/components/schemas/PushKind"
+        pushToken:
+          type: ["string", "null"]
+          description: Omit, `null` or empty to unregister push for this installation.
+        pushEnv:
+          $ref: "#/components/schemas/PushEnv"
+        alertPushToken:
+          type: ["string", "null"]
+          description: iOS only.
+    OkResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+          const: true
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: |
+            Machine-readable code. Known values: `invalid_request`, `invalid_json`, `not_found`, `unauthorized`,
+            `rate_limited`, `payload_too_large`, `unavailable`, `not_ready`.
+        message:
+          type: string
+          description: Human-readable detail for `invalid_request`. Not localised; do not show it to users.
+        retryable:
+          type: boolean
+          description: "On `503`: the same request may succeed shortly (pairing token not consumed)."
+  responses:
+    InvalidRequest:
+      description: Malformed JSON or an invalid / unknown field.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Unknown or revoked device token. The app must remove the account.
+      headers:
+        WWW-Authenticate:
+          schema:
+            type: string
+            const: Bearer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Unknown, expired, used or malformed pairing token (one neutral answer).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    PayloadTooLarge:
+      description: Request body above 64 kB.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    RateLimited:
+      description: Too many requests.
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+            description: Seconds.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unavailable:
+      description: Temporary server or PBX problem.
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"

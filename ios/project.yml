@@ -1,0 +1,94 @@
+# XcodeGen specification of the FSVoip iOS app. `FSVoip.xcodeproj` is generated from this file
+# (scripts/build.sh runs `xcodegen generate`) and is not committed.
+name: FSVoip
+options:
+  bundleIdPrefix: nl.fullstackstudio
+  deploymentTarget:
+    iOS: "16.0"
+  developmentLanguage: nl
+  createIntermediateGroups: true
+  generateEmptyDirectories: false
+
+configFiles:
+  Debug: Config/Debug.xcconfig
+  Release: Config/Release.xcconfig
+
+packages:
+  Core:
+    path: Packages/Core
+  SipEngine:
+    path: Packages/SipEngine
+  LinphoneEngine:
+    path: Packages/LinphoneEngine
+  CallController:
+    path: Packages/CallController
+  Pairing:
+    path: Packages/Pairing
+  Contacts:
+    path: Packages/Contacts
+  UI:
+    path: Packages/UI
+
+targets:
+  FSVoip:
+    type: application
+    platform: iOS
+    sources:
+      - path: FSVoip
+        excludes:
+          - Info.plist
+    info:
+      path: FSVoip/Info.plist
+      properties:
+        CFBundleDisplayName: FSVoip
+        CFBundleDevelopmentRegion: nl
+        CFBundleLocalizations: [nl, en]
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIBackgroundModes: [voip, audio]
+        CFBundleURLTypes:
+          - CFBundleURLName: nl.fullstackstudio.fsvoip
+            CFBundleURLSchemes: [fsvoip]
+        NSCameraUsageDescription: FSVoip gebruikt de camera om de QR-code te scannen waarmee je dit toestel koppelt.
+        NSMicrophoneUsageDescription: FSVoip gebruikt de microfoon zodat de ander je kan horen tijdens een gesprek.
+    entitlements:
+      path: FSVoip/FSVoip.entitlements
+      properties:
+        aps-environment: development
+        com.apple.developer.associated-domains:
+          - applinks:fullstackstudio.nl
+    settings:
+      base:
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ENABLE_USER_SCRIPT_SANDBOXING: YES
+        GENERATE_INFOPLIST_FILE: NO
+    dependencies:
+      - package: Core
+      - package: SipEngine
+      - package: LinphoneEngine
+      - package: CallController
+      - package: Pairing
+      - package: Contacts
+      - package: UI
+
+schemes:
+  FSVoip:
+    build:
+      targets:
+        FSVoip: all
+    test:
+      config: Debug
+      targets:
+        - package: Core/CoreTests
+        - package: SipEngine/SipEngineTests
+        - package: Pairing/PairingTests
+        - package: Contacts/ContactsTests
+        - package: CallController/CallControllerTests
+        - package: UI/UITests
+        - package: LinphoneEngine/LinphoneEngineTests
+    run:
+      config: Debug
+    archive:
+      config: Release

@@ -1,0 +1,15 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Build settings shared by all configurations. Committed.
+// Your own signing team goes in `ios/Local.xcconfig` (git-ignored; copy `Local.xcconfig.example`).
+
+// Optional include: a missing Local.xcconfig is fine (simulator builds do not need signing).
+#include? "../Local.xcconfig"
+
+PRODUCT_BUNDLE_IDENTIFIER = nl.fullstackstudio.fsvoip
+PRODUCT_NAME = FSVoip
+MARKETING_VERSION = 0.1.0
+CURRENT_PROJECT_VERSION = 1
+IPHONEOS_DEPLOYMENT_TARGET = 16.0
+TARGETED_DEVICE_FAMILY = 1
+SWIFT_VERSION = 5.0
