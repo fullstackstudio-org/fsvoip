@@ -211,7 +211,7 @@ final class PhoneControllerTests: XCTestCase {
 
         engine.emitIncoming(id: "in-2", from: "0207654321", name: nil, account: "a")
 
-        XCTAssertEqual(engine.log.last, "decline in-2")
+        XCTAssertEqual(engine.log.last, "busy in-2", "486 Busy Here, not 603")
         XCTAssertEqual(phone.sessions.count, 1)
         XCTAssertEqual(finished.first?.number, "0207654321")
         XCTAssertEqual(finished.first?.outcome, .missed)

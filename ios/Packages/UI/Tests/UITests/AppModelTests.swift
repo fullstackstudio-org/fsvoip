@@ -6,6 +6,20 @@ import SipEngine
 import XCTest
 @testable import UI
 
+/// Records reports; the result is scripted.
+private final class FakePushTokens: PushTokenReporting, @unchecked Sendable {
+    var result = PushTokenReport()
+    private(set) var reports = 0
+
+    func setVoipToken(_ token: Data?) async {}
+    func setAlertToken(_ token: Data?) async {}
+
+    func report() async -> PushTokenReport {
+        reports += 1
+        return result
+    }
+}
+
 /// Scripted stand-in for the FullStack Studio API.
 private final class FakeAccountService: AccountServicing, @unchecked Sendable {
     let store: AccountStore
@@ -72,6 +86,8 @@ final class AppModelTests: XCTestCase {
     private var preferences: InMemoryPreferencesStore!
     private var recentsDefaults: UserDefaults!
     private var micRequests = 0
+    private var notificationRequests = 0
+    private var pushTokens: FakePushTokens!
 
     override func setUp() async throws {
         store = AccountStore(secrets: InMemorySecretStore())
@@ -80,6 +96,8 @@ final class AppModelTests: XCTestCase {
         preferences = InMemoryPreferencesStore()
         recentsDefaults = UserDefaults(suiteName: "fsvoip.uitests.\(UUID().uuidString)")
         micRequests = 0
+        notificationRequests = 0
+        pushTokens = FakePushTokens()
     }
 
     private func makeModel() -> FSVoipAppModel {
@@ -92,7 +110,9 @@ final class AppModelTests: XCTestCase {
             preferences: preferences,
             recentsStore: RecentCallsStore(defaults: recentsDefaults),
             device: { DeviceDescriptor(model: "iPhone17,1", osVersion: "26.0", appVersion: "0.1.0 (1)", installId: "a1b2c3d4e5f60718") },
-            requestMicrophone: { [unowned self] in micRequests += 1; return true }
+            requestMicrophone: { [unowned self] in micRequests += 1; return true },
+            pushTokens: pushTokens,
+            requestNotifications: { [unowned self] in notificationRequests += 1 }
         )
     }
 
@@ -157,6 +177,8 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.phone.registrationState(for: "acc-1"), .registering, "the account goes to the SIP engine right away")
         XCTAssertEqual(service.sentDevices.first?.installId, "a1b2c3d4e5f60718")
         XCTAssertEqual(micRequests, 1)
+        XCTAssertEqual(pushTokens.reports, 1, "the new account gets this phone's push tokens at once")
+        XCTAssertEqual(notificationRequests, 1, "notification permission is asked only once there is an account")
 
         model.closePairing()
         XCTAssertEqual(model.pairing, .idle)
@@ -211,6 +233,53 @@ final class AppModelTests: XCTestCase {
         XCTAssertNil(preferences.preferences(for: "gone").showCalledAccount, "settings of a revoked account are removed")
         XCTAssertEqual(model.name(forNumber: "103"), "Werkplaats")
         XCTAssertTrue(model.notice?.isError ?? false)
+    }
+
+    // MARK: Push notices
+
+    func testUnpairedNoticeRemovesTheAccount() throws {
+        try store.save(account("keep"))
+        try store.save(account("3f0c2b1e-8a4d-4d6f-9b7a-1c2d3e4f5a6b", label: "Voorbeeld Bouw · Jan de Vries"))
+        let model = makeModel()
+
+        // As APNs delivers `shared/fixtures/apns-alert-body.json`.
+        var url = URL(fileURLWithPath: #filePath)
+        for _ in 0 ..< 6 { url.deleteLastPathComponent() }
+        let data = try Data(contentsOf: url.appendingPathComponent("shared/fixtures/apns-alert-body.json"))
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+        model.handleNotification(payload: payload)
+
+        XCTAssertEqual(model.accounts.map(\.id), ["keep"])
+        XCTAssertEqual(try store.accounts().map(\.id), ["keep"])
+        XCTAssertTrue(model.notice?.isError ?? false)
+
+        // A second delivery of the same notice changes nothing.
+        model.notice = nil
+        model.handleNotification(payload: payload)
+        XCTAssertNil(model.notice)
+    }
+
+    func testUnreadableOrRingNoticesAreIgnored() throws {
+        try store.save(account("keep"))
+        let model = makeModel()
+
+        model.handleNotification(payload: ["aps": ["alert": "x"]])
+        model.handleNotification(payload: ["fsvoip": ["v": 1, "type": "ring"]])
+
+        XCTAssertEqual(model.accounts.map(\.id), ["keep"])
+        XCTAssertNil(model.notice)
+    }
+
+    func testARevokedAnswerToThePushTokenRefreshesTheAccounts() async throws {
+        try store.save(account("gone"))
+        service.refreshRevokes = ["gone"]
+        pushTokens.result = PushTokenReport(revoked: ["gone"])
+        let model = makeModel()
+
+        await model.reportPushTokens()
+
+        XCTAssertTrue(model.accounts.isEmpty, "GET /me removed the revoked account")
     }
 
     func testUnpairOfflineOffersForgetting() async throws {

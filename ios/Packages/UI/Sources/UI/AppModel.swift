@@ -65,6 +65,8 @@ public final class FSVoipAppModel: ObservableObject {
     private let recentsStore: RecentCallsStore
     private let device: () -> DeviceDescriptor
     private let requestMicrophone: () async -> Bool
+    private let pushTokens: PushTokenReporting?
+    private let requestNotifications: () async -> Void
     private let logger: FSLogger
     private var phoneChanges: AnyCancellable?
 
@@ -76,6 +78,8 @@ public final class FSVoipAppModel: ObservableObject {
         recentsStore: RecentCallsStore,
         device: @escaping () -> DeviceDescriptor,
         requestMicrophone: @escaping () async -> Bool = { await MicrophonePermission.request() },
+        pushTokens: PushTokenReporting? = nil,
+        requestNotifications: @escaping () async -> Void = {},
         logger: FSLogger = FSLogger(category: "app")
     ) {
         self.phone = phone
@@ -85,6 +89,8 @@ public final class FSVoipAppModel: ObservableObject {
         self.recentsStore = recentsStore
         self.device = device
         self.requestMicrophone = requestMicrophone
+        self.pushTokens = pushTokens
+        self.requestNotifications = requestNotifications
         self.logger = logger
 
         phone.anonymousCallerText = L10n.string("call.anonymous")
@@ -259,11 +265,73 @@ public final class FSVoipAppModel: ObservableObject {
 
     public func didBecomeActive() {
         phone.enterForeground()
-        Task { await refreshAccounts() }
+        Task {
+            await refreshAccounts()
+            await reportPushTokens()
+        }
     }
 
     public func didEnterBackground() {
         phone.enterBackground()
+    }
+
+    // MARK: Push
+
+    /// A push token changed (or arrived for the first time in this launch): tell the server, per account.
+    public func pushTokensChanged() {
+        Task { await reportPushTokens() }
+    }
+
+    public func reportPushTokens() async {
+        guard let pushTokens else {
+            return
+        }
+
+        let report = await pushTokens.report()
+
+        // A 401 means the pairing is gone on the server: `GET /me` removes the account here.
+        if !report.revoked.isEmpty {
+            await refreshAccounts()
+        }
+    }
+
+    /// A regular (alert) push: "unpaired" removes the account, "refresh" re-reads the account. VoIP pushes (calls) go
+    /// to `phone.handleVoipPush`, never here.
+    public func handleNotification(payload: [AnyHashable: Any]) {
+        let message: PushMessage
+
+        do {
+            message = try PushMessage.decode(apnsDictionary: payload)
+        } catch {
+            logger.notice("Notification without a readable payload: \(error)")
+            return
+        }
+
+        switch message {
+        case let .revoked(revoked):
+            removeRevoked(accountId: revoked.accountId)
+        case .refresh:
+            Task { await refreshAccounts() }
+        case .ring:
+            logger.notice("A ring message arrived as a regular notification: ignored")
+        }
+    }
+
+    /// The server says this pairing was removed (portal, admin, or another phone took over the extension).
+    public func removeRevoked(accountId: String) {
+        guard let account = account(id: accountId) else {
+            return
+        }
+
+        do {
+            try service.forget(account)
+        } catch {
+            logger.error("Revoked account could not be removed: \(error)")
+        }
+
+        cleanUp(accountId: accountId)
+        reloadAccounts()
+        notice = Notice(message: String(format: L10n.string("notice.revoked"), account.displayLabel), isError: true)
     }
 
     // MARK: Pairing links
@@ -317,8 +385,12 @@ public final class FSVoipAppModel: ObservableObject {
             let account = try await service.pair(link, device: device())
             reloadAccounts()
             pairing = .paired(account)
+            // The new account needs this phone's push tokens before it can ring with the app closed.
+            await reportPushTokens()
             // Calls need the microphone; ask now, not in the middle of the first call.
             _ = await requestMicrophone()
+            // Notifications are only used to tell that a phone was unpaired: ask once there is an account.
+            await requestNotifications()
         } catch {
             let failure = PairingFailure(error)
             logger.notice("Pairing failed: \(failure)")

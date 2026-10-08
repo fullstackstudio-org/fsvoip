@@ -39,11 +39,20 @@ public protocol SipEngine: AnyObject {
     func register(_ account: SipAccountConfig) throws
     func unregister(_ account: SipAccountID)
     func registrationState(of account: SipAccountID) -> RegistrationState
+    /// Keep the account but stop (`false`: un-REGISTER, `Expires: 0`) or resume (`true`) its registration. Used in the
+    /// background: without a call the app does not stay registered, the PBX push gate wakes it (plan D1/D4). May be
+    /// called before `register`: the account is then added with the registration in this state.
+    func setRegistrationEnabled(_ enabled: Bool, for account: SipAccountID)
+    /// Send a fresh REGISTER for this account now, on a new connection if the old one may be stale (the app was
+    /// suspended). The PBX push gate waits for exactly this after a push (a new Call-ID or a full `Expires`).
+    func refreshRegistration(of account: SipAccountID)
 
     // Calls
     func call(number: String, from account: SipAccountID) throws -> CallID
     func answer(_ call: CallID) throws
-    func decline(_ call: CallID) throws
+    /// Reject an incoming call that was not answered: `.declined` = 603 Decline (the user said no), `.busy` = 486 Busy
+    /// Here (the app already has a call, or the call it belonged to is over).
+    func decline(_ call: CallID, reason: DeclineReason) throws
     func hangup(_ call: CallID) throws
     func setHold(_ call: CallID, onHold: Bool) throws
     /// Microphone mute (applies to the active call).
@@ -51,4 +60,11 @@ public protocol SipEngine: AnyObject {
     func sendDTMF(_ digit: DTMFDigit, on call: CallID) throws
     func transfer(_ call: CallID, to number: String) throws
     func calls() -> [CallInfo]
+}
+
+extension SipEngine {
+    /// Decline with 603 (the user said no).
+    public func decline(_ call: CallID) throws {
+        try decline(call, reason: .declined)
+    }
 }

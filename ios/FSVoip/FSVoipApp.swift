@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import SwiftUI
 import UI
+import UIKit
 
 @main
 struct FSVoipApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var holder = ModelHolder()
     @Environment(\.scenePhase) private var scenePhase
 
@@ -24,7 +26,10 @@ struct FSVoipApp: App {
             case .active:
                 holder.model.didBecomeActive()
             case .background:
-                holder.model.didEnterBackground()
+                // Un-registering takes a round trip; ask iOS for a few seconds before it suspends the app.
+                BackgroundWork.run(seconds: 5) {
+                    holder.model.didEnterBackground()
+                }
             default:
                 break
             }
@@ -32,12 +37,35 @@ struct FSVoipApp: App {
     }
 }
 
-/// Keeps the services alive for the lifetime of the app (one SIP engine, one CallKit provider).
+/// Keeps the services alive for the lifetime of the app (one SIP engine, one CallKit provider). The services are
+/// created by the app delegate at launch; this only hands the model to SwiftUI.
 @MainActor
 private final class ModelHolder: ObservableObject {
-    let services = AppServices()
+    var model: UI.FSVoipAppModel {
+        AppServices.shared.model
+    }
+}
 
-    var model: FSVoipAppModel {
-        services.model
+/// Runs `body` and keeps the app awake for up to `seconds` afterwards (a background task), so network work it started
+/// can finish.
+@MainActor
+enum BackgroundWork {
+    static func run(seconds: TimeInterval, _ body: () -> Void) {
+        let application = UIApplication.shared
+        var identifier = UIBackgroundTaskIdentifier.invalid
+
+        identifier = application.beginBackgroundTask(withName: "fsvoip.background") {
+            application.endBackgroundTask(identifier)
+            identifier = .invalid
+        }
+
+        body()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) {
+            if identifier != .invalid {
+                application.endBackgroundTask(identifier)
+                identifier = .invalid
+            }
+        }
     }
 }

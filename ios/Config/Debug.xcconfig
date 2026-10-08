@@ -1,2 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+
+// Push tokens of a development-signed build belong to the APNs sandbox. (Set before the include, so Local.xcconfig,
+// which Shared.xcconfig includes, can override it.)
+FSVOIP_PUSH_ENV = sandbox
+
 #include "Shared.xcconfig"

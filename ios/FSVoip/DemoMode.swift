@@ -2,7 +2,7 @@
 //
 // DEBUG builds only: a demo of the app without a phone system, for the simulator, screenshots and UI checks.
 // Start with the launch argument `-FSVoipDemo YES` (two paired example extensions) or `-FSVoipDemo onboarding`
-// (nothing paired yet). `-FSVoipDemoScreen <dialer|recents|settings|account|incall|incoming|pairing|failed|scanner>`
+// (nothing paired yet). `-FSVoipDemoScreen <dialer|recents|settings|account|incall|incoming|push|pairing|failed|scanner>`
 // opens a screen directly. Nothing here talks to a server or a PBX, and nothing is written to the Keychain.
 
 #if DEBUG
@@ -81,6 +81,23 @@ enum DemoMode {
         case "incoming":
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                 engine.simulateIncoming(from: "0701234567", name: "Bakkerij Smit", account: exampleAccounts[1].id)
+            }
+        case "push":
+            // The background path: a VoIP push reports the call first, the INVITE (with X-FSS-Call) follows.
+            let callRef = UUID().uuidString.lowercased()
+            let ring = RingPush(
+                callRef: callRef,
+                from: PushCaller(number: "+31701234567", name: "Bakkerij Smit"),
+                accountId: exampleAccounts[1].id,
+                accountLabel: exampleAccounts[1].displayLabel,
+                expiresAt: Date().addingTimeInterval(12)
+            )
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                model.phone.handleVoipPush(.ring(ring))
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                engine.simulateIncoming(from: "0701234567", name: nil, account: exampleAccounts[1].id, fssCallRef: callRef)
             }
         default:
             break
@@ -200,6 +217,9 @@ final class DemoSipEngine: SipEngine {
         registered[account] == nil ? .unregistered : .registered
     }
 
+    func setRegistrationEnabled(_ enabled: Bool, for account: SipAccountID) {}
+    func refreshRegistration(of account: SipAccountID) {}
+
     func call(number: String, from account: SipAccountID) throws -> CallID {
         let id = CallID()
         live[id] = CallInfo(id: id, direction: .outgoing, accountId: account, remoteNumber: number, remoteName: nil, state: .outgoingInitiated)
@@ -209,10 +229,10 @@ final class DemoSipEngine: SipEngine {
         return id
     }
 
-    func simulateIncoming(from number: String, name: String?, account: String) {
+    func simulateIncoming(from number: String, name: String?, account: String, fssCallRef: String? = nil) {
         let id = CallID()
-        live[id] = CallInfo(id: id, direction: .incoming, accountId: SipAccountID(account), remoteNumber: number, remoteName: name, state: .incomingRinging)
-        delegate?.sipEngine(self, didReceiveIncomingCall: IncomingCall(id: id, from: number, displayName: name, accountId: SipAccountID(account), fssCallRef: nil))
+        live[id] = CallInfo(id: id, direction: .incoming, accountId: SipAccountID(account), remoteNumber: number, remoteName: name, state: .incomingRinging, fssCallRef: fssCallRef)
+        delegate?.sipEngine(self, didReceiveIncomingCall: IncomingCall(id: id, from: number, displayName: name, accountId: SipAccountID(account), fssCallRef: fssCallRef))
     }
 
     func answer(_ call: CallID) throws {
@@ -220,7 +240,7 @@ final class DemoSipEngine: SipEngine {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.change(call, .active) }
     }
 
-    func decline(_ call: CallID) throws {
+    func decline(_ call: CallID, reason: DeclineReason) throws {
         change(call, .ended(.declined))
     }
 

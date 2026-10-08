@@ -7,6 +7,8 @@
 //                             → engine state changes → system.reportOutgoing… / reportCallEnded
 // Flow of an incoming call:   engine.didReceiveIncomingCall → system.reportIncomingCall
 //                             → performAnswerCall → engine.answer → audio starts in audioSessionActivated(true)
+// With the app closed:        PushKit → handleVoipPush (reports at once) → wake the account → INVITE with
+//                             X-FSS-Call joins the reported call (PhoneController+Push.swift)
 // Every user action (also from our own in-call screen) goes through a system transaction, so CallKit and the app
 // never disagree about a call.
 
@@ -20,7 +22,7 @@ public final class PhoneController: ObservableObject {
     /// Registration state per account id.
     @Published public private(set) var registrations: [String: RegistrationState] = [:]
     /// Calls that are not ended, oldest first (the MVP has at most one).
-    @Published public private(set) var sessions: [CallSession] = []
+    @Published public internal(set) var sessions: [CallSession] = []
     /// The call that just ended (kept for `endedLinger` so the in-call screen can say so), or `nil`.
     @Published public private(set) var lastEnded: CallSession?
     @Published public private(set) var isSpeakerOn = false
@@ -33,17 +35,30 @@ public final class PhoneController: ObservableObject {
     /// Text for an anonymous caller (localised by the app).
     public var anonymousCallerText = "Onbekend"
 
-    private let engine: SipEngine
-    private let system: CallSystem
+    let engine: SipEngine
+    let system: CallSystem
     private let audioRouting: AudioRouting
-    private let preferences: PreferencesStore
-    private let logger: FSLogger
+    let preferences: PreferencesStore
+    let logger: FSLogger
     private let endedLinger: TimeInterval
-    private let now: () -> Date
+    let now: () -> Date
+    let pushPolicy: IncomingPushPolicy
+    let schedule: CallScheduler
 
-    private var accounts: [String: StoredAccount] = [:]
+    var accounts: [String: StoredAccount] = [:]
     private var registeredConfigs: [String: SipAccountConfig] = [:]
     private var bridge: EngineBridge?
+
+    /// The app is in the background (or was launched there by a push).
+    public private(set) var isInBackground = false
+    /// In the background without a call the accounts are not registered: the PBX push gate wakes the app (D1/D4).
+    public private(set) var registrationsSuspended = false
+    /// Accounts woken by a push while the others stay suspended.
+    var awakeAccounts: Set<String> = []
+    /// Cancels the "no INVITE came" timer of a call reported from a push.
+    var inviteTimers: [UUID: @MainActor () -> Void] = [:]
+    /// Calls (by `callRef`) that already ended here, and how a late INVITE for them is rejected.
+    var closedCallRefs: [String: (at: Date, reject: DeclineReason)] = [:]
 
     public init(
         engine: SipEngine,
@@ -52,7 +67,9 @@ public final class PhoneController: ObservableObject {
         preferences: PreferencesStore,
         logger: FSLogger = FSLogger(category: "phone"),
         endedLinger: TimeInterval = 1.5,
-        now: @escaping () -> Date = Date.init
+        now: @escaping () -> Date = Date.init,
+        pushPolicy: IncomingPushPolicy = IncomingPushPolicy(),
+        schedule: @escaping CallScheduler = CallSchedulers.live
     ) {
         self.engine = engine
         self.system = system
@@ -61,6 +78,8 @@ public final class PhoneController: ObservableObject {
         self.logger = logger
         self.endedLinger = endedLinger
         self.now = now
+        self.pushPolicy = pushPolicy
+        self.schedule = schedule
 
         let bridge = EngineBridge()
         self.bridge = bridge
@@ -84,13 +103,58 @@ public final class PhoneController: ObservableObject {
         }
     }
 
+    /// The app went to the background (or was launched there by a push). Without a call the accounts un-register:
+    /// staying registered in the background drains the battery and leaves a dead contact on the PBX once iOS
+    /// suspends the app; the push gate wakes the app for a call instead.
     public func enterBackground() {
+        isInBackground = true
+
+        if sessions.isEmpty {
+            suspendRegistrations()
+        }
+
         engine.enterBackground()
     }
 
     public func enterForeground() {
+        isInBackground = false
+        resumeRegistrations()
         engine.enterForeground()
         engine.refreshRegistrations()
+    }
+
+    func suspendRegistrations() {
+        // Already suspended: only the accounts a push woke are still registered.
+        let toStop = registrationsSuspended ? awakeAccounts : Set(registeredConfigs.keys)
+        registrationsSuspended = true
+        awakeAccounts = []
+
+        for id in toStop {
+            engine.setRegistrationEnabled(false, for: SipAccountID(id))
+        }
+    }
+
+    func resumeRegistrations() {
+        guard registrationsSuspended else {
+            return
+        }
+
+        registrationsSuspended = false
+        awakeAccounts = []
+
+        for id in registeredConfigs.keys {
+            engine.setRegistrationEnabled(true, for: SipAccountID(id))
+        }
+    }
+
+    /// Register this account now, also when the others stay suspended (a push for it arrived).
+    func wakeRegistration(of accountId: String) {
+        if registrationsSuspended {
+            awakeAccounts.insert(accountId)
+            engine.setRegistrationEnabled(true, for: SipAccountID(accountId))
+        }
+
+        engine.refreshRegistration(of: SipAccountID(accountId))
     }
 
     public func refreshRegistrations() {
@@ -121,6 +185,11 @@ public final class PhoneController: ObservableObject {
 
             guard registeredConfigs[account.id] != config else {
                 continue
+            }
+
+            if registrationsSuspended, !awakeAccounts.contains(account.id) {
+                // Added in the background (e.g. the app was launched by a push): keep it quiet until a push wakes it.
+                engine.setRegistrationEnabled(false, for: config.id)
             }
 
             do {
@@ -242,14 +311,27 @@ public final class PhoneController: ObservableObject {
             return
         }
 
+        // The call a push announced: join the INVITE to the call that is already on the screen.
+        if attachInvite(call) {
+            return
+        }
+
+        // The push for this call was handled and the call already ended here (declined, timed out): reject it.
+        if let ref = call.fssCallRef, let closed = closedCallRefs[ref] {
+            logger.notice("INVITE for an ended call \(ref): rejected")
+            try? engine.decline(call.id, reason: closed.reject)
+            return
+        }
+
         // One call at a time in this version: a second caller hears busy.
         guard sessions.isEmpty else {
-            try? engine.decline(call.id)
+            try? engine.decline(call.id, reason: .busy)
             onCallFinished?(RecentCall(number: call.from ?? "", name: call.displayName, accountId: account.id, accountLabel: account.displayLabel, direction: .incoming, outcome: .missed, startedAt: now(), duration: 0))
             return
         }
 
-        let uuid = UUID()
+        // Keyed on the callRef, so a push that arrives after its INVITE maps onto this same call.
+        let uuid = IncomingPushPolicy.callUUID(for: call.fssCallRef) ?? UUID()
         let name = call.from.flatMap(lookupName) ?? call.displayName
         let session = CallSession(
             id: uuid,
@@ -262,7 +344,9 @@ public final class PhoneController: ObservableObject {
             phase: .incoming,
             createdAt: now()
         )
-        sessions.append(session)
+        var tracked = session
+        tracked.fssCallRef = call.fssCallRef
+        sessions.append(tracked)
 
         let display = CallDisplay.callerText(
             callerName: name,
@@ -315,11 +399,11 @@ public final class PhoneController: ObservableObject {
 
     // MARK: Helpers
 
-    private func session(_ uuid: UUID) -> CallSession? {
+    func session(_ uuid: UUID) -> CallSession? {
         sessions.first { $0.id == uuid }
     }
 
-    private func update(_ uuid: UUID, _ change: (inout CallSession) -> Void) {
+    func update(_ uuid: UUID, _ change: (inout CallSession) -> Void) {
         guard let index = sessions.firstIndex(where: { $0.id == uuid }) else {
             return
         }
@@ -327,17 +411,23 @@ public final class PhoneController: ObservableObject {
         change(&sessions[index])
     }
 
-    private func markEndedByUser(_ uuid: UUID) {
+    func markEndedByUser(_ uuid: UUID) {
         update(uuid) { $0.endedByUser = true }
     }
 
-    private func finish(_ uuid: UUID, reason: CallEndReason, tellSystem: Bool) {
+    func finish(_ uuid: UUID, reason: CallEndReason, tellSystem: Bool) {
         guard var session = session(uuid) else {
             return
         }
 
         session.phase = .ended(reason)
         sessions.removeAll { $0.id == uuid }
+        inviteTimers.removeValue(forKey: uuid)?()
+
+        if let ref = session.fssCallRef {
+            // A late INVITE (or a repeated push) for this call must not ring again.
+            rememberClosed(ref, reject: reason == .declined ? .declined : .busy)
+        }
 
         if tellSystem, !session.endedByUser {
             system.reportCallEnded(uuid: uuid, reason: Self.systemReason(reason))
@@ -349,6 +439,11 @@ public final class PhoneController: ObservableObject {
 
             if isSpeakerOn {
                 setSpeaker(false)
+            }
+
+            // The call kept the app registered in the background; now the push gate takes over again.
+            if isInBackground {
+                suspendRegistrations()
             }
         }
 
@@ -451,8 +546,24 @@ extension PhoneController: CallSystemActionHandler {
     }
 
     public func performAnswerCall(uuid: UUID) -> Bool {
-        guard let session = session(uuid), let engineID = session.engineCallID else {
+        guard let session = session(uuid) else {
             return false
+        }
+
+        guard let engineID = session.engineCallID else {
+            // Answered on the lock screen before the INVITE arrived (the usual case after a push): fulfil the action
+            // so CallKit activates the audio session, and answer the INVITE as soon as it comes.
+            guard session.awaitingInvite else {
+                return false
+            }
+
+            engine.audio.configure()
+            update(uuid) {
+                $0.answerPending = true
+                $0.phase = .connecting
+            }
+
+            return true
         }
 
         engine.audio.configure()
@@ -476,7 +587,9 @@ extension PhoneController: CallSystemActionHandler {
         markEndedByUser(uuid)
 
         guard let engineID = session.engineCallID else {
-            finish(uuid, reason: .localHangup, tellSystem: false)
+            // Declined (or hung up after answering) before the INVITE arrived: the late INVITE gets a 603.
+            let declined = session.direction == .incoming && !session.answerPending
+            finish(uuid, reason: declined ? .declined : .localHangup, tellSystem: false)
             return true
         }
 

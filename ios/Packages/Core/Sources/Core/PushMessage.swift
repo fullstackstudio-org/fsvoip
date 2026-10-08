@@ -49,10 +49,19 @@ public struct RingPush: Codable, Equatable, Sendable {
 public struct RevokedPush: Codable, Equatable, Sendable {
     public var accountId: String
     public var accountLabel: String
+
+    public init(accountId: String, accountLabel: String) {
+        self.accountId = accountId
+        self.accountLabel = accountLabel
+    }
 }
 
 public struct RefreshPush: Codable, Equatable, Sendable {
     public var accountId: String
+
+    public init(accountId: String) {
+        self.accountId = accountId
+    }
 }
 
 public enum PushMessage: Equatable, Sendable {
@@ -125,5 +134,12 @@ extension PushMessage {
         }
 
         return try FSVoipJSON.decoder().decode(PushMessage.self, from: data)
+    }
+}
+
+/// Hex form of an APNs / PushKit token, as the API expects it (`PUT /push-token`).
+public enum PushTokenEncoding {
+    public static func hex(_ data: Data) -> String {
+        data.map { String(format: "%02x", $0) }.joined()
     }
 }

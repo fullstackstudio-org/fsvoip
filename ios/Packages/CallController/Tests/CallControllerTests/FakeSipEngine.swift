@@ -40,6 +40,15 @@ final class FakeSipEngine: SipEngine {
 
     func registrationState(of account: SipAccountID) -> RegistrationState { .unregistered }
 
+    /// Accounts whose registration is switched off.
+    var disabled: Set<SipAccountID> = []
+    func setRegistrationEnabled(_ enabled: Bool, for account: SipAccountID) {
+        if enabled { disabled.remove(account) } else { disabled.insert(account) }
+        log.append("\(enabled ? "enable" : "disable") \(account)")
+    }
+
+    func refreshRegistration(of account: SipAccountID) { log.append("refresh \(account)") }
+
     func call(number: String, from account: SipAccountID) throws -> CallID {
         if failNextCall {
             failNextCall = false
@@ -51,7 +60,7 @@ final class FakeSipEngine: SipEngine {
     }
 
     func answer(_ call: CallID) throws { log.append("answer \(call)") }
-    func decline(_ call: CallID) throws { log.append("decline \(call)") }
+    func decline(_ call: CallID, reason: DeclineReason) throws { log.append(reason == .busy ? "busy \(call)" : "decline \(call)") }
     func hangup(_ call: CallID) throws { log.append("hangup \(call)") }
     func setHold(_ call: CallID, onHold: Bool) throws { log.append("hold \(onHold)") }
     func setMuted(_ muted: Bool) { self.muted = muted }
@@ -65,8 +74,8 @@ final class FakeSipEngine: SipEngine {
         delegate?.sipEngine(self, registrationChanged: state, for: SipAccountID(account))
     }
 
-    func emitIncoming(id: String, from: String?, name: String?, account: String) {
-        delegate?.sipEngine(self, didReceiveIncomingCall: IncomingCall(id: CallID(id), from: from, displayName: name, accountId: SipAccountID(account), fssCallRef: nil))
+    func emitIncoming(id: String, from: String?, name: String?, account: String, callRef: String? = nil) {
+        delegate?.sipEngine(self, didReceiveIncomingCall: IncomingCall(id: CallID(id), from: from, displayName: name, accountId: SipAccountID(account), fssCallRef: callRef))
     }
 
     func emitState(_ state: CallState, id: String, direction: CallDirection, account: String) {

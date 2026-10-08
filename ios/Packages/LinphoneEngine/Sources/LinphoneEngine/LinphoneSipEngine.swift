@@ -41,6 +41,11 @@ public final class LinphoneSipEngine: SipEngine {
     private var localEndReasons: [CallID: CallEndReason] = [:]
     private var answered: Set<CallID> = []
     private var callAccounts: [CallID: SipAccountID] = [:]
+    /// Accounts whose registration is switched off (the app is in the background without a call).
+    private var registrationDisabled: Set<SipAccountID> = []
+    /// The app was (or is) in the background: iOS may have suspended it, so the SIP connections can be dead without
+    /// the stack knowing (NAT state gone, no FIN/RST). A fresh registration then has to start on a new connection.
+    private var connectionsMayBeStale = false
 
     /// - Parameter installId: identity of this installation; the User-Agent becomes `FSVoip/<version> (<installId>)`
     ///   so the PBX (and the portal) can recognise the app (plan D4).
@@ -102,6 +107,8 @@ public final class LinphoneSipEngine: SipEngine {
         coreDelegate = nil
         accounts = [:]
         accountConfigs = [:]
+        registrationDisabled = []
+        connectionsMayBeStale = false
         callsByID = [:]
         idsByCall = [:]
         localEndReasons = [:]
@@ -110,15 +117,33 @@ public final class LinphoneSipEngine: SipEngine {
     }
 
     public func enterBackground() {
+        connectionsMayBeStale = true
         core?.enterBackground()
     }
 
     public func enterForeground() {
-        core?.enterForeground()
+        guard let core else {
+            return
+        }
+
+        core.enterForeground()
+        reconnectIfStale(core)
     }
 
     public func refreshRegistrations() {
         core?.refreshRegisters()
+    }
+
+    /// Close every SIP connection and open new ones (liblinphone re-registers the enabled accounts on its own). Only
+    /// when nothing is in a call: that would drop the call.
+    private func reconnectIfStale(_ core: Core) {
+        guard connectionsMayBeStale, core.callsNb == 0 else {
+            return
+        }
+
+        connectionsMayBeStale = false
+        core.networkReachable = false
+        core.networkReachable = true
     }
 
     // MARK: Accounts
@@ -137,7 +162,7 @@ public final class LinphoneSipEngine: SipEngine {
             try params.setServeraddress(newValue: try factory.createAddress(addr: "sip:\(config.domain)"))
             try params.setRoutesaddresses(newValue: [try factory.createAddress(addr: config.route)])
             params.transport = Self.transport(config.transport)
-            params.registerEnabled = true
+            params.registerEnabled = !registrationDisabled.contains(config.id)
             params.expires = config.expiresSeconds
             params.publishEnabled = false
             // The marker the PBX push gate looks for in the stored contact (`;fss-dev=<installId>`).
@@ -177,6 +202,31 @@ public final class LinphoneSipEngine: SipEngine {
         core.removeAccount(account: account)
         accounts[id] = nil
         accountConfigs[id] = nil
+    }
+
+    public func setRegistrationEnabled(_ enabled: Bool, for id: SipAccountID) {
+        if enabled {
+            registrationDisabled.remove(id)
+        } else {
+            registrationDisabled.insert(id)
+        }
+
+        guard let account = accounts[id], let current = account.params, current.registerEnabled != enabled, let params = current.clone() else {
+            return
+        }
+
+        // Switching it off sends a REGISTER with `Expires: 0`; switching it on registers again.
+        params.registerEnabled = enabled
+        account.params = params
+    }
+
+    public func refreshRegistration(of id: SipAccountID) {
+        guard let core, let account = accounts[id] else {
+            return
+        }
+
+        reconnectIfStale(core)
+        account.refreshRegister()
     }
 
     public func registrationState(of id: SipAccountID) -> OurRegistrationState {
@@ -233,12 +283,13 @@ public final class LinphoneSipEngine: SipEngine {
         }
     }
 
-    public func decline(_ id: CallID) throws {
+    public func decline(_ id: CallID, reason: DeclineReason) throws {
         let call = try requireCall(id)
         localEndReasons[id] = .declined
 
         do {
-            try call.decline(reason: .Declined)
+            // 603 Decline or 486 Busy Here.
+            try call.decline(reason: reason == .busy ? .Busy : .Declined)
         } catch {
             throw SipEngineError.engine("\(error)")
         }

@@ -11,9 +11,9 @@ the app, also when it is closed. iOS first (Swift, SwiftUI, CallKit, PushKit); A
 - The server side of the FullStack Studio platform is closed source. The app only talks to it through the public API in
   [`shared/openapi.yaml`](shared/openapi.yaml).
 
-> Status: iOS MVP (Task 5). Pairing (QR camera, universal link, `fsvoip://`), several accounts, registration over TLS,
-> outgoing calls and incoming calls **while the app is open**, in-call controls and per-account settings work. Incoming
-> calls with the app closed (PushKit + the PBX push gate) follow in Task 6, contacts in Task 7.
+> Status: iOS, Task 6. Pairing (QR camera, universal link, `fsvoip://`), several accounts, registration over TLS,
+> outgoing and incoming calls, in-call controls and per-account settings work, and incoming calls also ring **with the
+> app in the background or closed** (PushKit + CallKit + the PBX push gate). Contacts follow in Task 7.
 
 ## Repository layout
 
@@ -134,7 +134,84 @@ on a FullStack Studio phone system that the portal can pair ("FSVoip koppelen", 
    the portal (the app removes the account at the next refresh).
 6. Logs: Console.app on the Mac, filter on subsystem `nl.fullstackstudio.fsvoip` (secrets are redacted).
 
-Not covered yet (Task 6): calls while the app is in the background or closed.
+For calls with the app in the background or closed, see the device test protocol below.
+
+## Incoming calls with the app closed
+
+```
+caller ─► PBX push gate (FssApi ≥ 1.8.0) ─► FSS /push/ring ─► APNs VoIP push ─► FSVoip (PushKit callback)
+            │ waits ≤ 6 s for a FRESH registration                               1. CallKit call reported at once
+            │ whose contact holds ;fss-dev=<installId>                           2. REGISTER (Expires 120, fss-dev)
+            └──────────── INVITE with X-FSS-Call: <callRef> ◄──────────────────  3. INVITE joins the reported call
+```
+
+- **Push payload** (`shared/push-payload.schema.json`): `fsvoip: { v, type: "ring", callRef, from, accountId,
+  accountLabel, expiresAt }`, `apns-push-type: voip`, topic `nl.fullstackstudio.fsvoip.voip`.
+- **Every VoIP push is reported to CallKit inside the PushKit callback** (Apple's rule; iOS stops delivering VoIP pushes
+  to an app that does not). A push the app cannot use is still reported and ended at once: unreadable, expired
+  (`expiresAt` + 5 s clock tolerance), for an account that is no longer on the phone, or while another call is going on
+  (its INVITE then gets 486).
+- **CallKit UUID = the callRef** (the FreeSWITCH call UUID), so the push and the INVITE meet on the same call whichever
+  arrives first. An INVITE without `X-FSS-Call` joins a waiting call of the same account and caller.
+- **Call screen text** (plan D10): `<caller>`, or `<caller> → <account>` when "Toon welk toestel gebeld wordt" is on (on by
+  default with several accounts). The caller name comes from the phone's own contacts first, then the push.
+- **Waiting for the INVITE**: up to 10 s (never long past `expiresAt`). Nothing came (the caller hung up first, the gate
+  gave up): the call ends as missed. Answered on the lock screen before the INVITE arrived: CallKit's answer is accepted
+  straight away and the INVITE is answered the moment it comes; the audio only starts in `provider(_:didActivate:)`.
+  Declined before the INVITE arrived: the late INVITE gets 603.
+- **Background registration**: in the background without a call the app un-registers (no battery drain, no dead contact
+  on the PBX) and relies on push. A push wakes only the pushed account, on a new connection (the old one died while iOS
+  suspended the app). After the call it goes quiet again; in the foreground all accounts register.
+- **Push tokens**: the PushKit token and the regular APNs token go to FSS with `PUT /push-token` for every account, at
+  every launch and whenever a token changes (`pushEnv` = `sandbox` for Debug builds, `production` for Release /
+  TestFlight / App Store, set by `FSVOIP_PUSH_ENV` in `ios/Config/*.xcconfig`). Before PushKit answered nothing is sent.
+- **"Unpaired" notice**: a regular alert push (never a VoIP push) to the APNs token; the app removes the account at once
+  (also in the background, via `remote-notification`). Notification permission is asked after the first pairing; the
+  account is removed without it too (and otherwise at the next `GET /me` with 401).
+
+Simulator: PushKit delivers nothing there. The push logic is unit tested with the fixtures (`CallControllerTests`), the
+demo mode shows the flow (`-FSVoipDemo YES -FSVoipDemoScreen push`), and the "unpaired" notice can be sent to a simulator
+that runs a real (non-demo) build with a paired account:
+
+```sh
+xcrun simctl push booted nl.fullstackstudio.fsvoip shared/fixtures/apns-alert-body.json
+```
+
+## Device test protocol: incoming calls with the app closed (Task 6)
+
+Before you start: FSS has the APNs key in the vault (`voip-app-push`), the PBX runs FssApi ≥ 1.8.0 with the push gate on
+both nodes, and the extension's push gate is set. Install with Xcode (Debug = sandbox push; a TestFlight build =
+production push). Pair the extension with the app and open it once: the device's push status in the admin (App-koppelingen)
+or `GET /me` (`push.registered`) must show a token (the app reports it at launch).
+
+Use a second phone (any mobile) as the caller. For every step note the time from dialling to the call screen (target
+≤ 8 s) and what the PBX sees (`sofia status profile internal reg` shows `fss-dev=<installId>` while the call rings).
+
+1. **App in the background, phone unlocked**: open FSVoip, go to the home screen, wait 30 s. Call the extension. The
+   CallKit screen shows `<caller>` (or `<caller> → <account>` with the setting on). Answer: audio both ways. Hang up
+   from either side.
+2. **Locked screen**: lock the phone, wait 2 minutes (iOS suspends the app, the registration expires). Call. The full
+   screen call UI appears; answer with the slider before the screen is fully up: the call connects and audio starts.
+3. **App killed**: swipe FSVoip away in the app switcher. Call. The call screen must still appear (iOS launches the app
+   in the background for the push). Answer: audio both ways.
+4. **Decline**: call, press decline on the call screen. The caller hears "busy/declined" right away (603), not voicemail
+   after a timeout. The app's recents show the call as declined.
+5. **Caller hangs up first**: call and hang up after 3 s, before answering. The call screen disappears within 12 s and
+   the recents show a missed call.
+6. **Ring group**: put the app extension and a second device (a desk phone or Groundwire) in a ring group "allemaal
+   tegelijk". Call the group's number with the app closed: both ring; the other device starts at most ~6 s later. Answer
+   on the app. Repeat with the group "Iedereen" (the default entrance) and with a queue that has the app as agent.
+7. **Second call within 120 s**: right after test 1 call again: it rings and connects.
+8. **Two accounts**: pair a second extension. Call each one with the app closed: the call screen shows which account is
+   called (`→ <label>`); answering connects the right line.
+9. **Unpaired**: remove the pairing in the portal. With notifications allowed a notice appears and the account is gone
+   from the app (also when the app was in the background). Calling the extension no longer rings the app.
+10. **Logs** (Console.app, subsystem `nl.fullstackstudio.fsvoip`, categories `phone` and `push`): per call you see "Push
+    for call <callRef> … ringing" and "INVITE joined to call <callRef>"; "No INVITE … in time" means the gate did not
+    see a fresh registration (check the contact marker and the network).
+
+If a step fails: check the device's push status in the portal (an invalid token after reinstalling: open the app once),
+that the build's push environment matches its signing (`FSVOIP_PUSH_ENV`), and the PBX log for the gate's decision.
 
 ## Contract and tests
 

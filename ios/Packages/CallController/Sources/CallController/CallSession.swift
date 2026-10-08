@@ -51,6 +51,12 @@ public struct CallSession: Identifiable, Equatable, Sendable {
     public var isOnHold = false
     public let createdAt: Date
     public var connectedAt: Date?
+    /// `callRef` of the push that announced this call (= the `X-FSS-Call` header of its INVITE).
+    public var fssCallRef: String?
+    /// Reported to the system from a push; the SIP INVITE has not arrived yet (`engineCallID == nil`).
+    public var awaitingInvite = false
+    /// The user answered on the call UI before the INVITE arrived: answer it as soon as it does.
+    var answerPending = false
     /// The user ended (or declined) the call on the call UI: the system must not be told again.
     var endedByUser = false
     var reportedConnected = false

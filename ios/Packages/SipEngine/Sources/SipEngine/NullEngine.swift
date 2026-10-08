@@ -28,6 +28,9 @@ public final class NullSipEngine: SipEngine {
         .unregistered
     }
 
+    public func setRegistrationEnabled(_ enabled: Bool, for account: SipAccountID) {}
+    public func refreshRegistration(of account: SipAccountID) {}
+
     public func call(number: String, from account: SipAccountID) throws -> CallID {
         throw SipEngineError.notStarted
     }
@@ -36,7 +39,7 @@ public final class NullSipEngine: SipEngine {
         throw SipEngineError.unknownCall(call)
     }
 
-    public func decline(_ call: CallID) throws {
+    public func decline(_ call: CallID, reason: DeclineReason) throws {
         throw SipEngineError.unknownCall(call)
     }
 

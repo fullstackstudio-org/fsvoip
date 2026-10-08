@@ -49,7 +49,11 @@ targets:
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
-        UIBackgroundModes: [voip, audio]
+        # voip: PushKit calls; audio: a call keeps running in the background; remote-notification: the "unpaired"
+        # notice reaches the app in the background.
+        UIBackgroundModes: [voip, audio, remote-notification]
+        # sandbox (Debug) or production (Release); see Config/*.xcconfig.
+        FSVoipPushEnvironment: $(FSVOIP_PUSH_ENV)
         CFBundleURLTypes:
           - CFBundleURLName: nl.fullstackstudio.fsvoip
             CFBundleURLSchemes: [fsvoip]

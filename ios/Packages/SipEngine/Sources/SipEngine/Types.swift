@@ -172,6 +172,14 @@ public enum CallEndReason: Equatable, Sendable {
     case failed(String)
 }
 
+/// How an unanswered incoming call is rejected.
+public enum DeclineReason: Equatable, Sendable {
+    /// 603 Decline.
+    case declined
+    /// 486 Busy Here.
+    case busy
+}
+
 public enum CallState: Equatable, Sendable {
     /// Incoming call, ringing, not yet answered.
     case incomingRinging
