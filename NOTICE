@@ -25,7 +25,7 @@ Licence, as read when this version was pinned (2026-10-08):
     "either version 3 of the License, or (at your option) any later version", i.e. AGPL-3.0-or-later.
 
 FSVoip is therefore distributed under the AGPL-3.0-or-later as well. FSVoip does not modify the SDK. The complete
-corresponding source of FSVoip is at https://github.com/fullstackstudio-org/fullstackstudio-voip.
+corresponding source of FSVoip is at https://github.com/fullstackstudio-org/fsvoip.
 Belledonne also sells a commercial licence for the SDK; FSVoip does not use it.
 
 The Swift Package ships these components (all part of the same SDK release, see the SDK's own notices for the

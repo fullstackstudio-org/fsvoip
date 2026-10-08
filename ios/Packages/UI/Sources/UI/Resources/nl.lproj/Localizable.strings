@@ -141,3 +141,10 @@
 "error.missingToken" = "De koppellink bevat geen code.";
 "error.malformedToken" = "De koppelcode is niet geldig. Maak in het portaal een nieuwe code.";
 "error.generic" = "Er ging iets mis. Probeer het opnieuw.";
+"settings.licenses" = "Licenties";
+"licenses.title" = "Licenties";
+"licenses.fsvoip.body" = "© 2026 FullStack Studio. FSVoip is vrije software onder de GNU Affero General Public License, versie 3 of later. De app wordt geleverd zonder enige garantie; zie de licentietekst.";
+"licenses.licenseText" = "Licentietekst (AGPL-3.0)";
+"licenses.source" = "Broncode";
+"licenses.linphone.body" = "© Belledonne Communications. Gebruikt onder de GNU Affero General Public License, versie 3.";
+"licenses.linphone.site" = "linphone.org";

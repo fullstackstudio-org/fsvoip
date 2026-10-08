@@ -141,3 +141,10 @@
 "error.missingToken" = "The pairing link has no code.";
 "error.malformedToken" = "The pairing code is not valid. Create a new code in the portal.";
 "error.generic" = "Something went wrong. Try again.";
+"settings.licenses" = "Licenses";
+"licenses.title" = "Licenses";
+"licenses.fsvoip.body" = "© 2026 FullStack Studio. FSVoip is free software under the GNU Affero General Public License, version 3 or later. The app comes without any warranty; see the license text.";
+"licenses.licenseText" = "License text (AGPL-3.0)";
+"licenses.source" = "Source code";
+"licenses.linphone.body" = "© Belledonne Communications. Used under the GNU Affero General Public License, version 3.";
+"licenses.linphone.site" = "linphone.org";

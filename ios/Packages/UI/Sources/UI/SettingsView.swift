@@ -49,6 +49,11 @@ struct SettingsView: View {
 
             Section {
                 LabeledContent(L10n.string("settings.version"), value: Self.version)
+                NavigationLink {
+                    LicensesView()
+                } label: {
+                    L10n.text("settings.licenses")
+                }
             } header: {
                 L10n.text("settings.about")
             } footer: {
