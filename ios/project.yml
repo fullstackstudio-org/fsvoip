@@ -70,8 +70,30 @@ targets:
       base:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        ENABLE_USER_SCRIPT_SANDBOXING: YES
+        # The script below deletes frameworks from the bundle, which the script sandbox does not allow.
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
         GENERATE_INFOPLIST_FILE: NO
+        # Drops load commands of dylibs the app never uses (the AMR, H.264 and tester frameworks of linphone-sdk),
+        # so the script below can remove them from the bundle without the app failing to launch.
+        OTHER_LDFLAGS: "$(inherited) -Wl,-dead_strip_dylibs"
+    postBuildScripts:
+      # linphone-sdk's Swift Package ships AMR and OpenH264 (patent-encumbered codecs, also disabled at runtime in
+      # LinphoneSipEngine) and two test frameworks. FSVoip does not ship them; mediastreamer logs a failed plugin load
+      # and carries on.
+      - name: Remove unused linphone-sdk frameworks
+        basedOnDependencyAnalysis: false
+        # As inputs so Xcode runs this after it has embedded the package frameworks (otherwise it can run first).
+        inputFiles:
+          - $(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/msamr.framework
+          - $(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/msopenh264.framework
+          - $(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/linphonetester.framework
+          - $(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/bctoolbox-tester.framework
+        script: |
+          set -euo pipefail
+          dir="${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}"
+          for fw in msamr msopenh264 linphonetester bctoolbox-tester; do
+            rm -rf "${dir}/${fw}.framework"
+          done
     dependencies:
       - package: Core
       - package: SipEngine

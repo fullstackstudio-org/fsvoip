@@ -28,6 +28,9 @@ FSVoip is therefore distributed under the AGPL-3.0-or-later as well. FSVoip does
 corresponding source of FSVoip is at https://github.com/fullstackstudio-org/fsvoip.
 Belledonne also sells a commercial licence for the SDK; FSVoip does not use it.
 
+FSVoip does not ship the AMR (msamr) and OpenH264 (msopenh264) plugins or the test frameworks of the package: the
+linker drops them (-dead_strip_dylibs) and a build script removes them from the app bundle (see ios/project.yml).
+
 The Swift Package ships these components (all part of the same SDK release, see the SDK's own notices for the
 details and for the licences of each):
 
