@@ -49,9 +49,6 @@ struct SettingsView: View {
 
             Section {
                 LabeledContent(L10n.string("settings.version"), value: Self.version)
-                Link(destination: URL(string: "https://github.com/fullstackstudio-org/fullstackstudio-voip")!) {
-                    Label(L10n.string("settings.source"), systemImage: "chevron.left.forwardslash.chevron.right")
-                }
             } header: {
                 L10n.text("settings.about")
             } footer: {

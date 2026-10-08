@@ -106,8 +106,7 @@
 "settings.defaultLine.footer" = "Dit toestel gebruik je als je niets anders kiest. Op het belscherm kies je per gesprek een ander toestel.";
 "settings.about" = "Over FSVoip";
 "settings.version" = "Versie";
-"settings.source" = "Broncode";
-"settings.about.footer" = "FSVoip is open source (AGPL-3.0-or-later) en gemaakt door FullStack Studio.";
+"settings.about.footer" = "Gemaakt door FullStack Studio.";
 
 "account.extension" = "toestel %@";
 "account.reconnect" = "Opnieuw verbinden";

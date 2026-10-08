@@ -106,8 +106,7 @@
 "settings.defaultLine.footer" = "This extension is used unless you choose another one. On the call screen you can pick a different extension per call.";
 "settings.about" = "About FSVoip";
 "settings.version" = "Version";
-"settings.source" = "Source code";
-"settings.about.footer" = "FSVoip is open source (AGPL-3.0-or-later) and made by FullStack Studio.";
+"settings.about.footer" = "Made by FullStack Studio.";
 
 "account.extension" = "extension %@";
 "account.reconnect" = "Reconnect";
