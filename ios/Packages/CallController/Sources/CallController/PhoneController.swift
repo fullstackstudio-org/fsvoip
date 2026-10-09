@@ -574,7 +574,14 @@ extension PhoneController: CallSystemActionHandler {
 
         do {
             try engine.answer(engineID)
-            update(uuid) { $0.phase = .connecting }
+            // liblinphone reports Connected and StreamsRunning synchronously inside `answer` (the callee does not wait
+            // for the ACK), so the call can already be active here. Only a call that is still ringing moves to
+            // connecting; overwriting an active call left the screen on "Verbinden..." for the whole call.
+            update(uuid) {
+                if $0.phase == .incoming {
+                    $0.phase = .connecting
+                }
+            }
             return true
         } catch {
             logger.error("Answer failed: \(error)")
