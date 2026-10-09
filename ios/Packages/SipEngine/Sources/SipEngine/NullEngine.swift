@@ -31,7 +31,7 @@ public final class NullSipEngine: SipEngine {
     public func setRegistrationEnabled(_ enabled: Bool, for account: SipAccountID) {}
     public func refreshRegistration(of account: SipAccountID) {}
 
-    public func call(number: String, from account: SipAccountID) throws -> CallID {
+    public func call(number: String, from account: SipAccountID, options: CallOptions) throws -> CallID {
         throw SipEngineError.notStarted
     }
 

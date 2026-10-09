@@ -85,7 +85,8 @@ final class AppServices {
             requestNotifications: { await Self.requestNotificationPermission() },
             pbx: PbxHub(service: LivePbxService(api: api), gate: gate),
             media: MediaHub(service: LiveMediaService(api: api), gate: gate),
-            availability: AvailabilityHub(service: LiveAvailabilityService(api: api))
+            availability: AvailabilityHub(service: LiveAvailabilityService(api: api)),
+            outboundNumbers: LiveOutboundNumbersService(api: api)
         )
     }
 

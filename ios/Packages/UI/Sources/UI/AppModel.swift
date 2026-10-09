@@ -85,6 +85,10 @@ public final class FSVoipAppModel: ObservableObject {
     public let media: MediaHub?
     /// Do-not-disturb of the own extension ("Beschikbaar"); `nil` = not offered.
     public let availability: AvailabilityHub?
+    /// "Uitbellen via": the number the next call goes out with.
+    public let outbound: OutboundChoiceModel
+    /// Calls of the PBX (the team history) per account, for "Geschiedenis".
+    let history: HistoryModel
 
     private let accountStore: AccountStore
     private let service: AccountServicing
@@ -102,6 +106,7 @@ public final class FSVoipAppModel: ObservableObject {
     private var pbxAccessLost: AnyCancellable?
     private var mediaAccessLost: AnyCancellable?
     private var callActivity: AnyCancellable?
+    private var outboundChanges: AnyCancellable?
 
     public init(
         phone: PhoneController,
@@ -117,6 +122,7 @@ public final class FSVoipAppModel: ObservableObject {
         pbx: PbxHub? = nil,
         media: MediaHub? = nil,
         availability: AvailabilityHub? = nil,
+        outboundNumbers: OutboundNumbersServicing? = nil,
         logger: FSLogger = FSLogger(category: "app")
     ) {
         self.phone = phone
@@ -124,6 +130,8 @@ public final class FSVoipAppModel: ObservableObject {
         self.pbx = pbx
         self.media = media
         self.availability = availability
+        outbound = OutboundChoiceModel(service: outboundNumbers, preferences: preferences)
+        history = HistoryModel(media: media)
         self.accountStore = accountStore
         self.service = service
         self.preferences = preferences
@@ -134,6 +142,9 @@ public final class FSVoipAppModel: ObservableObject {
         self.requestNotifications = requestNotifications
         self.logger = logger
 
+        outbound.capabilities = { [weak self] accountId in self?.capabilities(for: accountId) }
+        outboundChanges = outbound.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        history.nameLookup = { [weak self] number in self?.name(forNumber: number) }
         phone.anonymousCallerText = L10n.string("call.anonymous")
         phone.lookupName = { [weak self] number in self?.name(forNumber: number) }
         phone.onCallFinished = { [weak self] call in
@@ -235,6 +246,7 @@ public final class FSVoipAppModel: ObservableObject {
                         self.contacts.apply(capabilities: me.capabilities?.contacts ?? ContactCapabilities(), accountId: updated.id)
                         pbx?.apply(me: me, accountId: updated.id)
                         media?.apply(me: me, accountId: updated.id)
+                        await outbound.load(updated)
                     }
                 case .revoked:
                     internalContacts[account.id] = nil
@@ -377,7 +389,8 @@ public final class FSVoipAppModel: ObservableObject {
         }
 
         do {
-            try phone.startCall(number: number, accountId: accountId)
+            // The chosen number rides along with this one call; without the capability the options are empty.
+            try phone.startCall(number: number, accountId: accountId, options: outbound.options(for: accountId))
             return true
         } catch let error as PhoneError {
             notice = Notice(message: Self.message(for: error), isError: true)
@@ -615,6 +628,8 @@ public final class FSVoipAppModel: ObservableObject {
         internalContacts[accountId] = nil
         meByAccount[accountId] = nil
         availability?.forget(accountId: accountId)
+        outbound.forget(accountId: accountId)
+        history.forget(accountId: accountId)
         // Unpairing removes the address book of that account from this phone.
         contacts.forget(accountId: accountId)
         settingsRevision += 1

@@ -246,6 +246,8 @@ final class DemoPbxService: PbxServicing, @unchecked Sendable {
   "recordings": true,
   "voicemail": "all",
   "calls": "all",
+  "selfExtension": true,
+  "callerChoice": true,
   "contacts": {
    "read": true,
    "write": true,
@@ -309,7 +311,9 @@ final class DemoPbxService: PbxServicing, @unchecked Sendable {
   "pbxManage": false,
   "recordings": false,
   "voicemail": "own",
-  "calls": "own",
+  "calls": "team",
+  "selfExtension": true,
+  "callerChoice": true,
   "contacts": {
    "read": true,
    "write": true,

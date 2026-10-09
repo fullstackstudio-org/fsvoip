@@ -7,8 +7,13 @@ public struct AccountPreferences: Codable, Equatable, Sendable {
     /// `nil` = never chosen: then the default applies (on when several accounts are paired, plan D10).
     public var showCalledAccount: Bool?
 
-    public init(showCalledAccount: Bool? = nil) {
+    /// The national number the user last chose to call out with ("Uitbellen via"); `nil` = the default number of the PBX.
+    /// Only ever read together with `AppCapabilities.callerChoice`. Never sent anywhere except as the header of a call.
+    public var outboundNumber: String?
+
+    public init(showCalledAccount: Bool? = nil, outboundNumber: String? = nil) {
         self.showCalledAccount = showCalledAccount
+        self.outboundNumber = outboundNumber
     }
 
     /// The value in effect for this account.

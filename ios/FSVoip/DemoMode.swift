@@ -57,7 +57,8 @@ enum DemoMode {
             contacts: ContactsHub(store: InMemoryContactsStore(), api: { _ in demoContacts }, settings: InMemoryContactsSettings(), minimumInterval: 0),
             pbx: PbxHub(service: DemoPbxService(adminAccountId: exampleAccounts[0].id), gate: gate),
             media: MediaHub(service: DemoMediaService(adminAccountId: exampleAccounts[0].id), gate: gate),
-            availability: AvailabilityHub(service: DemoAvailabilityService())
+            availability: AvailabilityHub(service: DemoAvailabilityService()),
+            outboundNumbers: DemoOutboundNumbersService()
         )
 
         open(defaults.string(forKey: "FSVoipDemoScreen"), model: model, engine: engine)
@@ -243,7 +244,7 @@ final class DemoSipEngine: SipEngine {
     func setRegistrationEnabled(_ enabled: Bool, for account: SipAccountID) {}
     func refreshRegistration(of account: SipAccountID) {}
 
-    func call(number: String, from account: SipAccountID) throws -> CallID {
+    func call(number: String, from account: SipAccountID, options: CallOptions) throws -> CallID {
         let id = CallID()
         live[id] = CallInfo(id: id, direction: .outgoing, accountId: account, remoteNumber: number, remoteName: nil, state: .outgoingInitiated)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in self?.change(id, .outgoingRinging) }
@@ -481,7 +482,22 @@ final class DemoContactsAPI: ContactsAPI, @unchecked Sendable {
         try FSVoipJSON.decoder().decode(type, from: JSONSerialization.data(withJSONObject: object))
     }
 }
-#endif
+
+/// The numbers of the example phone system: three, so the chooser has something to choose from.
+final class DemoOutboundNumbersService: OutboundNumbersServicing, @unchecked Sendable {
+    func numbers(for account: StoredAccount) async throws -> OutboundNumbers {
+        try await Task.sleep(nanoseconds: 150_000_000)
+
+        return OutboundNumbers(
+            numbers: [
+                SelfNumber(id: "n1", number: "0850607848", name: "Hoofdnummer", isDefault: true),
+                SelfNumber(id: "n2", number: "0850607849", name: "Werkplaats"),
+                SelfNumber(id: "n3", number: "0201234567", name: nil),
+            ],
+            defaultNumber: "0850607848"
+        )
+    }
+}
 
 /// Do not disturb in memory: switching works, nothing leaves the phone.
 final class DemoAvailabilityService: AvailabilityServicing, @unchecked Sendable {
@@ -493,3 +509,4 @@ final class DemoAvailabilityService: AvailabilityServicing, @unchecked Sendable 
         AvailabilityHub.State(doNotDisturb: dnd, version: version + 1)
     }
 }
+#endif

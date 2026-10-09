@@ -26,11 +26,19 @@ final class DemoMediaService: MediaServicing, @unchecked Sendable {
     }
 
     func calls(for account: StoredAccount, month: String?) async throws -> CallsPage {
-        guard account.id == adminId else { throw APIError.forbidden }
-
         try await Task.sleep(nanoseconds: 150_000_000)
 
-        return callsByMonth[month ?? "2026-10"] ?? callsByMonth["2026-10"]!
+        var page = callsByMonth[month ?? "2026-10"] ?? callsByMonth["2026-10"]!
+
+        // The team history is for everyone; only an admin sees (and can play) recordings.
+        if account.id != adminId {
+            for index in page.calls.indices {
+                page.calls[index].hasRecording = false
+                page.calls[index].recordingExpired = false
+            }
+        }
+
+        return page
     }
 
     func voicemail(for account: StoredAccount, box: String?) async throws -> VoicemailPage {

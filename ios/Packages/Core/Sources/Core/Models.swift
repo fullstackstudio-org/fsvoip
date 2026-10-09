@@ -569,6 +569,13 @@ public struct SelfNumber: Decodable, Equatable, Sendable, Identifiable {
     /// The default number of the PBX.
     public var isDefault: Bool
 
+    public init(id: String, number: String, name: String? = nil, isDefault: Bool = false) {
+        self.id = id
+        self.number = number
+        self.name = name
+        self.isDefault = isDefault
+    }
+
     private enum CodingKeys: String, CodingKey {
         case id, number, name, isDefault
     }

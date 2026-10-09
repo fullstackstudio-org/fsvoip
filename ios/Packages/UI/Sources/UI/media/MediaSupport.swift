@@ -134,3 +134,48 @@ enum MediaDemo {
     static var opensVoicemail: Bool { screen == "voicemail" }
     static var opensRecordings: Bool { screen == "recordings" }
 }
+
+// MARK: - Small pieces shared by Voicemail and Opnames
+
+struct MediaNotice: View {
+    let symbol: String
+    let tint: Color
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: symbol)
+                .foregroundStyle(tint)
+                .frame(width: 22)
+                .accessibilityHidden(true)
+            Text(text)
+                .font(.subheadline)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+struct MediaEmpty: View {
+    let symbol: String
+    let title: String
+    let message: String
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: symbol)
+                .font(.system(size: 34, weight: .regular))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text(title)
+                .font(.headline)
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 28)
+        .accessibilityElement(children: .combine)
+    }
+}

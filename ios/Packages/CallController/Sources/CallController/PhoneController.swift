@@ -214,7 +214,8 @@ public final class PhoneController: ObservableObject {
     }
 
     /// Start an outgoing call through the system call UI.
-    public func startCall(number rawNumber: String, accountId: String) throws {
+    /// `options` (the number to call out with) belong to this outgoing call only.
+    public func startCall(number rawNumber: String, accountId: String, options: CallOptions = .none) throws {
         let number = DialNumber.sanitize(rawNumber)
 
         guard DialNumber.isDialable(number) else {
@@ -235,7 +236,7 @@ public final class PhoneController: ObservableObject {
 
         let uuid = UUID()
         let name = lookupName(number)
-        sessions.append(CallSession(
+        var session = CallSession(
             id: uuid,
             engineCallID: nil,
             direction: .outgoing,
@@ -245,7 +246,10 @@ public final class PhoneController: ObservableObject {
             remoteName: name,
             phase: .starting,
             createdAt: now()
-        ))
+        )
+        session.callOptions = options
+        session.viaNumber = options.headers.first?.value
+        sessions.append(session)
 
         system.requestStartCall(uuid: uuid, handle: number, displayName: name) { [weak self] error in
             guard let self, error != nil else {
@@ -538,7 +542,7 @@ extension PhoneController: CallSystemActionHandler {
         engine.audio.configure()
 
         do {
-            return try engine.call(number: number, from: session.accountId)
+            return try engine.call(number: number, from: session.accountId, options: session.direction == .outgoing ? session.callOptions : .none)
         } catch {
             logger.error("Outgoing call failed to start: \(error)")
             return nil

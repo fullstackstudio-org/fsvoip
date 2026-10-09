@@ -99,6 +99,35 @@ final class PhoneControllerTests: XCTestCase {
         XCTAssertEqual(finished.first?.direction, .outgoing)
     }
 
+    func testTheChosenNumberTravelsWithTheOutgoingCallOnly() throws {
+        registered("a")
+
+        try phone.startCall(number: "0612345678", accountId: "a", options: CallOptions(fromNumber: "0850607848"))
+
+        XCTAssertEqual(engine.callOptions, [CallOptions(fromNumber: "0850607848")])
+        XCTAssertEqual(engine.callOptions.first?.headers.filter { $0.name == "X-FSS-From" }.count, 1)
+        XCTAssertEqual(phone.activeSession?.viaNumber, "0850607848", "the call screen says which number it goes out with")
+
+        let uuid = try XCTUnwrap(phone.activeSession?.id)
+        phone.hangUp(uuid)
+        engine.emitState(.ended(.localHangup), id: "out-1", direction: .outgoing, account: "a")
+
+        // The next call without a choice carries nothing: the choice is never remembered by the controller.
+        try phone.startCall(number: "0612345678", accountId: "a")
+
+        XCTAssertEqual(engine.callOptions.last, CallOptions.none)
+        XCTAssertNil(phone.activeSession?.viaNumber)
+    }
+
+    func testAnIncomingCallNeverGetsTheCallerChoice() {
+        registered("a")
+
+        engine.emitIncoming(id: "in-1", from: "0701234567", name: nil, account: "a")
+
+        XCTAssertTrue(engine.callOptions.isEmpty)
+        XCTAssertNil(phone.activeSession?.viaNumber)
+    }
+
     func testUserHangUpIsNotReportedBackToTheSystem() throws {
         registered("a")
         try phone.startCall(number: "0612345678", accountId: "a")

@@ -48,7 +48,8 @@ public protocol SipEngine: AnyObject {
     func refreshRegistration(of account: SipAccountID)
 
     // Calls
-    func call(number: String, from account: SipAccountID) throws -> CallID
+    /// Start an outgoing call. `options` ride along on the INVITE (`CallOptions.headers`); an incoming call never has them.
+    func call(number: String, from account: SipAccountID, options: CallOptions) throws -> CallID
     func answer(_ call: CallID) throws
     /// Reject an incoming call that was not answered: `.declined` = 603 Decline (the user said no), `.busy` = 486 Busy
     /// Here (the app already has a call, or the call it belonged to is over).
@@ -63,6 +64,11 @@ public protocol SipEngine: AnyObject {
 }
 
 extension SipEngine {
+    /// An outgoing call without options.
+    public func call(number: String, from account: SipAccountID) throws -> CallID {
+        try call(number: number, from: account, options: .none)
+    }
+
     /// Decline with 603 (the user said no).
     public func decline(_ call: CallID) throws {
         try decline(call, reason: .declined)

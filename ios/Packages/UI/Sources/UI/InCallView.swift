@@ -90,6 +90,14 @@ struct InCallView: View {
                 .foregroundStyle(.white.opacity(0.7))
                 .padding(.top, 2)
 
+            // The number this outgoing call goes out with, when the user chose one in the dialler.
+            if session.direction == .outgoing, let via = session.viaNumber {
+                Text(String(format: L10n.string("call.via"), PbxVocabulary.formatNumber(via)))
+                    .font(.footnote.monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.6))
+                    .accessibilityIdentifier("call-via")
+            }
+
             if showsKeypad, !sentDigits.isEmpty {
                 Text(sentDigits)
                     .font(Brand.digits(26))

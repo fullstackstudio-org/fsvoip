@@ -87,11 +87,36 @@ public final class AvailabilityHub: ObservableObject {
         saving.insert(account.id)
         defer { saving.remove(account.id) }
 
+        let wanted = !available
+
         do {
-            states[account.id] = try await service.setDoNotDisturb(!available, version: current.version, for: account)
+            states[account.id] = try await service.setDoNotDisturb(wanted, version: current.version, for: account)
+        } catch APIError.stale {
+            // Changed somewhere else in the meantime (the portal, another phone): ONE retry on the fresh version. The patch is a single
+            // field, so there is nothing to merge.
+            await retryOnFreshVersion(wanted, previous: current, account: account)
         } catch {
-            // Stale or offline: show what the server has now.
+            // Offline or refused: show what the server has now.
             states[account.id] = current
+            failedFor = account.id
+            await load(account)
+        }
+    }
+
+    private func retryOnFreshVersion(_ wanted: Bool, previous: State, account: StoredAccount) async {
+        do {
+            let fresh = try await service.load(for: account)
+
+            // Someone already switched it to what was asked: done.
+            if fresh.doNotDisturb == wanted {
+                states[account.id] = fresh
+
+                return
+            }
+
+            states[account.id] = try await service.setDoNotDisturb(wanted, version: fresh.version, for: account)
+        } catch {
+            states[account.id] = previous
             failedFor = account.id
             await load(account)
         }

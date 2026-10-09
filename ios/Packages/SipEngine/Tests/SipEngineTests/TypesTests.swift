@@ -73,4 +73,12 @@ final class TypesTests: XCTestCase {
         engine.audio.configure()
         engine.audio.activate(true)
     }
+
+    func testCallOptionsListAtMostOneFromHeader() {
+        XCTAssertEqual(CallOptions.none.headers, [])
+        XCTAssertEqual(CallOptions(fromNumber: "0850607848").headers, [CallHeader(name: "X-FSS-From", value: "0850607848")])
+        XCTAssertEqual(CallOptions(fromNumber: "0850607848\r\nX-Evil: 1").headers, [])
+        XCTAssertEqual(CallOptions(fromNumber: "").headers, [])
+        XCTAssertEqual(CallOptions.fromHeaderName, "X-FSS-From")
+    }
 }

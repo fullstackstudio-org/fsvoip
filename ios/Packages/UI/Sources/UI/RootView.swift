@@ -100,7 +100,7 @@ struct MainTabView: View {
             .accessibilityIdentifier("tab-onhold")
 
             NavigationStack {
-                RecentsView(model: model)
+                HistoryView(model: model)
                     .shellToolbar(model: model)
             }
             .tabItem { Label(L10n.string("tab.recents"), systemImage: "clock.fill") }
@@ -108,7 +108,7 @@ struct MainTabView: View {
             .accessibilityIdentifier("tab-recents")
 
             NavigationStack {
-                VoicemailTab(model: model)
+                VoicemailTabView(model: model)
                     .shellToolbar(model: model)
             }
             .tabItem { Label(L10n.string("tab.voicemail"), systemImage: "voicemail") }
@@ -224,35 +224,6 @@ struct OnHoldTab: View {
         )
         .background(Theme.background)
         .navigationTitle(L10n.string("tab.onHold"))
-    }
-}
-
-/// The voicemail of the default account that has a box.
-struct VoicemailTab: View {
-    @ObservedObject var model: FSVoipAppModel
-
-    private var account: StoredAccount? {
-        guard let hub = model.media else { return nil }
-
-        let preferred = model.defaultOutgoingAccountId.flatMap { model.account(id: $0) }
-
-        if let preferred, hub.hasVoicemail(preferred.id) { return preferred }
-
-        return model.accounts.first { hub.hasVoicemail($0.id) }
-    }
-
-    var body: some View {
-        if let hub = model.media, let account {
-            VoicemailView(hub: hub, account: account)
-        } else {
-            EmptyState(
-                symbol: "voicemail",
-                title: L10n.string("voicemail.empty.title"),
-                message: L10n.string("voicemail.empty.message")
-            )
-            .background(Theme.background)
-            .navigationTitle(L10n.string("media.voicemail.title"))
-        }
     }
 }
 
