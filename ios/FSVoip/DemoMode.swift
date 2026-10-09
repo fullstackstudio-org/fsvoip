@@ -59,6 +59,7 @@ enum DemoMode {
             pbx: PbxHub(service: DemoPbxService(adminAccountId: exampleAccounts[0].id), gate: gate),
             media: MediaHub(service: DemoMediaService(adminAccountId: exampleAccounts[0].id), gate: gate, soundService: DemoSoundService()),
             availability: AvailabilityHub(service: DemoAvailabilityService()),
+            selfExtension: SelfExtensionHub(service: DemoSelfExtensionService()),
             park: DemoParkService(),
             outboundNumbers: DemoOutboundNumbersService()
         )
@@ -90,6 +91,12 @@ enum DemoMode {
             model.openSettings(.sounds)
         case "appearance":
             model.openSettings(.appearance)
+        case "profile":
+            model.openSettings(.profile)
+        case "callprefs":
+            model.openSettings(.callPreferences)
+        case "invite":
+            model.openSettings(.invite)
         case "scanner":
             model.isScannerPresented = true
         case "pairing":
@@ -501,6 +508,91 @@ final class DemoOutboundNumbersService: OutboundNumbersServicing, @unchecked Sen
             defaultNumber: "0850607848"
         )
     }
+}
+
+/// The own extension in memory: saving works (the version moves on), nothing leaves the phone. An invitation is a placeholder link.
+final class DemoSelfExtensionService: SelfExtensionServicing, InviteServicing, @unchecked Sendable {
+    private let lock = NSLock()
+    private var state: SelfExtension
+
+    init() {
+        state = try! FSVoipJSON.decoder().decode(SelfExtension.self, from: Data(Self.json.utf8))
+    }
+
+    func load(for account: StoredAccount) async throws -> SelfExtension {
+        lock.lock()
+        defer { lock.unlock() }
+
+        return state
+    }
+
+    func patch(_ patch: SelfExtensionPatch, for account: StoredAccount) async throws -> SelfExtension? {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard patch.version == state.version else { throw APIError.stale(version: state.version) }
+
+        if let value = patch.dnd { state.dnd = value }
+        if let value = patch.noAnswerSeconds { state.noAnswerSeconds = value }
+        if let value = patch.voicemailEnabled { state.voicemailEnabled = value }
+        if let value = patch.voicemailToEmail { state.voicemailToEmail = value }
+
+        switch patch.forwardAlways {
+        case .keep: break
+        case .clear: state.forwardAlways = nil
+        case let .set(target): state.forwardAlways = target
+        }
+
+        switch patch.noAnswerTarget {
+        case .keep: break
+        case .clear: state.noAnswerTarget = nil
+        case let .set(target): state.noAnswerTarget = target
+        }
+
+        switch patch.email {
+        case .keep: break
+        case .clear: state.email = nil
+        case let .set(value): state.email = value
+        }
+
+        state.version += 1
+
+        return state
+    }
+
+    func invite(deviceId: String, for account: StoredAccount) async throws -> AppPairingResponse {
+        let expires = ISO8601DateFormatter().string(from: Date().addingTimeInterval(600))
+        let json = #"{"url":"https://fullstackstudio.nl/fsvoip/pair?t=fss_vpair_DEMOdemoDEMOdemoDEMOdemoDEMOdemoDEMOdemoDEM","expiresAt":"\#(expires)"}"#
+
+        return try FSVoipJSON.decoder().decode(AppPairingResponse.self, from: Data(json.utf8))
+    }
+
+    private static let json = #"""
+{
+  "id": "7a1d9c3e-5b2f-4e8a-9c01-6d3e8f2a4b57",
+  "name": "Jan de Vries",
+  "extension": "102",
+  "dnd": false,
+  "forwardAlways": null,
+  "noAnswerSeconds": 25,
+  "noAnswerTarget": { "type": "voicemail", "id": "7a1d9c3e-5b2f-4e8a-9c01-6d3e8f2a4b57" },
+  "voicemailEnabled": true,
+  "voicemailToEmail": true,
+  "email": "jan@voorbeeld-bouw.example",
+  "sync": "ok",
+  "version": 4,
+  "numbers": [],
+  "defaultNumber": null,
+  "targets": [
+    { "value": "extension:5c0a8e1f-2d7b-4a39-8f46-0b1c2d3e4f50", "type": "extension", "id": "5c0a8e1f-2d7b-4a39-8f46-0b1c2d3e4f50", "name": "Receptie", "extension": "100" },
+    { "value": "extension:1b2c3d4e-0a1b-4c2d-8e3f-5a6b7c8d9e01", "type": "extension", "id": "1b2c3d4e-0a1b-4c2d-8e3f-5a6b7c8d9e01", "name": "Pieter Jansen", "extension": "101" },
+    { "value": "ring_group:9e8d7c6b-5a49-4382-b1a0-f9e8d7c6b5a4", "type": "ring_group", "id": "9e8d7c6b-5a49-4382-b1a0-f9e8d7c6b5a4", "name": "Iedereen", "extension": "200" },
+    { "value": "voicemail:7a1d9c3e-5b2f-4e8a-9c01-6d3e8f2a4b57", "type": "voicemail", "id": "7a1d9c3e-5b2f-4e8a-9c01-6d3e8f2a4b57", "name": "Jan de Vries", "extension": "102", "ofDevice": true },
+    { "value": "voicemail:2f4a6c8e-1b3d-4f5a-8c7e-9a0b1c2d3e4f", "type": "voicemail", "id": "2f4a6c8e-1b3d-4f5a-8c7e-9a0b1c2d3e4f", "name": "Algemeen", "extension": "900" },
+    { "value": "external", "type": "external", "id": null, "name": "Extern nummer", "extension": null }
+  ]
+}
+"""#
 }
 
 /// Do not disturb in memory: switching works, nothing leaves the phone.

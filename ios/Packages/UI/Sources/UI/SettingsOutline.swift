@@ -63,6 +63,9 @@ struct SettingsOutline: Equatable {
         case .recordings: return [.recordings]
         case .sounds: return [.sounds]
         case .appearance: return [.appearance]
+        case .profile: return [.profile]
+        case .callPreferences: return [.callPreferences]
+        case .invite: return [.invite]
         }
     }
 }

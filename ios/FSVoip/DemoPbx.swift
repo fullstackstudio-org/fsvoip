@@ -385,6 +385,8 @@ final class DemoPbxService: PbxServicing, @unchecked Sendable {
  "role": "admin",
  "capabilities": {
   "pbxManage": true,
+  "sounds": "manage",
+  "invite": true,
   "recordings": true,
   "voicemail": "all",
   "calls": "all",

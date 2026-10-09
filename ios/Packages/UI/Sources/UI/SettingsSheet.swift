@@ -41,6 +41,24 @@ struct SettingsSheet: View {
                     destination(page)
                 }
         }
+        .environment(\.pbxClose, close)
+        .confirmationDialog(
+            String(format: L10n.string("account.unpair.title"), account?.displayLabel ?? ""),
+            isPresented: $confirmsUnpair,
+            titleVisibility: .visible
+        ) {
+            Button(L10n.string("account.unpair.confirm"), role: .destructive) { unpair() }
+        } message: {
+            L10n.text("account.unpair.message")
+        }
+        .alert(L10n.string("account.forget.title"), isPresented: $offersForget) {
+            Button(L10n.string("account.forget.confirm"), role: .destructive) {
+                if let id = account?.id { model.forget(accountId: id) }
+            }
+            Button(L10n.string("action.cancel"), role: .cancel) {}
+        } message: {
+            L10n.text("account.forget.message")
+        }
         .environment(\.soundsModel, account.flatMap { model.media?.soundsModel(for: $0) })
         .tint(Theme.accentText)
         .presentationDetents([.large])
@@ -112,23 +130,6 @@ struct SettingsSheet: View {
                     .accessibilityIdentifier("settings-version")
             }
         }
-        .confirmationDialog(
-            String(format: L10n.string("account.unpair.title"), account?.displayLabel ?? ""),
-            isPresented: $confirmsUnpair,
-            titleVisibility: .visible
-        ) {
-            Button(L10n.string("account.unpair.confirm"), role: .destructive) { unpair() }
-        } message: {
-            L10n.text("account.unpair.message")
-        }
-        .alert(L10n.string("account.forget.title"), isPresented: $offersForget) {
-            Button(L10n.string("account.forget.confirm"), role: .destructive) {
-                if let id = account?.id { model.forget(accountId: id) }
-            }
-            Button(L10n.string("action.cancel"), role: .cancel) {}
-        } message: {
-            L10n.text("account.forget.message")
-        }
         .accessibilityIdentifier("settings-sheet")
     }
 
@@ -189,9 +190,9 @@ struct SettingsSheet: View {
     private func destination(_ page: SettingsPage) -> some View {
         switch page {
         case .profile:
-            if let account { ProfilePage(model: model, account: account, back: pop) }
+            if let account { ProfilePage(model: model, hub: model.selfExtension, account: account, back: pop, close: close, onUnpair: { confirmsUnpair = true }) }
         case .callPreferences:
-            if let account { CallPreferencesPage(model: model, account: account, back: pop, close: close) }
+            if let account { CallPreferencesPage(model: model, hub: model.selfExtension, account: account, back: pop, close: close) }
         case .link:
             if let account { LinkPage(model: model, account: account, back: pop, close: close) }
         case .centrale(let part):
@@ -216,7 +217,9 @@ struct SettingsSheet: View {
                 }
             }
         case .invite:
-            ComingSoonPage(title: L10n.string("settings.admin.invite"), symbol: "person.badge.plus", back: pop, close: close)
+            if let hub = model.pbx, let account {
+                InviteGateView(model: model, pbx: hub, account: account, back: pop, close: close)
+            }
         case .recordings:
             if let hub = model.media, let account {
                 MediaGateView(
@@ -310,7 +313,7 @@ private struct AvailabilityGroupBody: View {
 // MARK: - Pages
 
 /// A page of the sheet on the design system: back, title, close, a flat body.
-private struct PageScaffold<Content: View>: View {
+struct PageScaffold<Content: View>: View {
     let title: String
     let back: () -> Void
     let close: () -> Void
@@ -322,100 +325,6 @@ private struct PageScaffold<Content: View>: View {
     var body: some View {
         SheetShell(title: title, back: back, onClose: close, footer: footer, isSaving: isSaving, isDirty: isDirty, content: content)
             .toolbar(.hidden, for: .navigationBar)
-    }
-}
-
-private struct ProfilePage: View {
-    @ObservedObject var model: FSVoipAppModel
-    let account: StoredAccount
-    let back: () -> Void
-
-    @State private var alias = ""
-    @State private var isSaving = false
-
-    private var isDirty: Bool {
-        AccountService.cleanAlias(alias) != AccountService.cleanAlias(account.labelOverride)
-    }
-
-    var body: some View {
-        PageScaffold(
-            title: L10n.string("settings.profile"),
-            back: back,
-            close: { model.isSettingsPresented = false },
-            footer: SheetFooter(canSave: isDirty, onCancel: back, onSave: save),
-            isSaving: isSaving,
-            isDirty: isDirty
-        ) {
-            VStack(alignment: .leading, spacing: Theme.Spacing.l) {
-                HStack(spacing: Theme.Spacing.m) {
-                    InitialsAvatar(name: account.extensionName, size: 56)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(account.extensionName).font(.title3.weight(.semibold)).foregroundStyle(Theme.textPrimary)
-                        Text([account.pbxName, account.extensionNumber.map { String(format: L10n.string("account.extension"), $0) }].compactMap { $0 }.joined(separator: " · "))
-                            .font(.footnote)
-                            .foregroundStyle(Theme.textSecondary)
-                    }
-                }
-                .accessibilityElement(children: .combine)
-
-                SettingsGroup(title: L10n.string("account.alias"), footer: String(format: L10n.string("account.alias.footer"), "\(account.pbxName) · \(account.extensionName)")) {
-                    TextField(account.label, text: $alias)
-                        .textInputAutocapitalization(.sentences)
-                        .submitLabel(.done)
-                        .foregroundStyle(Theme.textPrimary)
-                        .settingsRowChrome()
-                        .accessibilityIdentifier("alias-field")
-                }
-            }
-        }
-        .onAppear { alias = account.labelOverride ?? "" }
-    }
-
-    private func save() {
-        guard isDirty, !isSaving else { return }
-
-        isSaving = true
-
-        Task {
-            let saved = await model.rename(accountId: account.id, alias: alias)
-            isSaving = false
-
-            if saved { back() }
-        }
-    }
-}
-
-private struct CallPreferencesPage: View {
-    @ObservedObject var model: FSVoipAppModel
-    let account: StoredAccount
-    let back: () -> Void
-    let close: () -> Void
-
-    var body: some View {
-        PageScaffold(title: L10n.string("settings.callPreferences"), back: back, close: close) {
-            VStack(alignment: .leading, spacing: 0) {
-                SettingsGroup(footer: String(format: L10n.string("account.showCalled.footer"), account.displayLabel)) {
-                    ToggleRow(
-                        title: L10n.string("account.showCalled"),
-                        isOn: Binding(
-                            get: { _ = model.settingsRevision; return model.showsCalledAccount(account.id) },
-                            set: { model.setShowsCalledAccount(account.id, $0) }
-                        )
-                    )
-                    .accessibilityIdentifier("show-called-toggle")
-                }
-
-                if model.accounts.count > 1 {
-                    SettingsGroup(title: L10n.string("settings.defaultLine"), footer: L10n.string("settings.defaultLine.footer")) {
-                        ForEach(model.accounts) { item in
-                            ChoiceRow(title: item.displayLabel, isSelected: model.defaultOutgoingAccountId == item.id) {
-                                model.setDefaultOutgoing(item.id)
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -526,21 +435,6 @@ private struct AboutPage: View {
                 }
                 .buttonStyle(RowButtonStyle())
             }
-        }
-    }
-}
-
-/// Pages whose content arrives in a later task (geluiden, uitnodigen).
-private struct ComingSoonPage: View {
-    let title: String
-    let symbol: String
-    let back: () -> Void
-    let close: () -> Void
-
-    var body: some View {
-        PageScaffold(title: title, back: back, close: close) {
-            EmptyState(symbol: symbol, title: L10n.string("settings.soon.title"), message: L10n.string("settings.soon.message"))
-                .frame(minHeight: 320)
         }
     }
 }

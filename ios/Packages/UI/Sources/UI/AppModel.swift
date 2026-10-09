@@ -46,6 +46,10 @@ public final class FSVoipAppModel: ObservableObject {
         /// "Geluiden" of the first admin account (demo screens).
         case sounds
         case appearance
+        /// "Profiel", "Oproepvoorkeuren" and "Gebruiker uitnodigen" of the first account (demo screens).
+        case profile
+        case callPreferences
+        case invite
     }
 
     public struct Notice: Identifiable, Equatable {
@@ -89,6 +93,8 @@ public final class FSVoipAppModel: ObservableObject {
     public let park: ParkModel?
     /// Do-not-disturb of the own extension ("Beschikbaar"); `nil` = not offered.
     public let availability: AvailabilityHub?
+    /// The own extension (e-mail, forwarding, voicemail) and inviting a colleague. Never `nil`: without a service it simply has nothing.
+    public let selfExtension: SelfExtensionHub
     /// "Uitbellen via": the number the next call goes out with.
     public let outbound: OutboundChoiceModel
     /// Calls of the PBX (the team history) per account, for "Geschiedenis".
@@ -111,6 +117,7 @@ public final class FSVoipAppModel: ObservableObject {
     private var mediaAccessLost: AnyCancellable?
     private var callActivity: AnyCancellable?
     private var outboundChanges: AnyCancellable?
+    private var selfExtensionChanges: AnyCancellable?
     private var parkChanges: AnyCancellable?
     @Published private var chosenParkAccountId: String?
 
@@ -128,6 +135,7 @@ public final class FSVoipAppModel: ObservableObject {
         pbx: PbxHub? = nil,
         media: MediaHub? = nil,
         availability: AvailabilityHub? = nil,
+        selfExtension: SelfExtensionHub? = nil,
         park: ParkServicing? = nil,
         outboundNumbers: OutboundNumbersServicing? = nil,
         logger: FSLogger = FSLogger(category: "app")
@@ -137,6 +145,7 @@ public final class FSVoipAppModel: ObservableObject {
         self.pbx = pbx
         self.media = media
         self.availability = availability
+        self.selfExtension = selfExtension ?? .unavailable
         self.park = park.map { ParkModel(service: $0) }
         outbound = OutboundChoiceModel(service: outboundNumbers, preferences: preferences)
         history = HistoryModel(media: media)
@@ -187,6 +196,10 @@ public final class FSVoipAppModel: ObservableObject {
         media?.onRevoked = { [weak self] in
             Task { await self?.refreshAccounts() }
         }
+        self.selfExtension.onRevoked = { [weak self] in
+            Task { await self?.refreshAccounts() }
+        }
+        selfExtensionChanges = self.selfExtension.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         media?.nameLookup = { [weak self] number in self?.name(forNumber: number) }
         mediaAccessLost = media?.$lostAccessFor.compactMap { $0 }.sink { [weak self] accountId in
             guard let self else { return }
@@ -702,6 +715,7 @@ public final class FSVoipAppModel: ObservableObject {
         internalContacts[accountId] = nil
         meByAccount[accountId] = nil
         availability?.forget(accountId: accountId)
+        selfExtension.forget(accountId: accountId)
         outbound.forget(accountId: accountId)
         park?.forget(accountId: accountId)
         history.forget(accountId: accountId)
