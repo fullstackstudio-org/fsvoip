@@ -245,6 +245,14 @@ final class PbxSectionModel: ObservableObject {
             return .failed(.readOnly)
         }
 
+        // Taken before the Face ID prompt: a second tap while it is open must not send a second request.
+        guard !isSaving else {
+            return .unchanged
+        }
+
+        isSaving = true
+        defer { isSaving = false }
+
         switch await gate.ensureUnlocked(reason: authReason()) {
         case .unlocked:
             break
@@ -253,9 +261,6 @@ final class PbxSectionModel: ObservableObject {
         case .cancelled, .failed:
             return .failed(.authentication)
         }
-
-        isSaving = true
-        defer { isSaving = false }
 
         let fresh: NumberChain
 
@@ -395,6 +400,14 @@ final class PbxSectionModel: ObservableObject {
             return .failed(.readOnly)
         }
 
+        // Taken before the Face ID prompt: a second tap while it is open must not send a second request.
+        guard !isSaving else {
+            return .unchanged
+        }
+
+        isSaving = true
+        defer { isSaving = false }
+
         switch await gate.ensureUnlocked(reason: authReason()) {
         case .unlocked:
             break
@@ -403,9 +416,6 @@ final class PbxSectionModel: ObservableObject {
         case .cancelled, .failed:
             return .failed(.authentication)
         }
-
-        isSaving = true
-        defer { isSaving = false }
 
         do {
             try await send()

@@ -392,6 +392,109 @@ final class NumberChainTests: XCTestCase {
         XCTAssertEqual(versionsOf(sent.body)[simple.hours!.id], 7)
     }
 
+    func testStaleWhileSwitchingStandardToMenuKeepsTheSwitchAndFollowsTheFreshMembers() throws {
+        var draft = NumberForwardingDraft(simple)
+        var baseline = draft
+        draft.kind = .menu
+        draft.greetingSoundId = "a1b2c3d4-1111-4a2b-8c3d-4e5f6a7b8c9d"
+        draft.setKey("1", target: .object(.device, id: "5c0a8e1f-2d7b-4a39-8f46-0b1c2d3e4f50"))
+
+        // Someone else took one phone out of the standard forwarding, and the number is now version 9.
+        let fresh = PbxFixtures.chain("number-chain-simple") { json in
+            json["version"] = 9
+            var forwarding = json["forwarding"] as! [String: Any]
+            var members = forwarding["members"] as! [[String: Any]]
+            members.removeLast()
+            forwarding["members"] = members
+            json["forwarding"] = forwarding
+        }
+
+        draft.rebase(onto: fresh, baseline: &baseline)
+
+        XCTAssertEqual(draft.kind, .menu, "the switch the user made stays")
+        XCTAssertEqual(draft.keys.count, 1)
+        XCTAssertEqual(baseline, NumberForwardingDraft(fresh), "the fresh chain is the new baseline")
+        XCTAssertEqual(draft.members, NumberForwardingDraft(fresh).members, "untouched fields follow the fresh chain")
+
+        // The save is still the whole menu (the kind differs from the baseline), now with the fresh versions.
+        let body = try jsonBody(XCTUnwrap(draft.step(baseline: baseline, chain: fresh)))
+        XCTAssertEqual(body["kind"] as? String, "menu")
+        XCTAssertEqual(body["numberVersion"] as? Int, 9)
+        XCTAssertNotNil(body["keys"])
+    }
+
+    func testStaleWhileSwitchingMenuToStandardKeepsTheSwitchAndTakesTheFreshMenuValues() throws {
+        let chain = PbxFixtures.menuChain
+        var draft = NumberForwardingDraft(chain)
+        var baseline = draft
+        draft.kind = .standard
+        draft.members = NumberForwardingDraft(simple).members
+
+        // Someone else changed the wait time of the menu.
+        let fresh = PbxFixtures.chain("number-chain-menu") { json in
+            json["version"] = 12
+            var forwarding = json["forwarding"] as! [String: Any]
+            forwarding["timeoutSeconds"] = 15
+            json["forwarding"] = forwarding
+        }
+
+        draft.rebase(onto: fresh, baseline: &baseline)
+
+        XCTAssertEqual(draft.kind, .standard)
+        XCTAssertEqual(draft.members, NumberForwardingDraft(simple).members, "what the user chose stays")
+        XCTAssertEqual(draft.timeoutSeconds, 15, "untouched menu values follow the fresh chain")
+
+        let body = try jsonBody(XCTUnwrap(draft.step(baseline: baseline, chain: fresh)))
+        XCTAssertEqual(body["kind"] as? String, "standard")
+        XCTAssertEqual(body["numberVersion"] as? Int, 12)
+        XCTAssertNotNil(body["members"])
+    }
+
+    func testStaleHoursOffToOnWhenSomeoneElseSwitchedThemOnAlreadySendsNothing() throws {
+        let off = PbxFixtures.chain("number-chain-simple") { $0["hours"] = NSNull() }
+        var draft = NumberHoursDraft(off)
+        var baseline = draft
+        draft.enabled = true
+
+        let fresh = PbxFixtures.chain("number-chain-simple") { json in
+            json["version"] = 6
+            var hours = json["hours"] as! [String: Any]
+            hours["version"] = 4
+            json["hours"] = hours
+        }
+
+        draft.rebase(onto: fresh, baseline: &baseline)
+
+        XCTAssertTrue(draft.enabled)
+        XCTAssertTrue(baseline.enabled, "the fresh chain has hours")
+        XCTAssertEqual(draft.week, baseline.week, "the week of the other person is kept, not the default office week")
+        XCTAssertNil(draft.step(baseline: baseline, chain: fresh), "already on: nothing left to send")
+    }
+
+    func testStaleHoursOffToOnThatStaysOffOnTheServerStillSwitchesOn() throws {
+        let off = PbxFixtures.chain("number-chain-simple") { $0["hours"] = NSNull() }
+        var draft = NumberHoursDraft(off)
+        var baseline = draft
+        draft.enabled = true
+        draft.closed = .hangup
+
+        // Someone else only renamed the number.
+        let fresh = PbxFixtures.chain("number-chain-simple") { json in
+            json["hours"] = NSNull()
+            json["name"] = "Andere naam"
+            json["version"] = 8
+        }
+
+        draft.rebase(onto: fresh, baseline: &baseline)
+
+        XCTAssertTrue(draft.enabled)
+        XCTAssertFalse(baseline.enabled)
+        let body = try jsonBody(XCTUnwrap(draft.step(baseline: baseline, chain: fresh)))
+        XCTAssertEqual(Set(body.keys), ["enabled", "week", "holidays", "closed", "versions", "numberVersion"])
+        XCTAssertEqual(body["numberVersion"] as? Int, 8)
+        XCTAssertEqual((body["closed"] as? [String: Any])?["mode"] as? String, "hangup")
+    }
+
     func testAPlainStaleReloadsTheChain() async {
         let model = makeModel()
         await model.loadChain(simple.id)

@@ -704,6 +704,8 @@
 "numbers.forwarding.switch.toMenu" = "After saving, callers get the menu. The current forwarding is kept.";
 "numbers.forwarding.switch.toStandard" = "After saving, the phones ring right away. The menu is kept.";
 "numbers.forwarding.members" = "In the forwarding";
+"numbers.forwarding.members.other" = "Other phone";
+"numbers.forwarding.members.other.timing" = "Stays in the forwarding · after %ld s, rings %ld s";
 "numbers.forwarding.members.none" = "Switch on at least one phone.";
 "numbers.forwarding.settings" = "Settings";
 "numbers.forwarding.logic" = "Logic";

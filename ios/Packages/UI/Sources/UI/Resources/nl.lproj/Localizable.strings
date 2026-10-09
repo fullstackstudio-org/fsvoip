@@ -704,6 +704,8 @@
 "numbers.forwarding.switch.toMenu" = "Na opslaan krijgen bellers het keuzemenu. De huidige doorschakeling blijft bewaard.";
 "numbers.forwarding.switch.toStandard" = "Na opslaan gaan de telefoons direct over. Het keuzemenu blijft bewaard.";
 "numbers.forwarding.members" = "In de doorschakeling";
+"numbers.forwarding.members.other" = "Overig toestel";
+"numbers.forwarding.members.other.timing" = "Blijft in de doorschakeling · na %ld s, %ld s overgaan";
 "numbers.forwarding.members.none" = "Zet minstens één telefoon aan.";
 "numbers.forwarding.settings" = "Instellingen";
 "numbers.forwarding.logic" = "Logica";

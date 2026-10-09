@@ -56,6 +56,9 @@ enum Theme {
     static let textTertiary = Color(uiTextTertiary)
     static let accentText = Color(uiAccentText)
     static let segmentSelected = Color(uiSegmentSelected)
+    /// Text on `segmentSelected`: lime on both themes (the selected fill is ink on light, so `accentText` would vanish).
+    static let uiOnSegmentSelected = uiAccent
+    static let onSegmentSelected = Color(uiOnSegmentSelected)
     static let segmentTrack = Color(uiSegmentTrack)
 
     // MARK: Spacing and radius

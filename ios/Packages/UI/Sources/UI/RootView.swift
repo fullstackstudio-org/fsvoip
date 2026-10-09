@@ -81,6 +81,10 @@ public struct RootView: View {
 struct MainTabView: View {
     @ObservedObject var model: FSVoipAppModel
 
+    private var availabilityAccount: StoredAccount? {
+        model.defaultOutgoingAccountId.flatMap { model.account(id: $0) } ?? model.accounts.first
+    }
+
     var body: some View {
         TabView(selection: $model.selectedTab) {
             NavigationStack {
@@ -124,6 +128,10 @@ struct MainTabView: View {
             .accessibilityIdentifier("tab-contacts")
         }
         .tint(Theme.accentText)
+        .task(id: availabilityAccount?.id) {
+            // "Beschikbaar" is read once for the account the avatar shows, not once per tab.
+            if let account = availabilityAccount, let hub = model.availability { await hub.load(account) }
+        }
         .sheet(isPresented: $model.isSettingsPresented) {
             SettingsSheet(model: model)
         }
@@ -203,9 +211,6 @@ private struct ShellBarItems: View {
             .accessibilityLabel(String(format: L10n.string("settings.avatar.label"), account?.extensionName ?? ""))
             .accessibilityValue(dotLabel)
             .accessibilityIdentifier("settings-avatar")
-        }
-        .task(id: account?.id) {
-            if let account { await hub.load(account) }
         }
     }
 }

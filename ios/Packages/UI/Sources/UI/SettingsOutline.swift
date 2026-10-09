@@ -20,6 +20,8 @@ enum SettingsPage: Hashable {
 struct SettingsOutline: Equatable {
     enum Admin: Equatable, CaseIterable {
         case numbers
+        case overview
+        case hours
         case devices
         case ringGroups
         case sounds
@@ -44,7 +46,7 @@ struct SettingsOutline: Equatable {
             return
         }
 
-        var items: [Admin] = [.numbers, .devices, .ringGroups]
+        var items: [Admin] = [.numbers, .devices, .ringGroups, .overview, .hours]
 
         if model.canManageSounds(accountId) { items.append(.sounds) }
         if model.canInvite(accountId) { items.append(.invite) }

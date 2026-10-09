@@ -328,6 +328,12 @@ struct NumberForwardingDraft: ChainDraft {
 
     // MARK: Standard helpers
 
+    /// Members the device list does not know (a phone of another kind, or one the app may not list): kept and sent along as they
+    /// are, so they are shown read-only instead of travelling invisibly.
+    func members(notIn deviceIds: Set<String>) -> [ChainMember] {
+        members.filter { !deviceIds.contains($0.deviceId) }
+    }
+
     func isMember(_ deviceId: String) -> Bool {
         members.contains { $0.deviceId == deviceId }
     }

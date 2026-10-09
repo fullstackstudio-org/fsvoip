@@ -246,6 +246,16 @@ final class SettingsOutlineTests: XCTestCase {
         XCTAssertTrue(outline.admin.starts(with: [.numbers, .devices, .ringGroups]))
     }
 
+    func testTheCentraleOverviewAndHoursAreInBeheerForAnAdminOnly() async throws {
+        let admin = try await outline(me: PbxFixtures.me)
+        XCTAssertTrue(admin.admin.contains(.overview))
+        XCTAssertTrue(admin.admin.contains(.hours))
+
+        let user = try await outline(me: PbxFixtures.meUser)
+        XCTAssertFalse(user.admin.contains(.overview))
+        XCTAssertFalse(user.admin.contains(.hours))
+    }
+
     func testAnOldServerWithoutARoleShowsNoManagement() async throws {
         var me = PbxFixtures.me
         me.role = nil

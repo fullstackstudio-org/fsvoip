@@ -50,5 +50,6 @@ struct NumberAdvancedView: View {
                 .accessibilityIdentifier("number-portal-link")
             }
         }
+        .task { await model.loadIfNeeded(.overview) }
     }
 }

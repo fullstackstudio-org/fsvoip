@@ -172,6 +172,8 @@ struct SettingsSheet: View {
                 case .numbers: link(.centrale(.numbers), symbol: "number", title: L10n.string("settings.admin.numbers"))
                 case .devices: link(.centrale(.devices), symbol: "phone.fill", title: L10n.string("pbx.devices.title"))
                 case .ringGroups: link(.centrale(.ringGroups), symbol: "person.3.fill", title: L10n.string("pbx.ringGroups.title"))
+                case .overview: link(.centrale(.overview), symbol: "arrow.triangle.branch", title: L10n.string("pbx.title"))
+                case .hours: link(.centrale(.hours), symbol: "clock", title: L10n.string("pbx.hours.title"))
                 case .sounds: link(.sounds, symbol: "speaker.wave.2", title: L10n.string("settings.admin.sounds"))
                 case .invite: link(.invite, symbol: "person.badge.plus", title: L10n.string("settings.admin.invite"))
                 case .recordings: link(.recordings, symbol: "waveform", title: L10n.string("media.recordings.title"))

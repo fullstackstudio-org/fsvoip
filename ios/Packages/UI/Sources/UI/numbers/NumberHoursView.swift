@@ -93,7 +93,7 @@ struct NumberHoursView: View {
             } label: {
                 Text(L10n.string(preset.titleKey))
                     .font(.subheadline.weight(isCurrent ? .semibold : .regular))
-                    .foregroundStyle(isCurrent ? Theme.accentText : Theme.textPrimary)
+                    .foregroundStyle(isCurrent ? Theme.onSegmentSelected : Theme.textPrimary)
                     .padding(.horizontal, Theme.Spacing.m)
                     .frame(minHeight: 36)
                     .background(isCurrent ? Theme.segmentSelected : Theme.raised, in: Capsule())

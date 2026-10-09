@@ -57,7 +57,7 @@ struct SheetShell<Content: View>: View {
                 footerBar(footer)
             }
         }
-        .interactiveDismissDisabled(isDirty)
+        .interactiveDismissDisabled(isDirty || isSaving)
         .confirmationDialog(L10n.string("sheet.discard.title"), isPresented: confirmationBinding, titleVisibility: .visible) {
             Button(L10n.string("sheet.discard.confirm"), role: .destructive) {
                 let exit = pendingExit
@@ -75,6 +75,9 @@ struct SheetShell<Content: View>: View {
     }
 
     private func leave(_ exit: @escaping () -> Void) {
+        // While a save runs the sheet stays: closing would hide the outcome.
+        guard !isSaving else { return }
+
         switch SheetDismissal.decide(isDirty: isDirty, isSaving: isSaving) {
         case .proceed: exit()
         case .confirmDiscard: pendingExit = exit
@@ -116,6 +119,7 @@ struct SheetShell<Content: View>: View {
                 .frame(width: Theme.minimumTarget, height: Theme.minimumTarget)
                 .contentShape(Rectangle())
         }
+        .disabled(isSaving)
         .accessibilityLabel(label)
     }
 

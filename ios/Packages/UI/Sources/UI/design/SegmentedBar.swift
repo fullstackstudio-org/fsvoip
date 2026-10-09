@@ -23,7 +23,7 @@ struct SegmentedBar<Value: Hashable>: View {
                 } label: {
                     Text(option.title)
                         .font(.subheadline.weight(isSelected ? .semibold : .regular))
-                        .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
+                        .foregroundStyle(isSelected ? Theme.onSegmentSelected : Theme.textSecondary)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, minHeight: 36)

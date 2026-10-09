@@ -74,6 +74,16 @@ struct NumberForwardingView: View {
                     )
                     .accessibilityIdentifier("member-\(device.id)")
                 }
+
+                ForEach(draft.members(notIn: Set(options.devices.map(\.id))), id: \.deviceId) { member in
+                    SettingsRow(
+                        symbol: "phone.fill",
+                        title: L10n.string("numbers.forwarding.members.other"),
+                        subtitle: String(format: L10n.string("numbers.forwarding.members.other.timing"), member.delaySeconds, member.timeoutSeconds),
+                        showsChevron: false
+                    )
+                    .accessibilityIdentifier("member-other-\(member.deviceId)")
+                }
             }
 
             SettingsGroup(title: L10n.string("numbers.forwarding.settings")) {

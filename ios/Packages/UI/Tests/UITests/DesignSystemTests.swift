@@ -30,6 +30,35 @@ final class DesignSystemTests: XCTestCase {
         XCTAssertNotEqual(rgb(Theme.uiBackground, style: .dark), rgb(Theme.uiBackground, style: .light))
     }
 
+    func testTextOnASelectedSegmentIsLimeOnBothThemes() {
+        // The selected fill is ink on light and a raised ink on dark: ink-coloured text (accentText on light) would vanish.
+        for style in [UIUserInterfaceStyle.light, .dark] {
+            let fill = rgb(Theme.uiSegmentSelected, style: style)
+            let text = rgb(Theme.uiOnSegmentSelected, style: style)
+
+            XCTAssertEqual(text, [0xC7, 0xFF, 0x4A])
+            XCTAssertNotEqual(text, fill)
+            XCTAssertGreaterThan(Self.contrast(text, fill), 4.5, "\(style.rawValue)")
+        }
+
+        XCTAssertEqual(rgb(Theme.uiAccentText, style: .light), rgb(Theme.uiSegmentSelected, style: .light), "the trap: accentText on this fill is invisible on light")
+    }
+
+    private static func contrast(_ a: [Int], _ b: [Int]) -> Double {
+        func luminance(_ c: [Int]) -> Double {
+            let v = c.map { x -> Double in
+                let s = Double(x) / 255
+                return s <= 0.03928 ? s / 12.92 : pow((s + 0.055) / 1.055, 2.4)
+            }
+
+            return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]
+        }
+
+        let (l1, l2) = (luminance(a), luminance(b))
+
+        return (max(l1, l2) + 0.05) / (min(l1, l2) + 0.05)
+    }
+
     func testNoBlueAmongTheFixedColours() {
         for color in [Theme.uiAccent, Theme.uiInk, Theme.uiInkRaised, Theme.uiBusy, Theme.uiDanger] {
             let value = rgb(color, style: .dark)
