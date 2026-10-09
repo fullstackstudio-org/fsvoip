@@ -268,3 +268,13 @@ final class DesignSystemTests: XCTestCase {
             .map { try String(contentsOf: $0) }
     }
 }
+
+final class TabGlyphTests: XCTestCase {
+    /// Every tab symbol must exist: an unknown name renders nothing (the Voicemail tab lost its icon that way).
+    func testEveryTabSymbolExists() {
+        for name in ["circle.grid.3x3.fill", "pause.circle.fill", "clock.fill", "recordingtape", "person.2.fill"] {
+            XCTAssertNotNil(UIImage(systemName: name), name)
+        }
+        XCTAssertNil(UIImage(systemName: "voicemail"), "the old, non-existent name")
+    }
+}

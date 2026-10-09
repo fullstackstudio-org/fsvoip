@@ -115,7 +115,7 @@ struct MainTabView: View {
                 VoicemailTabView(model: model)
                     .shellToolbar(model: model)
             }
-            .tabItem { Label(L10n.string("tab.voicemail"), systemImage: "voicemail") }
+            .tabItem { Label(L10n.string("tab.voicemail"), systemImage: "recordingtape") }
             .tag(FSVoipAppModel.Tab.voicemail)
             .accessibilityIdentifier("tab-voicemail")
 

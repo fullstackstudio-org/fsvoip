@@ -30,16 +30,19 @@ struct InCallView: View {
                 Spacer(minLength: 16)
 
                 if session.phase == .incoming {
+                    // Weigeren/Opnemen sit at the bottom, where the end button sits on every other call screen.
+                    Spacer(minLength: 0)
                     incomingActions
+                        .padding(.bottom, 24)
                 } else if showsKeypad {
                     dtmfKeypad
                 } else {
                     controls
                 }
 
-                Spacer(minLength: 16)
-
                 if session.phase != .incoming {
+                    Spacer(minLength: 16)
+
                     endButton
                         .padding(.bottom, 24)
                 }

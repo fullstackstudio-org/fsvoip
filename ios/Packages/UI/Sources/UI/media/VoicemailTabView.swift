@@ -36,7 +36,7 @@ struct VoicemailTabView: View {
                     .id(account.id)
             } else {
                 EmptyState(
-                    symbol: "voicemail",
+                    symbol: "recordingtape",
                     title: L10n.string("voicemail.empty.title"),
                     message: L10n.string("voicemail.empty.message")
                 )
@@ -185,7 +185,7 @@ private struct VoicemailContent: View {
             )
         } else if rows.isEmpty {
             EmptyState(
-                symbol: "voicemail",
+                symbol: "recordingtape",
                 title: L10n.string(filter == .new && !model.messages.isEmpty ? "voicemail.empty.new.title" : "media.voicemail.empty.title"),
                 message: L10n.string(filter == .new && !model.messages.isEmpty ? "voicemail.empty.new.message" : (model.scope == .own ? "media.voicemail.empty.own" : "media.voicemail.empty.other"))
             )

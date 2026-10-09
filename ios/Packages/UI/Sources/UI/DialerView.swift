@@ -233,6 +233,8 @@ struct OutboundBar: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            Spacer(minLength: Theme.Spacing.s)
+
             if chevron {
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.caption2.weight(.bold))

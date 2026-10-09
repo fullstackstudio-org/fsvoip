@@ -111,6 +111,7 @@ struct SettingsRow: View {
                     valueText
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             if showsChevron {
                 Image(systemName: "chevron.right")
@@ -134,10 +135,15 @@ struct SettingsRow: View {
                 Text(subtitle)
                     .font(.footnote)
                     .foregroundStyle(Theme.textSecondary)
+                    .lineLimit(subtitleLines)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
+
+    /// One line at the regular text size; at accessibility sizes the subtitle may wrap instead of being cut off.
+    @Environment(\.dynamicTypeSize) private var typeSize
+    private var subtitleLines: Int? { typeSize.isAccessibilitySize ? nil : 1 }
 
     @ViewBuilder
     private var valueText: some View {
