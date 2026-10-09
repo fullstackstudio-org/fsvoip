@@ -3,7 +3,8 @@
 // DEBUG builds only: a demo of the app without a phone system, for the simulator, screenshots and UI checks.
 // Start with the launch argument `-FSVoipDemo YES` (two paired example extensions) or `-FSVoipDemo onboarding`
 // (nothing paired yet). `-FSVoipDemoScreen <dialer|onhold|recents|voicemail|contacts|settings|pbx|recordings|appearance|incall|incoming|push|pairing|failed|scanner>`
-// opens a screen directly. Nothing here talks to a server or a PBX, and nothing is written to the Keychain.
+// opens a screen directly. `-FSVoipDemoContactsScreen <detail|edit|new|sources|phone|filter>` goes one step further inside the Contacts tab.
+// Nothing here talks to a server or a PBX, and nothing is written to the Keychain.
 
 #if DEBUG
 import CallController

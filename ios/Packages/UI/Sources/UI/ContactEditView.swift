@@ -3,7 +3,7 @@ import Core
 import FSContacts
 import SwiftUI
 
-/// New contact / edit a contact of the customer's address book.
+/// New contact / edit a contact of the customer's address book, as a sheet on the design system's `SheetShell`.
 struct ContactEditView: View {
     enum Mode: Equatable {
         case new
@@ -17,6 +17,9 @@ struct ContactEditView: View {
 
     @State private var draft = ContactDraft()
     @State private var original = ContactDraft()
+    /// The country picked for a number typed in national form.
+    @State private var countries: [UUID: PhoneCountry] = [:]
+    @State private var countryTouched = false
     /// The `updatedAt` the screen was filled with; goes back as `expectedUpdatedAt`.
     @State private var expectedUpdatedAt: String?
     @State private var contactId: String?
@@ -25,7 +28,6 @@ struct ContactEditView: View {
     @State private var isSaving = false
     @State private var errorText: String?
     @State private var showsStale = false
-    @State private var confirmsDiscard = false
     @State private var didStart = false
 
     init(model: FSVoipAppModel, mode: Mode) {
@@ -35,7 +37,7 @@ struct ContactEditView: View {
     }
 
     private var isDirty: Bool {
-        draft != original
+        draft != original || countryTouched
     }
 
     private var title: String {
@@ -51,44 +53,27 @@ struct ContactEditView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            Form {
-                if isLoading {
-                    Section { HStack { Spacer(); ProgressView(); Spacer() } }
-                } else {
-                    fields
-                }
-            }
-            .navigationTitle(title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(L10n.string("action.cancel")) {
-                        if isDirty { confirmsDiscard = true } else { dismiss() }
-                    }
-                }
-
-                ToolbarItem(placement: .confirmationAction) {
-                    if isSaving {
-                        ProgressView()
-                    } else {
-                        Button(L10n.string("action.save")) { save() }
-                            .disabled(!draft.canSave || isLoading)
-                            .accessibilityIdentifier("contact-save")
-                    }
-                }
-            }
-            .confirmationDialog(L10n.string("contacts.edit.discard.title"), isPresented: $confirmsDiscard, titleVisibility: .visible) {
-                Button(L10n.string("contacts.edit.discard.confirm"), role: .destructive) { dismiss() }
-                Button(L10n.string("contacts.edit.discard.keep"), role: .cancel) {}
-            }
-            .alert(L10n.string("contacts.edit.stale.title"), isPresented: $showsStale) {
-                Button(L10n.string("contacts.edit.stale.ok"), role: .cancel) {}
-            } message: {
-                L10n.text("contacts.edit.stale.message")
+        SheetShell(
+            title: title,
+            onClose: { dismiss() },
+            footer: SheetFooter(canSave: ContactEditRules.canSave(draft) && !isLoading, onSave: save),
+            isSaving: isSaving,
+            isDirty: isDirty
+        ) {
+            if isLoading {
+                ProgressView()
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Theme.Spacing.xl)
+            } else {
+                fields
             }
         }
-        .interactiveDismissDisabled(isDirty || isSaving)
+        .presentationDetents([.large])
+        .alert(L10n.string("contacts.edit.stale.title"), isPresented: $showsStale) {
+            Button(L10n.string("contacts.edit.stale.ok"), role: .cancel) {}
+        } message: {
+            L10n.text("contacts.edit.stale.message")
+        }
         .task { await start() }
     }
 
@@ -97,113 +82,180 @@ struct ContactEditView: View {
     @ViewBuilder
     private var fields: some View {
         if mode == .new, hub.writableAccountIds.count > 1 {
-            Section {
-                Picker(L10n.string("contacts.edit.account"), selection: Binding(get: { accountId ?? "" }, set: { accountId = $0; draft.listIds = [] })) {
-                    ForEach(hub.writableAccountIds, id: \.self) { id in
-                        Text(model.account(id: id)?.displayLabel ?? id).tag(id)
+            SettingsGroup(title: L10n.string("contacts.edit.account"), footer: L10n.string("contacts.edit.account.footer")) {
+                ForEach(hub.writableAccountIds, id: \.self) { id in
+                    ChoiceRow(title: model.account(id: id)?.displayLabel ?? id, isSelected: accountId == id) {
+                        accountId = id
+                        draft.listIds = []
                     }
                 }
-            } footer: {
-                L10n.text("contacts.edit.account.footer")
             }
         }
 
-        Section {
-            TextField(L10n.string("contacts.edit.firstName"), text: $draft.firstName)
-                .textContentType(.givenName)
-                .textInputAutocapitalization(.words)
-                .accessibilityIdentifier("contact-first-name")
-            TextField(L10n.string("contacts.edit.lastName"), text: $draft.lastName)
-                .textContentType(.familyName)
-                .textInputAutocapitalization(.words)
-                .accessibilityIdentifier("contact-last-name")
-            TextField(L10n.string("contacts.edit.company"), text: $draft.company)
-                .textContentType(.organizationName)
-                .textInputAutocapitalization(.words)
-                .accessibilityIdentifier("contact-company")
+        SettingsGroup(title: L10n.string("contacts.edit.name")) {
+            field(L10n.string("contacts.edit.firstName"), text: $draft.firstName, content: .givenName, id: "contact-first-name")
+            field(L10n.string("contacts.edit.lastName"), text: $draft.lastName, content: .familyName, id: "contact-last-name")
+            field(L10n.string("contacts.edit.company"), text: $draft.company, content: .organizationName, id: "contact-company")
         }
 
-        Section {
+        SettingsGroup(title: L10n.string("contacts.edit.numbers")) {
             ForEach($draft.phones) { $phone in
-                HStack(spacing: 10) {
-                    Menu {
-                        Picker(L10n.string("contacts.edit.number"), selection: $phone.label) {
-                            ForEach(ContactPhoneLabel.choices, id: \.self) { Text($0.title).tag($0) }
-                        }
-                    } label: {
-                        Text(phone.label.title)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .frame(minWidth: 72, alignment: .leading)
-                    }
-
-                    TextField(L10n.string("contacts.edit.number"), text: $phone.number)
-                        .keyboardType(.phonePad)
-                        .textContentType(.telephoneNumber)
-                        .accessibilityIdentifier("contact-number-field")
-                }
+                phoneRow($phone)
             }
-            .onDelete { draft.phones.remove(atOffsets: $0) }
 
             Button {
                 draft.phones.append(.init(label: draft.phones.isEmpty ? .mobile : .work))
             } label: {
-                Label(L10n.string("contacts.edit.addNumber"), systemImage: "plus.circle.fill")
-                    .foregroundStyle(.primary)
+                HStack(spacing: Theme.Spacing.m) {
+                    Image(systemName: "plus.circle.fill")
+                        .foregroundStyle(Theme.accentText)
+                        .accessibilityHidden(true)
+                    Text(L10n.string("contacts.edit.addNumber"))
+                        .foregroundStyle(Theme.textPrimary)
+                    Spacer(minLength: 0)
+                }
+                .settingsRowChrome()
             }
-        } header: {
-            L10n.text("contacts.edit.numbers")
+            .buttonStyle(RowButtonStyle())
+            .accessibilityIdentifier("contact-add-number")
         }
 
-        Section {
+        SettingsGroup(title: L10n.string("contacts.edit.email")) {
             TextField(L10n.string("contacts.edit.email"), text: $draft.email)
                 .keyboardType(.emailAddress)
                 .textContentType(.emailAddress)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
+                .foregroundStyle(Theme.textPrimary)
+                .settingsRowChrome()
                 .accessibilityIdentifier("contact-email")
         }
 
-        Section {
-            TextField("", text: $draft.notes, axis: .vertical)
+        SettingsGroup(title: L10n.string("contacts.edit.notes")) {
+            TextField(L10n.string("contacts.edit.notes"), text: $draft.notes, axis: .vertical)
                 .lineLimit(3 ... 8)
-                .accessibilityLabel(L10n.string("contacts.edit.notes"))
-        } header: {
-            L10n.text("contacts.edit.notes")
+                .foregroundStyle(Theme.textPrimary)
+                .settingsRowChrome()
         }
 
         if !lists.isEmpty {
-            Section {
+            SettingsGroup(title: L10n.string("contacts.edit.lists")) {
                 ForEach(lists) { list in
-                    Toggle(list.name, isOn: Binding(
+                    ToggleRow(title: list.name, isOn: Binding(
                         get: { draft.listIds.contains(list.id) },
                         set: { isOn in
                             if isOn { draft.listIds.insert(list.id) } else { draft.listIds.remove(list.id) }
                         }
                     ))
-                    .tint(Brand.ink)
                 }
-            } header: {
-                L10n.text("contacts.edit.lists")
             }
         }
 
-        if !draft.canSave {
-            Section {
-                L10n.text("contacts.edit.needs")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
+        if !ContactEditRules.canSave(draft) {
+            Text(L10n.string("contacts.edit.needs"))
+                .font(.footnote)
+                .foregroundStyle(Theme.textTertiary)
+                .padding(.horizontal, Theme.Spacing.l)
         }
 
         if let errorText {
-            Section {
-                Text(errorText)
-                    .font(.footnote)
-                    .foregroundStyle(Brand.hangUp)
-                    .accessibilityIdentifier("contact-error")
-            }
+            Text(errorText)
+                .font(.footnote)
+                .foregroundStyle(Theme.danger)
+                .padding(.horizontal, Theme.Spacing.l)
+                .padding(.top, Theme.Spacing.s)
+                .accessibilityIdentifier("contact-error")
         }
+    }
+
+    private func field(_ placeholder: String, text: Binding<String>, content: UITextContentType, id: String) -> some View {
+        TextField(placeholder, text: text)
+            .textContentType(content)
+            .textInputAutocapitalization(.words)
+            .foregroundStyle(Theme.textPrimary)
+            .settingsRowChrome()
+            .accessibilityIdentifier(id)
+    }
+
+    /// Country code, label and number of one phone number. The number is on its own line so it never gets squeezed.
+    private func phoneRow(_ phone: Binding<ContactDraft.Phone>) -> some View {
+        let id = phone.wrappedValue.id
+        let country = effectiveCountry(of: phone.wrappedValue)
+
+        return VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+            HStack(spacing: Theme.Spacing.s) {
+                Menu {
+                    Picker(L10n.string("contacts.edit.country"), selection: Binding(
+                        get: { country },
+                        set: { picked in
+                            countries[id] = picked
+                            countryTouched = true
+                        }
+                    )) {
+                        ForEach(PhoneCountry.all) { option in
+                            Text("\(option.name) (\(option.dialText))").tag(option)
+                        }
+                    }
+                } label: {
+                    pill("\(country.region) \(country.dialText)")
+                }
+                .accessibilityLabel(L10n.string("contacts.edit.country"))
+                .accessibilityValue("\(country.name) \(country.dialText)")
+                .accessibilityIdentifier("contact-country")
+
+                Menu {
+                    Picker(L10n.string("contacts.edit.number"), selection: phone.label) {
+                        ForEach(ContactPhoneLabel.choices, id: \.self) { Text($0.title).tag($0) }
+                    }
+                } label: {
+                    pill(phone.wrappedValue.label.title)
+                }
+                .accessibilityLabel(L10n.string("contacts.edit.labelPicker"))
+                .accessibilityValue(phone.wrappedValue.label.title)
+
+                Spacer(minLength: 0)
+
+                if draft.phones.count > 1 {
+                    Button {
+                        draft.phones.removeAll { $0.id == id }
+                    } label: {
+                        Image(systemName: "minus.circle.fill")
+                            .foregroundStyle(Theme.textTertiary)
+                            .frame(minWidth: Theme.minimumTarget, minHeight: Theme.minimumTarget)
+                    }
+                    .accessibilityLabel(L10n.string("contacts.edit.removeNumber"))
+                }
+            }
+
+            TextField(L10n.string("contacts.edit.number"), text: phone.number)
+                .keyboardType(.phonePad)
+                .textContentType(.telephoneNumber)
+                .foregroundStyle(Theme.textPrimary)
+                .accessibilityIdentifier("contact-number-field")
+        }
+        .settingsRowChrome()
+    }
+
+    private func pill(_ text: String) -> some View {
+        HStack(spacing: Theme.Spacing.xs) {
+            Text(text)
+                .font(.subheadline.weight(.medium))
+                .fixedSize(horizontal: false, vertical: true)
+            Image(systemName: "chevron.down")
+                .font(.caption2.weight(.semibold))
+                .accessibilityHidden(true)
+        }
+        .foregroundStyle(Theme.textPrimary)
+        .padding(.horizontal, Theme.Spacing.m)
+        .frame(minHeight: 36)
+        .background(Theme.sheet, in: Capsule())
+        .overlay(Capsule().strokeBorder(Theme.separator, lineWidth: 1))
+        .frame(minHeight: Theme.minimumTarget)
+    }
+
+    /// A number that carries its own code shows that country; otherwise the one picked (default the Netherlands).
+    private func effectiveCountry(of phone: ContactDraft.Phone) -> PhoneCountry {
+        PhoneCountry.detect(from: phone.number) ?? countries[phone.id] ?? .netherlands
     }
 
     // MARK: Actions
@@ -218,6 +270,7 @@ struct ContactEditView: View {
         switch mode {
         case .new:
             accountId = hub.writableAccountIds.first
+            original = draft
         case let .edit(entryId):
             guard let entry = hub.entries.first(where: { $0.id == entryId }), let id = entry.contactId, let account = hub.writeAccountId(for: entry) else {
                 dismiss()
@@ -242,6 +295,8 @@ struct ContactEditView: View {
             let detail = try await hub.detail(accountId: accountId, contactId: contactId)
             draft = ContactDraft(detail: detail)
             original = draft
+            countries = [:]
+            countryTouched = false
             expectedUpdatedAt = detail.contact.updatedAt
         } catch {
             if !silently { errorText = ContactFailure.message(for: error) }
@@ -249,28 +304,31 @@ struct ContactEditView: View {
     }
 
     private func save() {
-        guard let accountId, !isSaving, draft.canSave else {
+        guard let accountId, !isSaving, ContactEditRules.canSave(draft) else {
             return
         }
 
         isSaving = true
         errorText = nil
 
+        let prepared = ContactEditRules.prepared(draft, countries: countries)
+
         Task {
             do {
                 switch mode {
                 case .new:
-                    try await hub.create(draft, accountId: accountId)
+                    try await hub.create(prepared, accountId: accountId)
                 case .edit:
                     guard let contactId, let expectedUpdatedAt else {
                         throw APIError.notFound
                     }
 
-                    try await hub.update(draft, contactId: contactId, expectedUpdatedAt: expectedUpdatedAt, accountId: accountId)
+                    try await hub.update(prepared, contactId: contactId, expectedUpdatedAt: expectedUpdatedAt, accountId: accountId)
                 }
 
                 Haptics.success()
                 original = draft
+                countryTouched = false
                 dismiss()
             } catch APIError.stale {
                 // Someone else changed it first: take the server's version and tell the user.

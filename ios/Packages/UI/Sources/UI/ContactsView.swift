@@ -2,17 +2,25 @@
 import Core
 import FSContacts
 import SwiftUI
+import UIKit
 
-/// The Contacts tab: the customer's address book, the phone's own contacts and the colleagues of the PBX in one list.
+/// The Contacts tab: the phone system's address book and colleagues in one segment, the phone's own contacts in the other.
 struct ContactsView: View {
     @ObservedObject var model: FSVoipAppModel
     @ObservedObject private var hub: ContactsHub
+    @ObservedObject private var favorites = FavoriteContacts.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
 
+    @State private var scope: ContactScope = .centrale
+    @State private var filter: ContactListFilter = .all
     @State private var query = ""
-    @State private var filter: ContactFilter = .all
     @State private var sections: [ContactSection] = []
     @State private var showsSources = false
+    @State private var showsFilter = false
     @State private var showsNew = false
+    @State private var editing: EditTarget?
+    @FocusState private var searchFocused: Bool
     #if DEBUG
     /// Demo mode only (`-FSVoipDemoContactsScreen detail|edit|new|sources`): open a sub screen without tapping, for screenshots.
     @State private var demoEntryId: String?
@@ -20,13 +28,13 @@ struct ContactsView: View {
     @State private var demoHandled = false
     #endif
 
+    struct EditTarget: Identifiable {
+        let id: String
+    }
+
     init(model: FSVoipAppModel) {
         self.model = model
         hub = model.contacts
-    }
-
-    private var isEmptyEverywhere: Bool {
-        hub.entries.isEmpty
     }
 
     private var isSyncFailing: Bool {
@@ -37,23 +45,40 @@ struct ContactsView: View {
         !hub.writableAccountIds.isEmpty
     }
 
+    private var hasCentraleContacts: Bool {
+        hub.entries.contains { $0.source != .device }
+    }
+
     var body: some View {
-        Group {
-            if isEmptyEverywhere, query.isEmpty {
-                emptyState
-            } else {
-                list
-            }
+        VStack(spacing: Theme.Spacing.m) {
+            header
+
+            content
         }
+        .background(Theme.background.ignoresSafeArea())
         .navigationTitle(L10n.string("contacts.title"))
-        .toolbar { toolbar }
-        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: L10n.string("contacts.search"))
+        .overlay(alignment: .bottomTrailing) { addButton }
         .refreshable { await model.syncContacts(force: true) }
         .sheet(isPresented: $showsSources) {
             ContactSourcesView(model: model)
         }
         .sheet(isPresented: $showsNew) {
             ContactEditView(model: model, mode: .new)
+        }
+        .sheet(item: $editing) { target in
+            ContactEditView(model: model, mode: .edit(entryId: target.id))
+        }
+        .sheet(isPresented: $showsFilter) {
+            ContactFilterSheet(
+                options: filterOptions,
+                selection: $filter,
+                showsSources: scope == .centrale,
+                onSources: {
+                    showsFilter = false
+                    DispatchQueue.main.async { showsSources = true }
+                }
+            )
+            .presentationDetents([.medium, .large])
         }
         #if DEBUG
         .background(
@@ -66,224 +91,398 @@ struct ContactsView: View {
         .onAppear(perform: recompute)
         .onChange(of: query) { _ in recompute() }
         .onChange(of: filter) { _ in recompute() }
+        .onChange(of: scope) { _ in
+            filter = .all
+            recompute()
+        }
         .onChange(of: hub.revision) { _ in recompute() }
+        .onChange(of: favorites.ids) { _ in recompute() }
     }
 
-    // MARK: List
+    // MARK: Header
 
-    private var list: some View {
-        List {
-            if isSyncFailing {
-                syncBanner
-            }
+    private var header: some View {
+        VStack(spacing: Theme.Spacing.m) {
+            SegmentedBar(
+                options: [
+                    .init(value: .centrale, title: L10n.string("contacts.segment.centrale")),
+                    .init(value: .phone, title: L10n.string("contacts.segment.phone")),
+                ],
+                selection: $scope
+            )
+            .accessibilityIdentifier("contacts-segments")
 
-            if filter != .all {
-                activeFilter
-            }
+            HStack(spacing: Theme.Spacing.s) {
+                FilterButton(title: filterTitle(filter), isActive: filter != .all) { showsFilter = true }
+                    .accessibilityLabel(String(format: L10n.string("contacts.filter.label"), filterTitle(filter)))
+                    .accessibilityIdentifier("contacts-filter")
 
-            ForEach(sections) { section in
-                Section {
-                    ForEach(section.entries) { entry in
-                        NavigationLink {
-                            ContactDetailView(model: model, entryId: entry.id)
-                        } label: {
-                            ContactRow(entry: entry)
-                        }
-                    }
-                } header: {
-                    Text(String(section.letter))
-                }
-            }
-
-            if sections.isEmpty {
-                noResults
-            } else {
-                Text(ContactFailure.countText(sections.reduce(0) { $0 + $1.entries.count }))
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .listRowSeparator(.hidden)
-                    .accessibilityIdentifier("contacts-count")
+                searchField
             }
         }
-        .listStyle(.plain)
-        .accessibilityIdentifier("contacts-list")
+        .padding(.horizontal, Theme.Spacing.l)
+        .padding(.top, Theme.Spacing.s)
     }
 
-    private var syncBanner: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(Brand.amber)
-                .accessibilityHidden(true)
-            Text(L10n.string("contacts.syncFailed"))
-                .font(.footnote)
-            Spacer(minLength: 4)
-            Button(L10n.string("action.retry")) {
-                Task { await model.syncContacts(force: true) }
-            }
-            .font(.footnote.weight(.semibold))
-        }
-        .accessibilityElement(children: .combine)
-        .listRowSeparator(.hidden)
-    }
-
-    private var activeFilter: some View {
-        HStack {
-            Label(filterTitle(filter), systemImage: "line.3.horizontal.decrease.circle.fill")
-                .font(.subheadline.weight(.semibold))
-            Spacer()
-            Button(L10n.string("action.close")) { filter = .all }
-                .font(.subheadline)
-        }
-        .listRowSeparator(.hidden)
-        .accessibilityElement(children: .combine)
-    }
-
-    private var noResults: some View {
-        VStack(spacing: 8) {
+    private var searchField: some View {
+        HStack(spacing: Theme.Spacing.s) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 30))
-                .foregroundStyle(.tertiary)
+                .font(.subheadline)
+                .foregroundStyle(Theme.textTertiary)
                 .accessibilityHidden(true)
-            L10n.text("contacts.noResults.title")
-                .font(.headline)
-            Text(query.isEmpty ? "" : String(format: L10n.string("contacts.noResults.body"), query))
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 40)
-        .listRowSeparator(.hidden)
-    }
 
-    private var emptyState: some View {
-        VStack(spacing: 10) {
-            if hub.syncingAccountIds.isEmpty {
-                Image(systemName: "person.2")
-                    .font(.system(size: 34))
-                    .foregroundStyle(.tertiary)
-                    .accessibilityHidden(true)
-                L10n.text("contacts.empty.title")
-                    .font(.headline)
-                L10n.text("contacts.empty.body")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
+            TextField(L10n.string("contacts.search"), text: $query)
+                .font(.subheadline)
+                .foregroundStyle(Theme.textPrimary)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.search)
+                .focused($searchFocused)
+                .accessibilityIdentifier("contacts-search")
 
-                VStack(spacing: 10) {
-                    if canAdd {
-                        Button(L10n.string("contacts.empty.add")) { showsNew = true }
-                            .buttonStyle(PrimaryButtonStyle())
-                    }
-
-                    Button(L10n.string("contacts.empty.sources")) { showsSources = true }
-                        .buttonStyle(SecondaryButtonStyle())
+            if !query.isEmpty {
+                Button {
+                    query = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(Theme.textTertiary)
+                        .frame(minWidth: Theme.minimumTarget, minHeight: Theme.minimumTarget)
                 }
-                .padding(.top, 12)
-                .padding(.horizontal, 20)
-            } else {
-                ProgressView()
-                L10n.text("contacts.syncing")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                .accessibilityLabel(L10n.string("contacts.search.clear"))
             }
         }
-        .padding(32)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .accessibilityIdentifier("contacts-empty")
+        .padding(.horizontal, Theme.Spacing.m)
+        .frame(minHeight: 36)
+        .background(Theme.raised, in: Capsule())
+        .overlay(Capsule().strokeBorder(Theme.separator, lineWidth: 1))
+        .frame(minHeight: Theme.minimumTarget)
     }
 
-    // MARK: Toolbar and filter
-
-    @ToolbarContentBuilder
-    private var toolbar: some ToolbarContent {
-        ToolbarItem(placement: .navigationBarLeading) {
-            Menu {
-                filterMenu
-            } label: {
-                Image(systemName: filter == .all ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
-            }
-            .accessibilityLabel(L10n.string("contacts.filter"))
-            .accessibilityIdentifier("contacts-filter")
-        }
-
-        ToolbarItemGroup(placement: .navigationBarTrailing) {
-            Button {
-                showsSources = true
-            } label: {
-                Image(systemName: "slider.horizontal.3")
-            }
-            .accessibilityLabel(L10n.string("contacts.sources"))
-            .accessibilityIdentifier("contacts-sources")
-
-            if canAdd {
+    private var addButton: some View {
+        Group {
+            if canAdd, scope == .centrale {
                 Button {
                     showsNew = true
                 } label: {
                     Image(systemName: "plus")
+                        .font(.title2.weight(.semibold))
+                        .foregroundStyle(Theme.onAccent)
+                        .frame(width: 56, height: 56)
+                        .background(Theme.accent, in: Circle())
+                        .shadow(color: .black.opacity(0.25), radius: 8, y: 3)
                 }
+                .padding(Theme.Spacing.l)
                 .accessibilityLabel(L10n.string("contacts.add"))
                 .accessibilityIdentifier("contacts-add")
             }
         }
     }
 
-    @ViewBuilder
-    private var filterMenu: some View {
-        filterButton(.all)
+    // MARK: Content
 
-        if hub.entries.contains(where: { $0.source == .customer }) {
-            filterButton(.customer)
+    @ViewBuilder
+    private var content: some View {
+        switch scope {
+        case .centrale:
+            if !hasCentraleContacts, query.isEmpty, filter == .all {
+                centraleEmpty
+            } else {
+                list
+            }
+        case .phone:
+            if !hub.usesDeviceContacts || hub.deviceAccess == .denied {
+                phoneOff
+            } else {
+                list
+            }
+        }
+    }
+
+    private var list: some View {
+        ScrollViewReader { proxy in
+            ZStack(alignment: .trailing) {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                        if isSyncFailing {
+                            syncBanner
+                        }
+
+                        ForEach(sections) { section in
+                            Section {
+                                ForEach(section.entries) { entry in
+                                    row(entry)
+                                }
+                            } header: {
+                                sectionHeader(section.letter)
+                            }
+                        }
+
+                        if sections.isEmpty {
+                            noResults
+                        } else {
+                            Text(ContactFailure.countText(sections.reduce(0) { $0 + $1.entries.count }))
+                                .font(.footnote)
+                                .foregroundStyle(Theme.textTertiary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, Theme.Spacing.l)
+                                .padding(.bottom, 72)
+                                .accessibilityIdentifier("contacts-count")
+                        }
+                    }
+                    .padding(.trailing, showsIndex ? 22 : 0)
+                }
+                .scrollDismissesKeyboard(.interactively)
+                .accessibilityIdentifier("contacts-list")
+
+                if showsIndex {
+                    indexBar(proxy: proxy)
+                }
+            }
+        }
+    }
+
+    private var showsIndex: Bool {
+        !typeSize.isAccessibilitySize && sections.count > 1 && query.isEmpty
+    }
+
+    private func sectionHeader(_ letter: Character) -> some View {
+        Text(String(letter))
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(Theme.textTertiary)
+            .padding(.horizontal, Theme.Spacing.l)
+            .padding(.vertical, Theme.Spacing.xs)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.background)
+            .id(letter)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private func row(_ entry: ContactEntry) -> some View {
+        HStack(spacing: 0) {
+            NavigationLink {
+                ContactDetailView(model: model, entryId: entry.id)
+            } label: {
+                ContactRow(entry: entry, isFavorite: favorites.contains(entry.id))
+            }
+            .buttonStyle(.plain)
+
+            rowMenu(entry)
+        }
+        .padding(.leading, Theme.Spacing.l)
+        .padding(.trailing, Theme.Spacing.xs)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Theme.separator).frame(height: 1).padding(.leading, Theme.Spacing.l + 52)
+        }
+    }
+
+    private func rowMenu(_ entry: ContactEntry) -> some View {
+        Menu {
+            if let number = entry.phones.first?.number {
+                Button {
+                    model.call(number, from: nil)
+                } label: {
+                    Label(L10n.string("contacts.call"), systemImage: "phone")
+                }
+
+                Button {
+                    UIPasteboard.general.string = number
+                    Haptics.tap()
+                } label: {
+                    Label(L10n.string("contacts.copy"), systemImage: "doc.on.doc")
+                }
+            }
+
+            Button {
+                favorites.toggle(entry.id)
+            } label: {
+                if favorites.contains(entry.id) {
+                    Label(L10n.string("contacts.favorite.remove"), systemImage: "star.slash")
+                } else {
+                    Label(L10n.string("contacts.favorite.add"), systemImage: "star")
+                }
+            }
+
+            if hub.canWrite(entry) {
+                Button {
+                    editing = EditTarget(id: entry.id)
+                } label: {
+                    Label(L10n.string("contacts.detail.edit"), systemImage: "pencil")
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(Theme.textSecondary)
+                .frame(width: Theme.minimumTarget, height: Theme.minimumTarget)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel(String(format: L10n.string("contacts.row.more"), entry.displayName))
+        .accessibilityIdentifier("contact-more")
+    }
+
+    // MARK: Index
+
+    private func indexBar(proxy: ScrollViewProxy) -> some View {
+        let present = Set(sections.map(\.letter))
+
+        return GeometryReader { geometry in
+            VStack(spacing: 0) {
+                ForEach(AlphabetIndex.letters, id: \.self) { letter in
+                    Text(String(letter))
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(present.contains(letter) ? Theme.accentText : Theme.textTertiary)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: geometry.size.height / CGFloat(AlphabetIndex.letters.count))
+                }
+            }
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        jump(to: AlphabetIndex.letter(atFraction: value.location.y / max(geometry.size.height, 1)), proxy: proxy)
+                    }
+            )
+        }
+        .frame(width: 22, height: 27 * 15)
+        // VoiceOver reads the section headers instead; a drag strip is no use without sight.
+        .accessibilityHidden(true)
+        .padding(.trailing, 2)
+    }
+
+    private func jump(to letter: Character, proxy: ScrollViewProxy) {
+        guard let target = AlphabetIndex.target(for: letter, in: sections) else {
+            return
         }
 
-        if hub.usesDeviceContacts {
-            filterButton(.device)
+        if reduceMotion {
+            proxy.scrollTo(target, anchor: .top)
+        } else {
+            withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(target, anchor: .top) }
+        }
+    }
+
+    // MARK: States
+
+    private var syncBanner: some View {
+        HStack(spacing: Theme.Spacing.m) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(Theme.busy)
+                .accessibilityHidden(true)
+            Text(L10n.string("contacts.syncFailed"))
+                .font(.footnote)
+                .foregroundStyle(Theme.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 4)
+            Button(L10n.string("action.retry")) {
+                Task { await model.syncContacts(force: true) }
+            }
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(Theme.accentText)
+            .frame(minHeight: Theme.minimumTarget)
+        }
+        .padding(.horizontal, Theme.Spacing.l)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var noResults: some View {
+        VStack(spacing: Theme.Spacing.s) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 30))
+                .foregroundStyle(Theme.textTertiary)
+                .accessibilityHidden(true)
+            L10n.text("contacts.noResults.title")
+                .font(.headline)
+                .foregroundStyle(Theme.textPrimary)
+            Text(noResultsBody)
+                .font(.callout)
+                .foregroundStyle(Theme.textSecondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
+        .padding(.horizontal, Theme.Spacing.l)
+    }
+
+    private var noResultsBody: String {
+        if !query.isEmpty {
+            return String(format: L10n.string("contacts.noResults.body"), query)
+        }
+
+        return filter == .favorites ? L10n.string("contacts.favorites.empty") : ""
+    }
+
+    @ViewBuilder
+    private var centraleEmpty: some View {
+        if !hub.syncingAccountIds.isEmpty {
+            VStack(spacing: Theme.Spacing.m) {
+                ProgressView()
+                L10n.text("contacts.syncing")
+                    .font(.callout)
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .accessibilityIdentifier("contacts-empty")
+        } else {
+            EmptyState(
+                symbol: "person.2",
+                title: L10n.string("contacts.empty.title"),
+                message: L10n.string("contacts.empty.body"),
+                actionTitle: canAdd ? L10n.string("contacts.empty.add") : nil,
+                action: canAdd ? { showsNew = true } : nil
+            )
+            .accessibilityIdentifier("contacts-empty")
+        }
+    }
+
+    @ViewBuilder
+    private var phoneOff: some View {
+        if hub.deviceAccess == .denied {
+            EmptyState(
+                symbol: "lock",
+                title: L10n.string("contacts.phone.denied.title"),
+                message: L10n.string("contacts.sources.device.denied"),
+                actionTitle: L10n.string("contacts.sources.device.openSettings"),
+                action: {
+                    if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                }
+            )
+        } else {
+            EmptyState(
+                symbol: "iphone",
+                title: L10n.string("contacts.phone.off.title"),
+                message: L10n.string("contacts.phone.off.message"),
+                actionTitle: L10n.string("contacts.phone.off.enable"),
+                action: { Task { _ = await hub.setDeviceContactsEnabled(true) } }
+            )
+        }
+    }
+
+    // MARK: Filter
+
+    private var filterOptions: [ContactFilterOption] {
+        var options = [ContactFilterOption(filter: .all, title: L10n.string("contacts.filter.pillAll"))]
+        options.append(ContactFilterOption(filter: .favorites, title: L10n.string("contacts.filter.favorites")))
+
+        guard scope == .centrale else {
+            return options
         }
 
         if hub.entries.contains(where: { $0.source == .internalExtensions }) {
-            filterButton(.colleagues)
+            options.append(ContactFilterOption(filter: .internalOnly, title: L10n.string("contacts.filter.internal")))
         }
 
-        let lists = listFilters
-
-        if !lists.isEmpty {
-            Section(L10n.string("contacts.filter.lists")) {
-                ForEach(lists, id: \.self) { filterButton($0) }
+        for account in model.accounts {
+            for list in hub.accountStates[account.id].map({ $0.isEnabled ? $0.lists.filter(\.isEnabled) : [] }) ?? [] {
+                let suffix = model.accounts.count > 1 ? " · \(account.displayLabel)" : ""
+                options.append(ContactFilterOption(filter: .list(accountId: account.id, listId: list.id), title: list.name + suffix, isList: true))
             }
         }
+
+        return options
     }
 
-    private func filterButton(_ option: ContactFilter) -> some View {
-        Button {
-            filter = option
-        } label: {
-            if filter == option {
-                Label(filterTitle(option), systemImage: "checkmark")
-            } else {
-                Text(filterTitle(option))
-            }
-        }
-    }
-
-    private var listFilters: [ContactFilter] {
-        model.accounts.flatMap { account in
-            (hub.accountStates[account.id].map { $0.isEnabled ? $0.lists.filter(\.isEnabled) : [] } ?? [])
-                .map { ContactFilter.list(accountId: account.id, listId: $0.id) }
-        }
-    }
-
-    private func filterTitle(_ option: ContactFilter) -> String {
-        switch option {
-        case .all: return L10n.string("contacts.filter.all")
-        case .customer: return L10n.string("contacts.filter.customer")
-        case .device: return L10n.string("contacts.filter.device")
-        case .colleagues: return L10n.string("contacts.filter.colleagues")
-        case let .list(accountId, listId):
-            let name = hub.accountStates[accountId]?.lists.first { $0.id == listId }?.name ?? ""
-
-            return model.accounts.count > 1 ? "\(name) · \(model.account(id: accountId)?.displayLabel ?? "")" : name
-        }
+    private func filterTitle(_ option: ContactListFilter) -> String {
+        filterOptions.first { $0.filter == option }?.title ?? L10n.string("contacts.filter.pillAll")
     }
 
     private func recompute() {
@@ -292,7 +491,7 @@ struct ContactsView: View {
             filter = .all
         }
 
-        sections = ContactBrowsing.sections(entries: hub.entries, filter: filter, query: query) { accountId, listId in
+        sections = ContactsBrowsing.sections(entries: hub.entries, scope: scope, filter: filter, query: query, favorites: favorites.ids) { accountId, listId in
             hub.memberIds(listId: listId, accountId: accountId)
         }
 
@@ -312,6 +511,8 @@ struct ContactsView: View {
         switch screen {
         case "new": showsNew = true
         case "sources": showsSources = true
+        case "phone": scope = .phone
+        case "filter": showsFilter = true
         default:
             demoEntryId = hub.entries.first { $0.name == "Pieter de Groot" }?.id
             demoOpensDetail = demoEntryId != nil
@@ -320,38 +521,101 @@ struct ContactsView: View {
     #endif
 }
 
-struct ContactRow: View {
-    let entry: ContactEntry
+struct ContactFilterOption: Identifiable {
+    let filter: ContactListFilter
+    let title: String
+    var isList = false
+
+    var id: ContactListFilter { filter }
+}
+
+/// "Alles ⌄": the filters of the segment, and the way to the contact sources.
+struct ContactFilterSheet: View {
+    let options: [ContactFilterOption]
+    @Binding var selection: ContactListFilter
+    let showsSources: Bool
+    let onSources: () -> Void
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        HStack(spacing: 12) {
-            ContactAvatar(name: entry.displayName)
+        SheetShell(title: L10n.string("contacts.filter"), onClose: { dismiss() }) {
+            SettingsGroup {
+                ForEach(options.filter { !$0.isList }) { option in
+                    choice(option)
+                }
+            }
+
+            if options.contains(where: \.isList) {
+                SettingsGroup(title: L10n.string("contacts.filter.lists")) {
+                    ForEach(options.filter(\.isList)) { option in
+                        choice(option)
+                    }
+                }
+            }
+
+            if showsSources {
+                SettingsGroup {
+                    Button(action: onSources) {
+                        SettingsRow(symbol: "slider.horizontal.3", title: L10n.string("contacts.sources"))
+                    }
+                    .buttonStyle(RowButtonStyle())
+                    .accessibilityIdentifier("contacts-sources")
+                }
+            }
+        }
+    }
+
+    private func choice(_ option: ContactFilterOption) -> some View {
+        ChoiceRow(title: option.title, isSelected: selection == option.filter) {
+            selection = option.filter
+            dismiss()
+        }
+    }
+}
+
+struct ContactRow: View {
+    let entry: ContactEntry
+    var isFavorite = false
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.m) {
+            InitialsAvatar(name: entry.displayName, size: 40)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.displayName)
                     .font(.body.weight(.medium))
-                    .lineLimit(1)
+                    .foregroundStyle(Theme.textPrimary)
+                    .lineLimit(2)
 
                 if !entry.subtitle.isEmpty {
                     Text(entry.subtitle)
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
                 }
             }
 
-            Spacer(minLength: 8)
+            Spacer(minLength: Theme.Spacing.s)
+
+            if isFavorite {
+                Image(systemName: "star.fill")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.accentText)
+                    .accessibilityLabel(L10n.string("contacts.favorite.label"))
+            }
 
             if let tag = entry.sourceTag {
                 Text(tag)
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
-                    .background(Capsule().fill(Color(.secondarySystemFill)))
+                    .background(Capsule().fill(Theme.raised))
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, Theme.Spacing.s)
+        .frame(minHeight: 56)
+        .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("contact-row")
     }
