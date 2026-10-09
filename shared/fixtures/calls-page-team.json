@@ -1,0 +1,64 @@
+{
+  "month": "2026-10",
+  "months": [
+    "2026-10",
+    "2026-09"
+  ],
+  "truncated": false,
+  "calls": [
+    {
+      "id": "33333333-aaaa-4bbb-8ccc-000000000001",
+      "direction": "inbound",
+      "outcome": "answered",
+      "number": "070 123 45 67",
+      "ourNumber": "0850607848",
+      "extension": "101",
+      "extensionName": "Pieter Jansen",
+      "country": "NL",
+      "countryName": "Nederland",
+      "lineType": "fixed",
+      "category": "fixed",
+      "startedLabel": "9 okt 10:02",
+      "startedSort": "2026-10-09T08:02:11.000Z",
+      "durationLabel": "4:12",
+      "durationSeconds": 252,
+      "hasRecording": false
+    },
+    {
+      "id": "33333333-aaaa-4bbb-8ccc-000000000002",
+      "direction": "outbound",
+      "outcome": "answered",
+      "number": "06 12 34 56 78",
+      "ourNumber": "0850607848",
+      "extension": "100",
+      "extensionName": "Receptie",
+      "country": "NL",
+      "countryName": "Nederland",
+      "lineType": "mobile",
+      "category": "mobile",
+      "startedLabel": "9 okt 09:40",
+      "startedSort": "2026-10-09T07:40:02.000Z",
+      "durationLabel": "0:48",
+      "durationSeconds": 48,
+      "hasRecording": false
+    },
+    {
+      "id": "33333333-aaaa-4bbb-8ccc-000000000003",
+      "direction": "inbound",
+      "outcome": "missed",
+      "number": null,
+      "ourNumber": "0850607849",
+      "extension": "102",
+      "extensionName": "Jan de Vries",
+      "country": null,
+      "countryName": null,
+      "lineType": null,
+      "category": null,
+      "startedLabel": "8 okt 16:55",
+      "startedSort": "2026-10-08T14:55:30.000Z",
+      "durationLabel": "0:00",
+      "durationSeconds": 0,
+      "hasRecording": false
+    }
+  ]
+}

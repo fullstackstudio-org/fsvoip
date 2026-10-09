@@ -245,6 +245,16 @@ public struct MeResponse: Decodable, Equatable, Sendable {
     public var canManagePbx: Bool {
         effectiveRole == .admin && (capabilities?.pbxManage ?? true)
     }
+
+    /// Show "Mijn toestel" (`/me/extension`)? Only when the server says so (an older server has no such route).
+    public var canEditOwnExtension: Bool {
+        capabilities?.selfExtension ?? false
+    }
+
+    /// Show the park button and the "On hold" tab?
+    public var canPark: Bool {
+        capabilities?.park ?? false
+    }
 }
 
 // MARK: - Role and capabilities (`/me`)
@@ -275,7 +285,11 @@ public enum VoicemailAccess: String, WireEnum {
 }
 
 public enum CallsAccess: String, WireEnum {
+    /// Every call of the PBX, with recordings (admin).
     case all
+    /// Every call of the PBX without recordings: the team history (`user`).
+    case team
+    /// Only the calls of the own extension (a server from before the team history).
     case own
     case unknown
 
@@ -309,6 +323,19 @@ public struct ContactCapabilities: Decodable, Equatable, Sendable {
     }
 }
 
+/// Who may manage the sounds of the PBX (`capabilities.sounds`).
+public enum SoundsAccess: String, WireEnum {
+    case manage
+    /// No access (wire value `none`; not called `.none`, which would clash with `Optional.none`).
+    case noAccess = "none"
+    case unknown
+
+    public static var unknownValue: SoundsAccess { .unknown }
+
+    public init(from decoder: Decoder) throws { self = try Self.decodeTolerant(from: decoder) }
+    public func encode(to encoder: Encoder) throws { try encodeStrict(to: encoder) }
+}
+
 public struct AppCapabilities: Decodable, Equatable, Sendable {
     /// The "Centrale" section (`/pbx/*`).
     public var pbxManage: Bool
@@ -317,17 +344,43 @@ public struct AppCapabilities: Decodable, Equatable, Sendable {
     public var voicemail: VoicemailAccess
     public var calls: CallsAccess
     public var contacts: ContactCapabilities
+    /// `GET`/`PATCH /me/extension`: the own extension (every role). A server from before it leaves it out: `false`.
+    public var selfExtension: Bool
+    /// The sounds routes (`/pbx/sounds/**`).
+    public var sounds: SoundsAccess
+    /// Invite a colleague (`POST /pbx/devices/{id}/app-pairing`).
+    public var invite: Bool
+    /// Parking works on this PBX; `false` = do not show the park button or the "On hold" tab.
+    public var park: Bool
+    /// The PBX understands `X-FSS-From`: only then may the app choose the number to call out with (`CallerChoice`).
+    public var callerChoice: Bool
 
-    public init(pbxManage: Bool, recordings: Bool, voicemail: VoicemailAccess, calls: CallsAccess, contacts: ContactCapabilities = ContactCapabilities()) {
+    public init(
+        pbxManage: Bool,
+        recordings: Bool,
+        voicemail: VoicemailAccess,
+        calls: CallsAccess,
+        contacts: ContactCapabilities = ContactCapabilities(),
+        selfExtension: Bool = false,
+        sounds: SoundsAccess = .noAccess,
+        invite: Bool = false,
+        park: Bool = false,
+        callerChoice: Bool = false
+    ) {
         self.pbxManage = pbxManage
         self.recordings = recordings
         self.voicemail = voicemail
         self.calls = calls
         self.contacts = contacts
+        self.selfExtension = selfExtension
+        self.sounds = sounds
+        self.invite = invite
+        self.park = park
+        self.callerChoice = callerChoice
     }
 
     private enum CodingKeys: String, CodingKey {
-        case pbxManage, recordings, voicemail, calls, contacts
+        case pbxManage, recordings, voicemail, calls, contacts, selfExtension, sounds, invite, park, callerChoice
     }
 
     /// Every missing or unknown value falls back to the restrictive choice.
@@ -343,6 +396,14 @@ public struct AppCapabilities: Decodable, Equatable, Sendable {
         self.calls = calls == .unknown ? .own : calls
 
         contacts = try container.decodeIfPresent(ContactCapabilities.self, forKey: .contacts) ?? ContactCapabilities()
+        selfExtension = try container.decodeIfPresent(Bool.self, forKey: .selfExtension) ?? false
+
+        let sounds = try container.decodeIfPresent(SoundsAccess.self, forKey: .sounds) ?? .noAccess
+        self.sounds = sounds == .unknown ? .noAccess : sounds
+
+        invite = try container.decodeIfPresent(Bool.self, forKey: .invite) ?? false
+        park = try container.decodeIfPresent(Bool.self, forKey: .park) ?? false
+        callerChoice = try container.decodeIfPresent(Bool.self, forKey: .callerChoice) ?? false
     }
 }
 
@@ -455,13 +516,13 @@ public struct APIErrorPlace: Codable, Equatable, Sendable {
 }
 
 /// Error body of every non-2xx answer. Everything but `error` is optional: which fields are present depends on the code.
-public struct APIErrorBody: Codable, Equatable, Sendable {
+public struct APIErrorBody: Decodable, Equatable, Sendable {
     public var error: String
     public var message: String?
     public var retryable: Bool?
-    /// Detail of `invalid_request` (e.g. `invalid_phone`, `resync`) and `conflict` (e.g. `limit_reached`).
+    /// Detail of `invalid_request` (e.g. `invalid_phone`, `resync`, `greeting_required`) and `conflict` (e.g. `limit_reached`).
     public var code: String?
-    /// The offending request field of an `invalid_request`.
+    /// The offending request field of an `invalid_request`, or the extension field a `user` may not change (`403`).
     public var field: String?
     /// `forbidden`: the role that is needed (`admin`).
     public var requiredRole: String?
@@ -471,9 +532,192 @@ public struct APIErrorBody: Codable, Equatable, Sendable {
     public var places: [APIErrorPlace]?
     /// `blocked_destination`: the external numbers a block list stops.
     public var blocked: [String]?
+    /// `cost_not_accepted`: the price to accept.
+    public var cost: RecordingCost?
+    /// `stale` of a chain step: the fresh chain. Decoded leniently: an unreadable chain must not hide the error itself.
+    public var chain: NumberChain?
 
     private enum CodingKeys: String, CodingKey {
-        case error, message, retryable, code, field, version, places, blocked
+        case error, message, retryable, code, field, version, places, blocked, cost, chain
         case requiredRole = "required"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        error = try container.decode(String.self, forKey: .error)
+        message = try? container.decodeIfPresent(String.self, forKey: .message)
+        retryable = try? container.decodeIfPresent(Bool.self, forKey: .retryable)
+        code = try? container.decodeIfPresent(String.self, forKey: .code)
+        field = try? container.decodeIfPresent(String.self, forKey: .field)
+        requiredRole = try? container.decodeIfPresent(String.self, forKey: .requiredRole)
+        version = try? container.decodeIfPresent(Int.self, forKey: .version)
+        places = try? container.decodeIfPresent([APIErrorPlace].self, forKey: .places)
+        blocked = try? container.decodeIfPresent([String].self, forKey: .blocked)
+        cost = try? container.decodeIfPresent(RecordingCost.self, forKey: .cost)
+        chain = try? container.decodeIfPresent(NumberChain.self, forKey: .chain)
+    }
+}
+
+// MARK: - The own extension (`/me/extension`)
+
+/// A number of the PBX as `GET /me/extension` lists it.
+public struct SelfNumber: Decodable, Equatable, Sendable, Identifiable {
+    public var id: String
+    /// National, without country code (`0850607848`).
+    public var number: String
+    public var name: String?
+    /// The default number of the PBX.
+    public var isDefault: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case id, number, name, isDefault
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        number = try container.decode(String.self, forKey: .number)
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+        isDefault = try container.decodeIfPresent(Bool.self, forKey: .isDefault) ?? false
+    }
+}
+
+/// The own extension: do not disturb, forwarding, voicemail. Every role may read and change it.
+public struct SelfExtension: Decodable, Equatable, Sendable, Identifiable {
+    public var id: String
+    public var name: String
+    public var extensionNumber: String?
+    public var dnd: Bool
+    public var forwardAlways: PbxTarget?
+    public var noAnswerSeconds: Int
+    public var noAnswerTarget: PbxTarget?
+    public var voicemailEnabled: Bool
+    public var voicemailToEmail: Bool
+    public var email: String?
+    public var sync: SyncState
+    /// Goes back with a change; another version is `409 stale`.
+    public var version: Int
+    /// The numbers of the PBX. Calling out with one of them: `CallerChoice`.
+    public var numbers: [SelfNumber]
+    /// The number this extension calls out with by default; `nil` = none.
+    public var defaultNumber: String?
+    /// Where a call may be forwarded to (a colleague, a ring group, a voicemail box, an external number). Never the extension itself.
+    public var targets: [PbxTargetOption]
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, dnd, forwardAlways, noAnswerSeconds, noAnswerTarget, voicemailEnabled, voicemailToEmail, email, sync, version
+        case numbers, defaultNumber, targets
+        case extensionNumber = "extension"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        extensionNumber = try container.decodeIfPresent(String.self, forKey: .extensionNumber)
+        dnd = try container.decodeIfPresent(Bool.self, forKey: .dnd) ?? false
+        forwardAlways = try container.decodeIfPresent(PbxTarget.self, forKey: .forwardAlways)
+        noAnswerSeconds = try container.decodeIfPresent(Int.self, forKey: .noAnswerSeconds) ?? 25
+        noAnswerTarget = try container.decodeIfPresent(PbxTarget.self, forKey: .noAnswerTarget)
+        voicemailEnabled = try container.decodeIfPresent(Bool.self, forKey: .voicemailEnabled) ?? false
+        voicemailToEmail = try container.decodeIfPresent(Bool.self, forKey: .voicemailToEmail) ?? false
+        email = try container.decodeIfPresent(String.self, forKey: .email)
+        sync = try container.decodeIfPresent(SyncState.self, forKey: .sync) ?? .unknown
+        version = try container.decode(Int.self, forKey: .version)
+        numbers = try container.decodeIfPresent([SelfNumber].self, forKey: .numbers) ?? []
+        defaultNumber = try container.decodeIfPresent(String.self, forKey: .defaultNumber)
+        targets = try container.decodeIfPresent([PbxTargetOption].self, forKey: .targets) ?? []
+    }
+}
+
+/// `PATCH /me/extension`: only these keys (the number to call out with is not a setting: the app chooses it per call).
+/// `version` is required; at least one other key.
+public struct SelfExtensionPatch: Encodable, Equatable, Sendable {
+    public var version: Int
+    public var dnd: Bool?
+    /// `.clear` = no forwarding.
+    public var forwardAlways: Change<PbxTarget>
+    public var noAnswerSeconds: Int?
+    public var noAnswerTarget: Change<PbxTarget>
+    public var voicemailEnabled: Bool?
+    public var voicemailToEmail: Bool?
+    public var email: Change<String>
+
+    public init(
+        version: Int,
+        dnd: Bool? = nil,
+        forwardAlways: Change<PbxTarget> = .keep,
+        noAnswerSeconds: Int? = nil,
+        noAnswerTarget: Change<PbxTarget> = .keep,
+        voicemailEnabled: Bool? = nil,
+        voicemailToEmail: Bool? = nil,
+        email: Change<String> = .keep
+    ) {
+        self.version = version
+        self.dnd = dnd
+        self.forwardAlways = forwardAlways
+        self.noAnswerSeconds = noAnswerSeconds
+        self.noAnswerTarget = noAnswerTarget
+        self.voicemailEnabled = voicemailEnabled
+        self.voicemailToEmail = voicemailToEmail
+        self.email = email
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case version, dnd, forwardAlways, noAnswerSeconds, noAnswerTarget, voicemailEnabled, voicemailToEmail, email
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(version, forKey: .version)
+        try container.encodeIfPresent(dnd, forKey: .dnd)
+        try container.encodeChange(forwardAlways, forKey: .forwardAlways)
+        try container.encodeIfPresent(noAnswerSeconds, forKey: .noAnswerSeconds)
+        try container.encodeChange(noAnswerTarget, forKey: .noAnswerTarget)
+        try container.encodeIfPresent(voicemailEnabled, forKey: .voicemailEnabled)
+        try container.encodeIfPresent(voicemailToEmail, forKey: .voicemailToEmail)
+        try container.encodeChange(email, forKey: .email)
+    }
+}
+
+/// Answer of `PATCH /me/extension`: `extension` is the fresh state, best effort (`nil` when the server could not read it right now).
+public struct SelfExtensionPatchResponse: Decodable, Equatable, Sendable {
+    public var ok: Bool
+    public var extensionState: SelfExtension?
+
+    private enum CodingKeys: String, CodingKey {
+        case ok
+        case extensionState = "extension"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        ok = try container.decode(Bool.self, forKey: .ok)
+        extensionState = try? container.decodeIfPresent(SelfExtension.self, forKey: .extensionState)
+    }
+}
+
+// MARK: - Caller choice (`X-FSS-From`)
+
+/// "Calling out via": the SIP header that tells the PBX which of its numbers an outgoing call uses. 🚨 Only sent when
+/// `AppCapabilities.callerChoice` is `true`; a PBX without the dialplan would forward an unknown header to the provider.
+public enum CallerChoice {
+    public static let headerName = "X-FSS-From"
+
+    /// A national number of the PBX: ten digits, the first a 0 and the second not (`0850607848`).
+    public static func isValidNumber(_ number: String) -> Bool {
+        let digits = Array(number.utf8)
+
+        return digits.count == 10 && digits.allSatisfy { $0 >= 48 && $0 <= 57 } && digits[0] == 48 && digits[1] != 48
+    }
+
+    /// The SIP headers to add to an outgoing INVITE. Empty unless the PBX supports the choice AND `number` is a number it lists.
+    /// `numbers` = `SelfExtension.numbers`.
+    public static func headers(choosing number: String?, capabilities: AppCapabilities?, numbers: [SelfNumber]) -> [String: String] {
+        guard capabilities?.callerChoice == true, let number, isValidNumber(number), numbers.contains(where: { $0.number == number }) else {
+            return [:]
+        }
+
+        return [headerName: number]
     }
 }

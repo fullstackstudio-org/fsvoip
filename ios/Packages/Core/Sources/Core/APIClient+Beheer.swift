@@ -52,10 +52,49 @@ extension FSVoipAPIClient {
     }
 }
 
+// MARK: - The own extension (`/me/extension`, every role)
+
+extension FSVoipAPIClient {
+    /// `GET /me/extension`. Only when `AppCapabilities.selfExtension` (an older server has no such route).
+    public func selfExtension() async throws -> SelfExtension {
+        try await get("me/extension")
+    }
+
+    /// `PATCH /me/extension`. `409 stale` = `APIError.stale`: reload and let the user choose again. Any field a `user` may not change
+    /// is `APIError.forbidden`; the number to call out with is not a setting here (see `CallerChoice`).
+    public func updateSelfExtension(_ patch: SelfExtensionPatch) async throws -> SelfExtensionPatchResponse {
+        try await perform("PATCH", "me/extension", body: patch, authenticated: true)
+    }
+}
+
+// MARK: - Numbers as a chain (`/pbx/numbers`, admin only)
+
+extension FSVoipAPIClient {
+    public func pbxNumbers() async throws -> PbxNumbersPage {
+        try await get("pbx/numbers")
+    }
+
+    public func numberChain(numberId: String) async throws -> NumberChain {
+        try await get("pbx/numbers/\(numberId)/chain")
+    }
+
+    /// `PUT /pbx/numbers/{id}/chain/{step}`: one step, answered with the fresh chain. Failures worth knowing: `APIError.staleChain`
+    /// (keep what the user typed, show the new state), `.advanced`, `.greetingRequired`, `.blockedDestination`, `.readOnly`.
+    public func saveChainStep<Step: NumberChainStepRequest>(numberId: String, _ step: Step) async throws -> NumberChain {
+        try await perform("PUT", "pbx/numbers/\(numberId)/chain/\(step.step.rawValue)", body: step, authenticated: true)
+    }
+
+    /// `PATCH /pbx/numbers/{id}/recording`: the fresh chain. `APIError.costNotAccepted(cost:)` = show the price, then repeat with
+    /// `costAccepted: true`.
+    public func setNumberRecording(numberId: String, _ patch: NumberRecordingPatch) async throws -> NumberChain {
+        try await perform("PATCH", "pbx/numbers/\(numberId)/recording", body: patch, authenticated: true)
+    }
+}
+
 // MARK: - Calls, voicemail, recordings
 
 extension FSVoipAPIClient {
-    /// `GET /calls?month=YYYY-MM&locale=nl|en`. No month = the current one.
+    /// `GET /calls?month=YYYY-MM&locale=nl|en`. No month = the current one. A `user` gets the whole team's calls (no recordings).
     public func calls(month: String? = nil, locale: String? = nil) async throws -> CallsPage {
         var query: [URLQueryItem] = []
 

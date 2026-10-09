@@ -41,7 +41,7 @@ enum PbxFailure: Equatable {
             return .revoked
         case .readOnly:
             return .readOnly
-        case .stale:
+        case .stale, .staleChain:
             return .stale
         case let .inUse(places):
             return .inUse(places.map(\.name))
@@ -53,11 +53,24 @@ enum PbxFailure: Equatable {
             return .unavailable
         case .transport:
             return .offline
-        case .invalid, .invalidRequest, .payloadTooLarge, .resync:
+        case .invalid, .invalidRequest, .payloadTooLarge, .resync, .greetingRequired, .invalidAudio, .tooLarge:
             return .invalid
         case let .conflict(code):
             return .conflict(code)
-        case .notFound, .gone:
+        // The v2 answers get their own sentences in the screens that use them; until then they read as the generic conflict.
+        case .advanced:
+            return .conflict("advanced")
+        case .costNotAccepted:
+            return .conflict("cost_not_accepted")
+        case .tooMany:
+            return .conflict("too_many")
+        case .noFreeSlot:
+            return .conflict("no_free_slot")
+        case .parkUnavailable:
+            return .conflict("park_unavailable")
+        case .parkUncertain:
+            return .unavailable
+        case .notFound, .gone, .callNotFound:
             // The object is gone: reload and see.
             return .stale
         case .missingDeviceToken, .decoding:

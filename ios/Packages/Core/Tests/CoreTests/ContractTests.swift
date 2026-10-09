@@ -35,7 +35,7 @@ final class ContractTests: XCTestCase {
             "push-token-request", "push-token-request-clear", "ok-response",
             "error-not-found", "error-unauthorized", "error-rate-limited", "error-invalid-request", "error-unavailable-retryable",
             "push-ring", "push-ring-anonymous", "push-revoked", "push-refresh", "apns-voip-body", "apns-alert-body", "fcm-message",
-        ]).union(BeheerContractTests.coveredFixtures)
+        ]).union(BeheerContractTests.coveredFixtures).union(V2ContractTests.coveredFixtures)
 
         XCTAssertEqual(Set(try Fixtures.names()), covered, "A fixture was added or removed without a contract test")
     }

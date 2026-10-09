@@ -29,11 +29,11 @@ tags:
   - name: pairing
     description: Exchange a one-time pairing token for a device token and SIP credentials.
   - name: account
-    description: The paired account, internal contacts, push registration.
+    description: The paired account, internal contacts, push registration, the own extension (`/me/extension`).
   - name: pbx
-    description: Manage the PBX from the app ("Centrale"). Admin pairings only.
+    description: 'Manage the PBX from the app ("Centrale"): extensions, ring groups, opening hours, numbers as a chain, sounds, inviting a colleague. Admin pairings only.'
   - name: calls
-    description: Calls, call recordings and voicemail.
+    description: Calls, call recordings, voicemail and parked calls.
   - name: contacts
     description: The customer's address book and contact lists.
 paths:
@@ -169,6 +169,71 @@ paths:
                 $ref: "#/components/schemas/OkResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /me/extension:
+    get:
+      tags: [account]
+      operationId: getMeExtension
+      summary: The own extension - do not disturb, forwarding, voicemail - for every role.
+      description: |
+        The extension comes from the pairing, never from the request. Besides the settings the answer lists the numbers of the PBX
+        (`isDefault` = the default number of the PBX; `defaultNumber` = the number this extension calls out with by default, see
+        "Caller choice header" in `shared/README.md`) and the targets a call may be forwarded to (a colleague, a ring group, a
+        voicemail box or an external number; never the extension itself). Also readable while the PBX is frozen.
+      security:
+        - deviceToken: []
+      responses:
+        "200":
+          description: The own extension.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SelfExtension"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    patch:
+      tags: [account]
+      operationId: patchMeExtension
+      summary: Change settings of the own extension.
+      description: |
+        Only the keys of `SelfExtensionPatch` (everything else that exists on an extension, for example `suspended` or `recordCalls`, is
+        `403 forbidden` with the `field`; a key that does not exist is `400 invalid_request`). `version` is required: another version is
+        `409 stale` with the current `version`. The number to call out with is not a setting: the app chooses it per call. Writes: 60 per
+        10 minutes per device.
+      security:
+        - deviceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SelfExtensionPatch"
+      responses:
+        "200":
+          description: "Saved. `extension` is the fresh state (best effort: absent when it could not be read right now)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SelfExtensionPatchResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "422":
+          $ref: "#/components/responses/BlockedDestination"
         "429":
           $ref: "#/components/responses/RateLimited"
         "503":
@@ -463,14 +528,398 @@ paths:
           $ref: "#/components/responses/RateLimited"
         "503":
           $ref: "#/components/responses/Unavailable"
+  /pbx/numbers:
+    get:
+      tags: [pbx]
+      operationId: getPbxNumbers
+      summary: The numbers of the PBX with a one-line summary of their chain (admin only).
+      description: |
+        `mode: advanced` = the flow behind the number is more than the app can show as a chain (opening hours, welcome message, forwarding):
+        it is shown read-only and only the name can be changed.
+      security:
+        - deviceToken: []
+      responses:
+        "200":
+          description: The numbers.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PbxNumbersPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /pbx/numbers/{id}/chain:
+    get:
+      tags: [pbx]
+      operationId: getPbxNumberChain
+      summary: One number as a chain - opening hours, welcome message, forwarding - plus recording and the choices (admin only).
+      security:
+        - deviceToken: []
+      parameters:
+        - $ref: "#/components/parameters/ObjectId"
+      responses:
+        "200":
+          description: The chain.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NumberChain"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /pbx/numbers/{id}/chain/{step}:
+    put:
+      tags: [pbx]
+      operationId: putPbxNumberChainStep
+      summary: Change one step of the chain of a number (admin only).
+      description: |
+        `step` is `name`, `hours`, `welcome`, `forwarding` or `closed` (any other step is `404 not_found`). The body is strict: only the keys
+        of that step (`ChainStepRequest`) plus `versions` (`{ <objectId>: version }`, the versions the chain showed) and `numberVersion`;
+        left out = the server reads them itself. A left-out `Fallback` field stays as it was. A `Fallback` with `mode: other` is `400`
+        (it is read-only). Nothing is ever deleted: switching a step "off" only unlinks it. Writes: 60 per 10 minutes per device.
+
+        Answers with the fresh `NumberChain`. `409 stale` carries the fresh chain in `chain` (keep the typed values, show the new
+        state); `409 advanced` = the flow is too complex for the chain; `400 invalid_request` with `code` (for example
+        `greeting_required`: a welcome message needs a sound); `422 blocked_destination`; `409 read_only`.
+      security:
+        - deviceToken: []
+      parameters:
+        - $ref: "#/components/parameters/ObjectId"
+        - name: step
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [name, hours, welcome, forwarding, closed]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChainStepRequest"
+      responses:
+        "200":
+          description: "Saved. The PBX is updated in the background (`sync: pending` until then)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NumberChain"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "422":
+          $ref: "#/components/responses/BlockedDestination"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /pbx/numbers/{id}/recording:
+    patch:
+      tags: [pbx]
+      operationId: patchPbxNumberRecording
+      summary: Switch call recording of a number on or off (admin only).
+      description: |
+        Recording is paid per number per month. When it costs something and `costAccepted` is not `true` the answer is
+        `422 cost_not_accepted` with the `cost` (the price per number per month; `vatIncluded` says whether `priceE4` includes VAT):
+        show it and send the request again with `costAccepted: true`. The optional announcement is a sound of the PBX; it is only played
+        to inbound callers. Answers with the fresh `NumberChain`.
+      security:
+        - deviceToken: []
+      parameters:
+        - $ref: "#/components/parameters/ObjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NumberRecordingPatch"
+      responses:
+        "200":
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NumberChain"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "422":
+          description: "`cost_not_accepted`: the recording costs money and was not accepted yet; `cost` holds the price."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /pbx/sounds:
+    get:
+      tags: [pbx]
+      operationId: getPbxSounds
+      summary: The sounds of the PBX - welcome messages, music, greetings (admin only).
+      security:
+        - deviceToken: []
+      responses:
+        "200":
+          description: The sounds.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SoundsPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    post:
+      tags: [pbx]
+      operationId: uploadPbxSound
+      summary: Upload a sound (admin only).
+      description: |
+        `multipart/form-data` with exactly two parts, `name` and `file` (any other part, a repeated part or a `chunked` body is `400`).
+        The type is read from the first bytes of the file (WAV, MP3 or M4A), never from the file name or the content type of the part. Up
+        to 20 MB; a bigger body is `413 too_large` without being read. `400 invalid_audio` = not a supported audio file; `409 too_many` =
+        the PBX has the maximum number of sounds. Uploads: 20 per hour per device.
+      security:
+        - deviceToken: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [name, file]
+              properties:
+                name:
+                  type: string
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Uploaded. The PBX learns the sound in the background.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SoundUploadResponse"
+        "400":
+          description: "`invalid_audio` (not a supported audio file) or another `invalid_request`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          description: "`too_large`: the file is above 20 MB."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /pbx/sounds/{id}:
+    patch:
+      tags: [pbx]
+      operationId: renamePbxSound
+      summary: Rename a sound (admin only).
+      security:
+        - deviceToken: []
+      parameters:
+        - $ref: "#/components/parameters/ObjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SoundRenameRequest"
+      responses:
+        "200":
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    delete:
+      tags: [pbx]
+      operationId: deletePbxSound
+      summary: Delete a sound (admin only).
+      description: "`409 in_use` with `places` while the sound is still used (a welcome message, a menu, closed message, ...): nothing is deleted."
+      security:
+        - deviceToken: []
+      parameters:
+        - $ref: "#/components/parameters/ObjectId"
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /pbx/sounds/{id}/audio:
+    get:
+      tags: [pbx]
+      operationId: getPbxSoundAudio
+      summary: The audio of a sound (admin only). Supports `Range` (206/416) and `HEAD`.
+      description: |
+        Only with `Authorization: Bearer`. A sound uploaded before this feature has no playable copy (`playable: false`): `404`. Playing
+        counts in the media limit (60 per minute per device). Errors are JSON, also on this route.
+      security:
+        - deviceToken: []
+      parameters:
+        - $ref: "#/components/parameters/ObjectId"
+        - name: Range
+          in: header
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The audio.
+          content:
+            audio/*:
+              schema:
+                type: string
+                format: binary
+        "206":
+          description: A part of the audio.
+          content:
+            audio/*:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "416":
+          description: The range does not fit the audio.
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /pbx/devices/{id}/app-pairing:
+    post:
+      tags: [pbx]
+      operationId: createPbxDeviceAppPairing
+      summary: A pairing link for a colleague's extension (admin only).
+      description: |
+        Invites a colleague: the link pairs FSVoip on their phone with the extension `id` with role `user`. The role is always `user`
+        and never comes from the request, so the body must be empty (or `{}`); any key, `role` included, is `400`. The link is a
+        credential: show it once, never log it. It is valid for 10 minutes and can be used once. You cannot invite the extension of this
+        pairing (`409 conflict`: it would replace this very app). 10 links per hour per PBX.
+      security:
+        - deviceToken: []
+      parameters:
+        - $ref: "#/components/parameters/ObjectId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        "200":
+          description: The link.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppPairingResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
   /calls:
     get:
       tags: [calls]
       operationId: getCalls
       summary: The calls of one month.
       description: |
-        `admin`: all calls of the PBX, with `hasRecording`. `user`: only the calls of the own extension, and never a recording
-        (`hasRecording` is always `false`, `recordingExpired` is absent).
+        `admin`: all calls of the PBX, with `hasRecording`. `user`: all calls of the PBX too (the team history; `extension` and
+        `extensionName` say who answered or made the call), but never a recording (`hasRecording` is always `false`, `recordingExpired`
+        is absent). A server from before the team history (`capabilities.calls: own`) only sends the own extension's calls.
       security:
         - deviceToken: []
       parameters:
@@ -492,6 +941,117 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /calls/park:
+    post:
+      tags: [calls]
+      operationId: parkCall
+      summary: Park the own running call (every role).
+      description: |
+        `callId` is the SIP `Call-ID` of the leg of the app (the app reads it from its own call). Which extension parks comes from the
+        pairing, never from the request: another extension's Call-ID is `404 call_not_found`. The call is put on hold in a numbered slot;
+        anyone dials `retrieveNumber` (`*59NN`) as a normal call to pick it up. After the park time-out it rings back at the extension.
+
+        `409 no_free_slot`, `409 park_unavailable` (the PBX cannot park: module too old or not loaded; `capabilities.park` is `false`),
+        `409 park_busy`. 🚨 `503 park_uncertain`: the PBX failed while parking and the call **may be parked**. Never park again: refresh
+        `GET /parked` and look. 30 per 10 minutes per device (with `DELETE /parked/{id}`).
+      security:
+        - deviceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ParkRequest"
+      responses:
+        "201":
+          description: Parked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ParkedCall"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: "`call_not_found`: no running call of this extension has that Call-ID."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: "`no_free_slot`, `park_unavailable`, `park_busy` or `read_only` (the PBX is frozen)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          description: "`park_uncertain` (the call may be parked: refresh the list, never retry) or another temporary problem (`unavailable`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /parked:
+    get:
+      tags: [calls]
+      operationId: getParkedCalls
+      summary: The calls parked on the PBX (every role).
+      description: |
+        At most 3 seconds old. `available: false` = parking does not work on this PBX right now (hide the section). `mine` = parked by
+        this extension. `parkedBy` is `null` when the call was parked outside FullStack Studio.
+      security:
+        - deviceToken: []
+      responses:
+        "200":
+          description: The parked calls.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ParkedCallsPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /parked/{id}:
+    delete:
+      tags: [calls]
+      operationId: hangupParkedCall
+      summary: Hang up a parked call.
+      description: "`user`: only a call that is `mine` (else `403 forbidden`); `admin`: every parked call of the PBX. The `id` is the opaque `id` of `GET /parked`."
+      security:
+        - deviceToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Za-z0-9_-]{1,120}$"
+      responses:
+        "200":
+          description: Hung up.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
         "429":
           $ref: "#/components/responses/RateLimited"
         "503":
@@ -915,7 +1475,9 @@ components:
         change sends a `refresh` push). Anything else counts as `user`. Absent in the answer of a server from before roles existed.
     Capabilities:
       type: object
-      description: What the app may show for the role. Informational; the server enforces every route.
+      description: |
+        What the app may show for the role. Informational; the server enforces every route. All fields are additive: a server from before
+        a field existed leaves it out, and a client reads a missing or unknown value as the restrictive choice.
       properties:
         pbxManage:
           type: boolean
@@ -926,7 +1488,10 @@ components:
           enum: [all, own, none]
         calls:
           type: string
-          enum: [all, own]
+          enum: [all, team, own]
+          description: |
+            `all` = every call of the PBX with recordings (admin); `team` = every call of the PBX without recordings (`user`; `extension` /
+            `extensionName` say who answered); `own` = only the calls of the own extension (a server from before `team`).
         contacts:
           type: object
           properties:
@@ -936,6 +1501,25 @@ components:
               type: boolean
             delete:
               type: boolean
+        selfExtension:
+          type: boolean
+          description: "`GET`/`PATCH /me/extension` is available (every role)."
+        sounds:
+          type: string
+          enum: [manage, none]
+          description: "`manage` = the sounds routes (`/pbx/sounds/**`) are open (admin)."
+        invite:
+          type: boolean
+          description: "`POST /pbx/devices/{id}/app-pairing` is open: the admin may invite a colleague."
+        park:
+          type: boolean
+          description: |
+            Parking works on this PBX (last known state; no PBX call). `false` = do not show the park button or the "On hold" tab.
+        callerChoice:
+          type: boolean
+          description: |
+            The PBX understands the `X-FSS-From` header and has two or more numbers (last known state). Only then may the app choose the
+            number to call out with, see "Caller choice header" in `shared/README.md`. `false` = never send the header.
     PbxState:
       type: string
       enum: [active, frozen, setup, error]
@@ -2063,6 +2647,805 @@ components:
         ok:
           type: boolean
           const: true
+    SelfNumber:
+      type: object
+      required: [id, number, isDefault]
+      properties:
+        id:
+          type: string
+          format: uuid
+        number:
+          type: string
+          description: National, without country code (`0850607848`).
+        name:
+          type: ["string", "null"]
+        isDefault:
+          type: boolean
+          description: The default number of the PBX.
+    SelfExtension:
+      type: object
+      required: [id, name, dnd, noAnswerSeconds, voicemailEnabled, voicemailToEmail, sync, version, numbers, targets]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        extension:
+          type: ["string", "null"]
+        dnd:
+          type: boolean
+        forwardAlways:
+          oneOf: [{ $ref: "#/components/schemas/Target" }, { type: "null" }]
+        noAnswerSeconds:
+          type: integer
+        noAnswerTarget:
+          oneOf: [{ $ref: "#/components/schemas/Target" }, { type: "null" }]
+        voicemailEnabled:
+          type: boolean
+        voicemailToEmail:
+          type: boolean
+        email:
+          type: ["string", "null"]
+        sync:
+          $ref: "#/components/schemas/SyncState"
+        version:
+          type: integer
+          minimum: 1
+        numbers:
+          type: array
+          items:
+            $ref: "#/components/schemas/SelfNumber"
+        defaultNumber:
+          type: ["string", "null"]
+          description: The number this extension calls out with by default (its own choice in the portal, else the default number of the PBX).
+        targets:
+          type: array
+          description: Where a call may be forwarded to (a colleague, a ring group, a voicemail box, an external number). Never the extension itself.
+          items:
+            $ref: "#/components/schemas/TargetOption"
+    SelfExtensionPatch:
+      type: object
+      additionalProperties: false
+      required: [version]
+      minProperties: 2
+      properties:
+        version:
+          type: integer
+          minimum: 1
+        dnd:
+          type: boolean
+        forwardAlways:
+          oneOf: [{ $ref: "#/components/schemas/Target" }, { type: "null" }]
+        noAnswerSeconds:
+          type: integer
+          minimum: 5
+          maximum: 120
+        noAnswerTarget:
+          oneOf: [{ $ref: "#/components/schemas/Target" }, { type: "null" }]
+        voicemailEnabled:
+          type: boolean
+        voicemailToEmail:
+          type: boolean
+        email:
+          type: ["string", "null"]
+    SelfExtensionPatchResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        extension:
+          $ref: "#/components/schemas/SelfExtension"
+    ChainMode:
+      type: string
+      enum: [simple, advanced]
+      description: "`advanced` = more than the app can show as a chain: read-only, only the name can be changed."
+    ForwardingKind:
+      type: string
+      enum: [standard, menu, advanced]
+    PbxNumberEntry:
+      type: object
+      required: [id, number, mode, summary, sync, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        number:
+          type: string
+        name:
+          type: ["string", "null"]
+        mode:
+          $ref: "#/components/schemas/ChainMode"
+        summary:
+          type: object
+          required: [hours, welcome, forwarding, recording]
+          properties:
+            hours:
+              type: string
+              description: A label in the language of the server ("ma-vr 9:00-17:00", "Uit").
+            welcome:
+              type: boolean
+            forwarding:
+              $ref: "#/components/schemas/ForwardingKind"
+            recording:
+              type: boolean
+        sync:
+          $ref: "#/components/schemas/SyncState"
+        version:
+          type: integer
+          minimum: 1
+    PbxNumbersPage:
+      type: object
+      required: [numbers]
+      properties:
+        numbers:
+          type: array
+          items:
+            $ref: "#/components/schemas/PbxNumberEntry"
+    Fallback:
+      description: |
+        What happens when it is closed or nobody answers. `other` is something the chain has no choice for: it decodes (and is shown as
+        read-only text) but is never sent back. A mode this app version does not know must be treated like `other`.
+      oneOf:
+        - type: object
+          required: [mode]
+          properties:
+            mode:
+              const: voicemail
+            boxId:
+              type: ["string", "null"]
+            ofDevice:
+              type: boolean
+              description: The voicemail of an extension (as opposed to a shared mailbox). Display only.
+        - type: object
+          required: [mode, soundId]
+          properties:
+            mode:
+              const: message
+            soundId:
+              type: string
+              format: uuid
+        - type: object
+          required: [mode, number]
+          properties:
+            mode:
+              const: forward
+            number:
+              type: string
+        - type: object
+          required: [mode]
+          properties:
+            mode:
+              const: hangup
+        - type: object
+          required: [mode, deviceId]
+          properties:
+            mode:
+              const: device
+            deviceId:
+              type: string
+              format: uuid
+        - type: object
+          required: [mode]
+          properties:
+            mode:
+              const: other
+            target:
+              $ref: "#/components/schemas/Target"
+    FallbackInput:
+      description: "A `Fallback` the app may send. `mode: other` is not allowed (`400`)."
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [mode]
+          properties:
+            mode:
+              const: voicemail
+            boxId:
+              type: ["string", "null"]
+              description: Left out = the shared voicemail box of the PBX.
+        - type: object
+          additionalProperties: false
+          required: [mode, soundId]
+          properties:
+            mode:
+              const: message
+            soundId:
+              type: string
+              format: uuid
+        - type: object
+          additionalProperties: false
+          required: [mode, number]
+          properties:
+            mode:
+              const: forward
+            number:
+              type: string
+        - type: object
+          additionalProperties: false
+          required: [mode]
+          properties:
+            mode:
+              const: hangup
+        - type: object
+          additionalProperties: false
+          required: [mode, deviceId]
+          properties:
+            mode:
+              const: device
+            deviceId:
+              type: string
+              format: uuid
+    ChainHolidayDate:
+      type: object
+      additionalProperties: false
+      required: [name, date]
+      properties:
+        name:
+          type: string
+        date:
+          type: string
+          description: "`YYYY-MM-DD`."
+    ChainHolidays:
+      type: object
+      required: [national, rules, dates]
+      properties:
+        national:
+          type: boolean
+          description: All Dutch national holidays use the "closed" behaviour.
+        rules:
+          type: array
+          description: The fixed holidays that are on (see `holidayRules` of `GET /pbx/hours`).
+          items:
+            type: string
+        dates:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChainHolidayDate"
+    ChainHolidaysInput:
+      type: object
+      additionalProperties: false
+      properties:
+        national:
+          type: boolean
+        rules:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+        dates:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/ChainHolidayDate"
+    ChainHours:
+      type: object
+      required: [id, version, week, holidays, closed]
+      properties:
+        id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          minimum: 1
+        week:
+          type: array
+          items:
+            $ref: "#/components/schemas/HoursWeekEntry"
+        holidays:
+          $ref: "#/components/schemas/ChainHolidays"
+        closed:
+          $ref: "#/components/schemas/Fallback"
+        holiday:
+          description: "`null` = on a holiday the same as outside opening hours."
+          oneOf: [{ $ref: "#/components/schemas/Fallback" }, { type: "null" }]
+        sharedWith:
+          type: array
+          description: Labels of the other numbers that use the same opening hours.
+          items:
+            type: string
+    ChainWelcome:
+      type: object
+      required: [menuId, version]
+      properties:
+        menuId:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          minimum: 1
+        soundId:
+          type: ["string", "null"]
+        sharedWith:
+          type: array
+          items:
+            type: string
+    ChainMember:
+      type: object
+      additionalProperties: false
+      required: [deviceId]
+      properties:
+        deviceId:
+          type: string
+          format: uuid
+        delaySeconds:
+          type: integer
+          minimum: 0
+        timeoutSeconds:
+          type: integer
+          minimum: 1
+    ChainKey:
+      type: object
+      required: [digit, target]
+      properties:
+        digit:
+          type: string
+          description: "`0`-`9`, `*` or `#`."
+        target:
+          $ref: "#/components/schemas/Target"
+        editable:
+          type: boolean
+          description: "`false` = a key the app shows but cannot change (for example it points at a queue); it stays as it is when the menu is saved."
+    ChainStandardForwarding:
+      type: object
+      required: [kind, version, strategy, members, unanswered]
+      properties:
+        kind:
+          const: standard
+        groupId:
+          type: ["string", "null"]
+          description: "`null` = one single extension (no ring group yet); a change turns it into a ring group."
+        version:
+          type: integer
+          minimum: 1
+        strategy:
+          $ref: "#/components/schemas/RingStrategy"
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChainMember"
+        unanswered:
+          $ref: "#/components/schemas/Fallback"
+        sharedWith:
+          type: array
+          items:
+            type: string
+    ChainMenuForwarding:
+      type: object
+      required: [kind, menuId, version, repeats, timeoutSeconds, noChoice, keys]
+      properties:
+        kind:
+          const: menu
+        menuId:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          minimum: 1
+        greetingSoundId:
+          type: ["string", "null"]
+        repeats:
+          type: integer
+          minimum: 0
+          maximum: 5
+        timeoutSeconds:
+          type: integer
+        defaultKey:
+          type: ["string", "null"]
+          description: The key that counts when nothing is pressed; `null` = none (then `noChoice`).
+        noChoice:
+          $ref: "#/components/schemas/Fallback"
+        keys:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChainKey"
+        sharedWith:
+          type: array
+          items:
+            type: string
+    ChainForwarding:
+      oneOf:
+        - $ref: "#/components/schemas/ChainStandardForwarding"
+        - $ref: "#/components/schemas/ChainMenuForwarding"
+    RecordingCost:
+      type: object
+      required: [priceE4, vatIncluded]
+      properties:
+        priceE4:
+          type: integer
+          description: The price per number per month in euro x 10000 (20000 = EUR 2.00).
+        vatIncluded:
+          type: boolean
+          description: Whether `priceE4` includes VAT (a business customer sees it excluding VAT).
+    ChainRecording:
+      type: object
+      required: [enabled, billingActive, available]
+      properties:
+        enabled:
+          type: boolean
+        announcementSoundId:
+          type: ["string", "null"]
+        billingActive:
+          type: boolean
+          description: Recording is already being billed; changing the announcement then needs no new consent.
+        available:
+          type: boolean
+          description: "`false` = recording cannot be switched on on this PBX (there is no price)."
+        cost:
+          description: "`null` = free for this customer (no consent needed)."
+          oneOf: [{ $ref: "#/components/schemas/RecordingCost" }, { type: "null" }]
+    ChainOptions:
+      type: object
+      description: The choices for the pickers of the chain.
+      properties:
+        devices:
+          type: array
+          items:
+            type: object
+            required: [id, name]
+            properties:
+              id:
+                type: string
+                format: uuid
+              name:
+                type: string
+              extension:
+                type: ["string", "null"]
+        sounds:
+          type: array
+          items:
+            type: object
+            required: [id, name]
+            properties:
+              id:
+                type: string
+                format: uuid
+              name:
+                type: string
+        groups:
+          type: array
+          items:
+            type: object
+            required: [id, name]
+            properties:
+              id:
+                type: string
+                format: uuid
+              name:
+                type: string
+    NumberChain:
+      type: object
+      required: [id, number, version, mode, sync, recording, options]
+      properties:
+        id:
+          type: string
+          format: uuid
+        number:
+          type: string
+        name:
+          type: ["string", "null"]
+        version:
+          type: integer
+          minimum: 1
+        mode:
+          $ref: "#/components/schemas/ChainMode"
+        sync:
+          $ref: "#/components/schemas/SyncState"
+        hours:
+          description: "`null` = no opening hours (the number is always open)."
+          oneOf: [{ $ref: "#/components/schemas/ChainHours" }, { type: "null" }]
+        welcome:
+          description: "`null` = no welcome message."
+          oneOf: [{ $ref: "#/components/schemas/ChainWelcome" }, { type: "null" }]
+        forwarding:
+          description: "`null` when `mode` is `advanced`."
+          oneOf: [{ $ref: "#/components/schemas/ChainForwarding" }, { type: "null" }]
+        advanced:
+          description: "Only when `mode` is `advanced`: lines that describe the flow in words."
+          oneOf:
+            - type: object
+              required: [summary]
+              properties:
+                summary:
+                  type: array
+                  items:
+                    type: string
+            - type: "null"
+        recording:
+          $ref: "#/components/schemas/ChainRecording"
+        options:
+          $ref: "#/components/schemas/ChainOptions"
+    ChainVersionMap:
+      type: object
+      description: "`{ <objectId>: version }`: the versions of the parts of the chain as the chain showed them. Left out = the server reads them itself (no lost-update check for that part)."
+      maxProperties: 20
+      propertyNames:
+        format: uuid
+      additionalProperties:
+        type: integer
+        minimum: 1
+    ChainStepName:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: ["string", "null"]
+          description: "`null` or empty = the number has no name."
+        versions:
+          $ref: "#/components/schemas/ChainVersionMap"
+        numberVersion:
+          type: integer
+          minimum: 1
+    ChainStepHours:
+      type: object
+      additionalProperties: false
+      required: [enabled]
+      properties:
+        enabled:
+          type: boolean
+          description: "`false` = unlink the opening hours (the object stays)."
+        week:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/HoursWeekEntry"
+        holidays:
+          $ref: "#/components/schemas/ChainHolidaysInput"
+        closed:
+          $ref: "#/components/schemas/FallbackInput"
+        holiday:
+          oneOf: [{ $ref: "#/components/schemas/FallbackInput" }, { type: "null" }]
+        versions:
+          $ref: "#/components/schemas/ChainVersionMap"
+        numberVersion:
+          type: integer
+          minimum: 1
+    ChainStepWelcome:
+      type: object
+      additionalProperties: false
+      required: [enabled]
+      properties:
+        enabled:
+          type: boolean
+          description: "`true` without a sound (and none set yet) is `400 invalid_request` with `code: greeting_required`."
+        soundId:
+          type: ["string", "null"]
+        versions:
+          $ref: "#/components/schemas/ChainVersionMap"
+        numberVersion:
+          type: integer
+          minimum: 1
+    ChainStepClosed:
+      type: object
+      additionalProperties: false
+      properties:
+        closed:
+          $ref: "#/components/schemas/FallbackInput"
+        holiday:
+          oneOf: [{ $ref: "#/components/schemas/FallbackInput" }, { type: "null" }]
+        versions:
+          $ref: "#/components/schemas/ChainVersionMap"
+        numberVersion:
+          type: integer
+          minimum: 1
+    ChainStepForwardingStandard:
+      type: object
+      additionalProperties: false
+      required: [kind]
+      properties:
+        kind:
+          const: standard
+        strategy:
+          $ref: "#/components/schemas/RingStrategy"
+        members:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/ChainMember"
+        unanswered:
+          $ref: "#/components/schemas/FallbackInput"
+        versions:
+          $ref: "#/components/schemas/ChainVersionMap"
+        numberVersion:
+          type: integer
+          minimum: 1
+    ChainStepForwardingMenu:
+      type: object
+      additionalProperties: false
+      required: [kind]
+      properties:
+        kind:
+          const: menu
+        greetingSoundId:
+          type: ["string", "null"]
+        repeats:
+          type: integer
+          minimum: 0
+          maximum: 5
+        timeoutSeconds:
+          type: integer
+        defaultKey:
+          type: ["string", "null"]
+        noChoice:
+          $ref: "#/components/schemas/FallbackInput"
+        keys:
+          type: array
+          maxItems: 100
+          description: "A menu has at least one key. A key the app cannot edit (`editable: false`) is left as it is by the server."
+          items:
+            type: object
+            additionalProperties: false
+            required: [digit, target]
+            properties:
+              digit:
+                type: string
+              target:
+                $ref: "#/components/schemas/Target"
+              editable:
+                type: boolean
+        versions:
+          $ref: "#/components/schemas/ChainVersionMap"
+        numberVersion:
+          type: integer
+          minimum: 1
+    ChainStepRequest:
+      description: |
+        The body of `PUT /pbx/numbers/{id}/chain/{step}`; which one depends on `step`: `name` = `ChainStepName`, `hours` = `ChainStepHours`,
+        `welcome` = `ChainStepWelcome`, `forwarding` = `ChainStepForwardingStandard` or `ChainStepForwardingMenu` (by `kind`),
+        `closed` = `ChainStepClosed`.
+      anyOf:
+        - $ref: "#/components/schemas/ChainStepName"
+        - $ref: "#/components/schemas/ChainStepHours"
+        - $ref: "#/components/schemas/ChainStepWelcome"
+        - $ref: "#/components/schemas/ChainStepClosed"
+        - $ref: "#/components/schemas/ChainStepForwardingStandard"
+        - $ref: "#/components/schemas/ChainStepForwardingMenu"
+    NumberRecordingPatch:
+      type: object
+      additionalProperties: false
+      required: [enabled, version]
+      properties:
+        enabled:
+          type: boolean
+        announcementSoundId:
+          type: ["string", "null"]
+          description: "`null` = no announcement; left out = unchanged."
+        costAccepted:
+          type: boolean
+          description: "The customer accepted the monthly price (`ChainRecording.cost`). Needed when it costs something and recording was not billed yet."
+        version:
+          type: integer
+          minimum: 1
+          description: "`NumberChain.version` (the version of the number)."
+    SoundUse:
+      type: object
+      required: [kind, name]
+      properties:
+        kind:
+          type: string
+          description: "Where it is used: `voicemail_greeting`, `extension_voicemail_greeting`, `queue_music`, `queue_welcome`, `menu_greeting`, `closed_message`. Others may follow."
+        name:
+          type: string
+          description: The name of the object that uses it (a name the customer chose).
+    Sound:
+      type: object
+      required: [id, name, playable, sync]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        durationSeconds:
+          type: ["number", "null"]
+          description: "Always `null` for now: the app reads the duration from the audio."
+        playable:
+          type: boolean
+          description: "`false` = there is no copy to play (a sound from before this feature); the PBX still uses it."
+        uses:
+          type: array
+          items:
+            $ref: "#/components/schemas/SoundUse"
+        contentType:
+          type: ["string", "null"]
+          description: "`audio/wav`, `audio/mpeg` or `audio/mp4`; `null` without a copy."
+        byteSize:
+          type: ["integer", "null"]
+        sync:
+          $ref: "#/components/schemas/SyncState"
+    SoundsPage:
+      type: object
+      required: [sounds]
+      properties:
+        sounds:
+          type: array
+          items:
+            $ref: "#/components/schemas/Sound"
+    SoundUploadResponse:
+      type: object
+      required: [soundId]
+      properties:
+        soundId:
+          type: string
+          format: uuid
+    SoundRenameRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+    AppPairingResponse:
+      type: object
+      required: [url, expiresAt]
+      properties:
+        url:
+          type: string
+          description: "Universal link `https://fullstackstudio.nl/fsvoip/pair?t=fss_vpair_...`. A credential: show it once, never log it."
+        expiresAt:
+          type: string
+          format: date-time
+    ParkRequest:
+      type: object
+      additionalProperties: false
+      required: [callId]
+      properties:
+        callId:
+          type: string
+          minLength: 1
+          maxLength: 255
+          pattern: "^\\S+$"
+          description: The SIP `Call-ID` of the leg of the app.
+    ParkedBy:
+      type: object
+      required: [name]
+      properties:
+        deviceId:
+          type: ["string", "null"]
+          description: "The app pairing that parked it; `null` = parked from another phone of the PBX."
+        name:
+          type: string
+    ParkedCall:
+      type: object
+      required: [id, slot, mine]
+      properties:
+        id:
+          type: string
+          description: Opaque, sealed per PBX (never a channel id). Use it for `DELETE /parked/{id}`.
+        slot:
+          type: integer
+        retrieveNumber:
+          type: ["string", "null"]
+          description: "The number that picks the call up when dialled as a normal call (`*5901`)."
+        callerNumber:
+          type: ["string", "null"]
+        callerName:
+          type: ["string", "null"]
+        parkedAt:
+          type: ["string", "null"]
+          format: date-time
+        expiresAt:
+          type: ["string", "null"]
+          format: date-time
+          description: After this the call rings back at the extension that parked it.
+        parkedBy:
+          oneOf: [{ $ref: "#/components/schemas/ParkedBy" }, { type: "null" }]
+        mine:
+          type: boolean
+    ParkedCallsPage:
+      type: object
+      required: [calls, available]
+      properties:
+        calls:
+          type: array
+          items:
+            $ref: "#/components/schemas/ParkedCall"
+        available:
+          type: boolean
+          description: "`false` = parking does not work on this PBX right now: hide the section."
     Error:
       type: object
       required: [error]
@@ -2072,7 +3455,9 @@ components:
           description: |
             Machine-readable code. Known values: `invalid_request`, `invalid_json`, `not_found`, `unauthorized`,
             `rate_limited`, `payload_too_large`, `unavailable`, `not_ready`, `forbidden`, `read_only`, `stale`, `in_use`,
-            `conflict`, `blocked_destination`, `gone`, `busy`.
+            `conflict`, `blocked_destination`, `gone`, `busy`, `advanced`, `cost_not_accepted`, `invalid_audio`, `too_large`, `too_many`,
+            `call_not_found`, `no_free_slot`, `park_unavailable`, `park_busy`, `park_uncertain`. An unknown value must be treated as a
+            plain failure of that HTTP status.
         message:
           type: string
           description: Human-readable detail for `invalid_request`. Not localised; do not show it to users.
@@ -2082,11 +3467,11 @@ components:
         code:
           type: string
           description: |
-            Detail of `invalid_request` (the portal's code, e.g. `invalid_phone`, `invalid_target`, `invalid_hours`; `resync` = the contacts
+            Detail of `invalid_request` (the portal's code, e.g. `invalid_phone`, `invalid_target`, `invalid_hours`, `greeting_required`; `resync` = the contacts
             `since` is older than 90 days) and of `conflict` (e.g. `limit_reached`).
         field:
           type: string
-          description: The request field that is wrong (`invalid_request`).
+          description: "The request field that is wrong (`invalid_request`), or the extension field a `user` may not change (`403 forbidden` of `PATCH /me/extension`)."
         required:
           type: string
           description: "On `403 forbidden`: the role that is needed (`admin`)."
@@ -2109,6 +3494,12 @@ components:
           description: "On `422 blocked_destination`: the external numbers a block list stops."
           items:
             type: string
+        cost:
+          description: "On `422 cost_not_accepted`: the price the customer must accept (`null` when it could not be read)."
+          oneOf: [{ $ref: "#/components/schemas/RecordingCost" }, { type: "null" }]
+        chain:
+          description: "On `409 stale` of a chain step or of the recording: the fresh chain (best effort)."
+          $ref: "#/components/schemas/NumberChain"
   responses:
     InvalidRequest:
       description: Malformed JSON or an invalid / unknown field.
