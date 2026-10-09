@@ -51,6 +51,10 @@ struct AccountDetailView: View {
                 }
             }
 
+            if let pbx = model.pbx {
+                PbxAccountSection(hub: pbx, account: account)
+            }
+
             Section {
                 TextField(account.label, text: $alias)
                     .textInputAutocapitalization(.sentences)

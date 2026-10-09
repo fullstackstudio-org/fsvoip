@@ -80,7 +80,8 @@ final class AppServices {
                 )
             },
             pushTokens: reporter,
-            requestNotifications: { await Self.requestNotificationPermission() }
+            requestNotifications: { await Self.requestNotificationPermission() },
+            pbx: PbxHub(service: LivePbxService(api: api), gate: LocalAccessGate(authenticator: SystemLocalAuth()))
         )
     }
 

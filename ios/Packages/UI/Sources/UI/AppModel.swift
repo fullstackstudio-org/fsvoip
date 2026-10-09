@@ -58,6 +58,8 @@ public final class FSVoipAppModel: ObservableObject {
     @Published public private(set) var settingsRevision = 0
 
     public let phone: PhoneController
+    /// The "Centrale" section of admin pairings (`nil` = not offered, e.g. in a build without it).
+    public let pbx: PbxHub?
 
     private let accountStore: AccountStore
     private let service: AccountServicing
@@ -69,6 +71,7 @@ public final class FSVoipAppModel: ObservableObject {
     private let requestNotifications: () async -> Void
     private let logger: FSLogger
     private var phoneChanges: AnyCancellable?
+    private var pbxAccessLost: AnyCancellable?
 
     public init(
         phone: PhoneController,
@@ -80,9 +83,11 @@ public final class FSVoipAppModel: ObservableObject {
         requestMicrophone: @escaping () async -> Bool = { await MicrophonePermission.request() },
         pushTokens: PushTokenReporting? = nil,
         requestNotifications: @escaping () async -> Void = {},
+        pbx: PbxHub? = nil,
         logger: FSLogger = FSLogger(category: "app")
     ) {
         self.phone = phone
+        self.pbx = pbx
         self.accountStore = accountStore
         self.service = service
         self.preferences = preferences
@@ -98,6 +103,17 @@ public final class FSVoipAppModel: ObservableObject {
         phone.onCallFinished = { [weak self] call in
             self?.recentsStore.add(call)
             self?.recents = self?.recentsStore.all() ?? []
+        }
+        pbx?.onRevoked = { [weak self] in
+            Task { await self?.refreshAccounts() }
+        }
+        pbxAccessLost = pbx?.$lostAccessFor.compactMap { $0 }.sink { [weak self] accountId in
+            guard let self else { return }
+            self.pbx?.lostAccessFor = nil
+
+            if let account = account(id: accountId) {
+                notice = Notice(message: String(format: L10n.string("pbx.notice.lostAccess"), account.pbxName), isError: true)
+            }
         }
         // Republish the phone's changes so screens that only watch the app model still redraw.
         phoneChanges = phone.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
@@ -146,6 +162,9 @@ public final class FSVoipAppModel: ObservableObject {
         }
 
         reloadAccounts()
+        // Which accounts may manage the centrale is decided by their role at this moment (a role that was taken away
+        // hides the section right away).
+        await pbx?.refreshAccess(for: accounts)
     }
 
     public func rename(accountId: String, alias: String?) async -> Bool {
@@ -436,6 +455,7 @@ public final class FSVoipAppModel: ObservableObject {
     // MARK: Helpers
 
     private func cleanUp(accountId: String) {
+        pbx?.forget(accountId: accountId)
         preferences.removePreferences(for: accountId)
         internalContacts[accountId] = nil
         settingsRevision += 1

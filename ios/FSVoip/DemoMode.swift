@@ -50,7 +50,8 @@ enum DemoMode {
             preferences: preferences,
             recentsStore: recents,
             device: { DeviceDescriptor(model: "Simulator", osVersion: nil, appVersion: "demo", installId: "d3m0d3m0d3m0d3m0") },
-            requestMicrophone: { true }
+            requestMicrophone: { true },
+            pbx: PbxHub(service: DemoPbxService(adminAccountId: exampleAccounts[0].id), gate: LocalAccessGate(authenticator: DemoLocalAuth()))
         )
 
         open(defaults.string(forKey: "FSVoipDemoScreen"), model: model, engine: engine)
