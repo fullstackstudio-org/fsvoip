@@ -1,0 +1,38 @@
+{
+  "version": 6,
+  "week": [
+    {
+      "day": 1,
+      "from": "08:30",
+      "to": "12:00"
+    },
+    {
+      "day": 1,
+      "from": "13:00",
+      "to": "17:30"
+    },
+    {
+      "day": 5,
+      "from": "09:00",
+      "to": "24:00"
+    }
+  ],
+  "openTarget": {
+    "type": "ring_group",
+    "id": "9e8d7c6b-5a49-4382-b1a0-f9e8d7c6b5a4"
+  },
+  "closedTarget": null,
+  "holidays": [
+    {
+      "rule": "christmas_day"
+    },
+    {
+      "name": "Bedrijfsuitje",
+      "date": "2026-11-13"
+    }
+  ],
+  "holidayTarget": {
+    "type": "voicemail",
+    "id": "2f4a6c8e-1b3d-4f5a-8c7e-9a0b1c2d3e4f"
+  }
+}

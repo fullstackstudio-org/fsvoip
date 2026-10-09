@@ -1,0 +1,97 @@
+{
+  "ringGroups": [
+    {
+      "id": "9e8d7c6b-5a49-4382-b1a0-f9e8d7c6b5a4",
+      "name": "Iedereen",
+      "version": 2,
+      "extension": "200",
+      "strategy": "all",
+      "members": [
+        {
+          "extensionId": "5c0a8e1f-2d7b-4a39-8f46-0b1c2d3e4f50",
+          "delaySeconds": 0,
+          "timeoutSeconds": 25
+        },
+        {
+          "extensionId": "1b2c3d4e-0a1b-4c2d-8e3f-5a6b7c8d9e01",
+          "delaySeconds": 0,
+          "timeoutSeconds": 25
+        }
+      ],
+      "timeoutTarget": {
+        "type": "voicemail",
+        "id": "2f4a6c8e-1b3d-4f5a-8c7e-9a0b1c2d3e4f"
+      },
+      "sync": "ok"
+    }
+  ],
+  "devices": [
+    {
+      "id": "5c0a8e1f-2d7b-4a39-8f46-0b1c2d3e4f50",
+      "name": "Receptie",
+      "extension": "100"
+    },
+    {
+      "id": "1b2c3d4e-0a1b-4c2d-8e3f-5a6b7c8d9e01",
+      "name": "Pieter Jansen",
+      "extension": "101"
+    },
+    {
+      "id": "7a1d9c3e-5b2f-4e8a-9c01-6d3e8f2a4b57",
+      "name": "Jan de Vries",
+      "extension": "102"
+    }
+  ],
+  "targets": [
+    {
+      "value": "extension:5c0a8e1f-2d7b-4a39-8f46-0b1c2d3e4f50",
+      "type": "extension",
+      "id": "5c0a8e1f-2d7b-4a39-8f46-0b1c2d3e4f50",
+      "name": "Receptie",
+      "extension": "100"
+    },
+    {
+      "value": "extension:1b2c3d4e-0a1b-4c2d-8e3f-5a6b7c8d9e01",
+      "type": "extension",
+      "id": "1b2c3d4e-0a1b-4c2d-8e3f-5a6b7c8d9e01",
+      "name": "Pieter Jansen",
+      "extension": "101"
+    },
+    {
+      "value": "extension:7a1d9c3e-5b2f-4e8a-9c01-6d3e8f2a4b57",
+      "type": "extension",
+      "id": "7a1d9c3e-5b2f-4e8a-9c01-6d3e8f2a4b57",
+      "name": "Jan de Vries",
+      "extension": "102"
+    },
+    {
+      "value": "ring_group:9e8d7c6b-5a49-4382-b1a0-f9e8d7c6b5a4",
+      "type": "ring_group",
+      "id": "9e8d7c6b-5a49-4382-b1a0-f9e8d7c6b5a4",
+      "name": "Iedereen",
+      "extension": "200"
+    },
+    {
+      "value": "voicemail:2f4a6c8e-1b3d-4f5a-8c7e-9a0b1c2d3e4f",
+      "type": "voicemail",
+      "id": "2f4a6c8e-1b3d-4f5a-8c7e-9a0b1c2d3e4f",
+      "name": "Algemeen",
+      "extension": "900"
+    },
+    {
+      "value": "voicemail:7a1d9c3e-5b2f-4e8a-9c01-6d3e8f2a4b57",
+      "type": "voicemail",
+      "id": "7a1d9c3e-5b2f-4e8a-9c01-6d3e8f2a4b57",
+      "name": "Jan de Vries",
+      "extension": "102",
+      "ofDevice": true
+    },
+    {
+      "value": "external",
+      "type": "external",
+      "id": null,
+      "name": "Extern nummer",
+      "extension": null
+    }
+  ]
+}

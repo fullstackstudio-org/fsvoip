@@ -16,6 +16,24 @@ public enum APIError: Error, Equatable, Sendable {
     case transport(String)
     case decoding(String)
     case unexpectedStatus(Int)
+    /// 403: this pairing may not do that (the role is `user`, or the role was taken away). The app hides the section.
+    case forbidden
+    /// 409 `read_only`: the PBX is frozen or still being set up; nothing can be changed now.
+    case readOnly
+    /// 409 `stale`: the object changed in the meantime. Reload it (`version` = the current version, when the server tells).
+    case stale(version: Int?)
+    /// 409 `in_use`: something still uses it (`places` = names the customer chose).
+    case inUse(places: [APIErrorPlace])
+    /// 409 any other (`busy`, `not_ready`, `range_full`, `limit_reached`, ...): the code the server gave.
+    case conflict(code: String)
+    /// 422 `blocked_destination`: a block list stops these external numbers.
+    case blockedDestination([String])
+    /// 410: gone for good (a recording past its retention period).
+    case gone
+    /// 400 `invalid_request` with `code: "resync"`: `since` is too old; do a full contacts sync.
+    case resync
+    /// 400 `invalid_request` with a `code` (and the `field` that is wrong), e.g. `invalid_phone`.
+    case invalid(code: String, field: String?)
 }
 
 public protocol HTTPTransport: Sendable {
@@ -107,18 +125,49 @@ public struct FSVoipAPIClient: Sendable {
 
     // MARK: Plumbing
 
-    private func perform<Body: Encodable, Response: Decodable>(
+    func perform<Body: Encodable, Response: Decodable>(
         _ method: String,
         _ path: String,
+        query: [URLQueryItem] = [],
         body: Body?,
+        headers: [String: String] = [:],
         authenticated: Bool
     ) async throws -> Response {
-        var request = URLRequest(url: baseURL.appendingPathComponent(path))
+        let (data, _) = try await send(method, path, query: query, body: body, headers: headers, authenticated: authenticated, acceptNotModified: false)
+
+        do {
+            return try FSVoipJSON.decoder().decode(Response.self, from: data)
+        } catch {
+            throw APIError.decoding("\(path): \(error)")
+        }
+    }
+
+    /// Like `perform` but without a body.
+    func get<Response: Decodable>(_ path: String, query: [URLQueryItem] = [], headers: [String: String] = [:]) async throws -> Response {
+        try await perform("GET", path, query: query, body: Optional<PairRequest>.none, headers: headers, authenticated: true)
+    }
+
+    /// The raw variant: returns the data and the response (headers such as `ETag`). `acceptNotModified`: a `304` is an answer,
+    /// not an error (conditional GET); the data is then empty.
+    func send<Body: Encodable>(
+        _ method: String,
+        _ path: String,
+        query: [URLQueryItem] = [],
+        body: Body?,
+        headers: [String: String] = [:],
+        authenticated: Bool,
+        acceptNotModified: Bool
+    ) async throws -> (Data, HTTPURLResponse) {
+        var request = URLRequest(url: url(path, query: query))
         request.httpMethod = method
         request.timeoutInterval = 20
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+
+        for (name, value) in headers {
+            request.setValue(value, forHTTPHeaderField: name)
+        }
 
         if authenticated {
             guard let deviceToken else {
@@ -133,8 +182,8 @@ public struct FSVoipAPIClient: Sendable {
             request.httpBody = try FSVoipJSON.encoder().encode(body)
         }
 
-        // Never log bodies or headers: the pair response carries the SIP password.
-        logger.debug("\(method) /\(path)")
+        // Never log bodies, queries or headers: the pair response carries the SIP password and contact queries carry a sync cursor.
+        logger.debug("\(method) /\(path.split(separator: "/").prefix(1).joined(separator: "/"))")
 
         let data: Data
         let response: HTTPURLResponse
@@ -147,18 +196,38 @@ public struct FSVoipAPIClient: Sendable {
             throw APIError.transport((error as NSError).localizedDescription)
         }
 
-        logger.debug("\(method) /\(path) -> \(response.statusCode)")
+        logger.debug("\(method) /\(path.split(separator: "/").prefix(1).joined(separator: "/")) -> \(response.statusCode)")
+
+        if acceptNotModified, response.statusCode == 304 {
+            return (data, response)
+        }
 
         guard (200 ..< 300).contains(response.statusCode) else {
             throw Self.error(for: response, data: data)
         }
 
-        do {
-            return try FSVoipJSON.decoder().decode(Response.self, from: data)
-        } catch {
-            throw APIError.decoding("\(path): \(error)")
-        }
+        return (data, response)
     }
+
+    /// `base/<segments>?query`, every segment percent-encoded on its own (a sealed voicemail reference is opaque text).
+    func url(_ path: String, query: [URLQueryItem] = []) -> URL {
+        var url = baseURL
+
+        for segment in path.split(separator: "/", omittingEmptySubsequences: true) {
+            url.appendPathComponent(String(segment))
+        }
+
+        guard !query.isEmpty, var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return url
+        }
+
+        components.queryItems = query
+
+        return components.url ?? url
+    }
+
+    var userAgentValue: String { userAgent }
+    var deviceTokenValue: Secret? { deviceToken }
 
     static func error(for response: HTTPURLResponse, data: Data) -> APIError {
         let body = try? JSONDecoder().decode(APIErrorBody.self, from: data)
@@ -166,13 +235,38 @@ public struct FSVoipAPIClient: Sendable {
 
         switch response.statusCode {
         case 400:
+            if body?.code == "resync" {
+                return .resync
+            }
+
+            if let code = body?.code {
+                return .invalid(code: code, field: body?.field)
+            }
+
             return .invalidRequest(message: body?.message)
         case 401:
             return .unauthorized
+        case 403:
+            return .forbidden
         case 404:
             return .notFound
+        case 409:
+            switch body?.error {
+            case "read_only":
+                return .readOnly
+            case "stale":
+                return .stale(version: body?.version)
+            case "in_use":
+                return .inUse(places: body?.places ?? [])
+            default:
+                return .conflict(code: body?.code ?? body?.error ?? "conflict")
+            }
+        case 410:
+            return .gone
         case 413:
             return .payloadTooLarge
+        case 422 where body?.error == "blocked_destination":
+            return .blockedDestination(body?.blocked ?? [])
         case 429:
             return .rateLimited(retryAfterSeconds: retryAfter)
         case 503:

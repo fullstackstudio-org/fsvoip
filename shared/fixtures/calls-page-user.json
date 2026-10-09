@@ -1,0 +1,27 @@
+{
+  "month": "2026-10",
+  "months": [
+    "2026-10"
+  ],
+  "truncated": true,
+  "calls": [
+    {
+      "id": "22222222-aaaa-4bbb-8ccc-000000000001",
+      "direction": "inbound",
+      "outcome": "missed",
+      "number": "070 123 45 67",
+      "ourNumber": "0850607848",
+      "extension": "102",
+      "extensionName": "Jan de Vries",
+      "country": "NL",
+      "countryName": "Nederland",
+      "lineType": "fixed",
+      "category": "fixed",
+      "startedLabel": "9 okt 09:12",
+      "startedSort": "2026-10-09T07:12:41.000Z",
+      "durationLabel": "2:05",
+      "durationSeconds": 125,
+      "hasRecording": false
+    }
+  ]
+}

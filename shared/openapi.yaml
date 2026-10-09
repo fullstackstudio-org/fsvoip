@@ -30,6 +30,12 @@ tags:
     description: Exchange a one-time pairing token for a device token and SIP credentials.
   - name: account
     description: The paired account, internal contacts, push registration.
+  - name: pbx
+    description: Manage the PBX from the app ("Centrale"). Admin pairings only.
+  - name: calls
+    description: Calls, call recordings and voicemail.
+  - name: contacts
+    description: The customer's address book and contact lists.
 paths:
   /pair:
     post:
@@ -167,7 +173,733 @@ paths:
           $ref: "#/components/responses/RateLimited"
         "503":
           $ref: "#/components/responses/Unavailable"
+  /pbx/overview:
+    get:
+      tags: [pbx]
+      operationId: getPbxOverview
+      summary: The call flow per number plus the counters (admin pairings only).
+      description: |
+        All `/pbx/*` routes need `role: admin` (`GET /me`). A `user` pairing gets `403 forbidden` before anything is loaded.
+        The PBX is always the one of this pairing; no id in a URL can point at another PBX (that is `404 not_found`).
+      security:
+        - deviceToken: []
+      responses:
+        "200":
+          description: The overview.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PbxOverview"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /pbx/devices:
+    get:
+      tags: [pbx]
+      operationId: getPbxDevices
+      summary: The extensions with their settings, and everything a call can be forwarded to.
+      security:
+        - deviceToken: []
+      responses:
+        "200":
+          description: The extensions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PbxDevices"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /pbx/devices/{id}:
+    patch:
+      tags: [pbx]
+      operationId: patchPbxDevice
+      summary: Change settings of one extension.
+      description: |
+        `version` (from `GET /pbx/devices`) is required: another version is `409 stale` with the current `version`. Name, e-mail,
+        recording, suspending and sounds are not changeable here (they stay in the portal). Writes: 60 per 10 minutes per device.
+      security:
+        - deviceToken: []
+      parameters:
+        - $ref: "#/components/parameters/ObjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PbxDevicePatch"
+      responses:
+        "200":
+          description: "Saved. The PBX is updated in the background (`sync: pending` until then)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "422":
+          $ref: "#/components/responses/BlockedDestination"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /pbx/ring-groups:
+    get:
+      tags: [pbx]
+      operationId: getPbxRingGroups
+      summary: The ring groups, the extensions that can join and the forwarding choices.
+      security:
+        - deviceToken: []
+      responses:
+        "200":
+          description: The ring groups.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PbxRingGroups"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    post:
+      tags: [pbx]
+      operationId: createPbxRingGroup
+      summary: Create a ring group.
+      security:
+        - deviceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PbxRingGroupCreate"
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PbxRingGroupCreated"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "422":
+          $ref: "#/components/responses/BlockedDestination"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /pbx/ring-groups/{id}:
+    patch:
+      tags: [pbx]
+      operationId: patchPbxRingGroup
+      summary: Change a ring group (`version` required).
+      security:
+        - deviceToken: []
+      parameters:
+        - $ref: "#/components/parameters/ObjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PbxRingGroupPatch"
+      responses:
+        "200":
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "422":
+          $ref: "#/components/responses/BlockedDestination"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /pbx/hours:
+    get:
+      tags: [pbx]
+      operationId: getPbxHours
+      summary: The opening hours, forwarding choices and the fixed holidays.
+      security:
+        - deviceToken: []
+      responses:
+        "200":
+          description: The opening hours.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PbxHours"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /pbx/hours/{id}:
+    patch:
+      tags: [pbx]
+      operationId: patchPbxHours
+      summary: Change week, targets and holidays of opening hours (`version` required; the name stays in the portal).
+      description: "`week` and `holidays` REPLACE the whole list: send the existing entries along to keep them."
+      security:
+        - deviceToken: []
+      parameters:
+        - $ref: "#/components/parameters/ObjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PbxHoursPatch"
+      responses:
+        "200":
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "422":
+          $ref: "#/components/responses/BlockedDestination"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /pbx/numbers/{id}/routing:
+    patch:
+      tags: [pbx]
+      operationId: patchPbxNumberRouting
+      summary: "Where callers of one number go (`target: null` = the start of the flow)."
+      security:
+        - deviceToken: []
+      parameters:
+        - $ref: "#/components/parameters/ObjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PbxRoutingPatch"
+      responses:
+        "200":
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "422":
+          $ref: "#/components/responses/BlockedDestination"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /calls:
+    get:
+      tags: [calls]
+      operationId: getCalls
+      summary: The calls of one month.
+      description: |
+        `admin`: all calls of the PBX, with `hasRecording`. `user`: only the calls of the own extension, and never a recording
+        (`hasRecording` is always `false`, `recordingExpired` is absent).
+      security:
+        - deviceToken: []
+      parameters:
+        - name: month
+          in: query
+          schema:
+            type: string
+            pattern: "^\\d{4}-\\d{2}$"
+          description: "`YYYY-MM`; default the current month."
+        - $ref: "#/components/parameters/Locale"
+      responses:
+        "200":
+          description: The calls.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallsPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /calls/{id}/recording:
+    get:
+      tags: [calls]
+      operationId: getCallRecording
+      summary: The audio of a recording (admin only). Supports `Range` (206/416) and `HEAD`.
+      description: |
+        Only with `Authorization: Bearer` (a token in a query string does not count). iOS: `AVURLAsset` with
+        `AVURLAssetHTTPHeaderFieldsKey`. `410 gone` = the recording is past its retention period. Playing counts in the media
+        limit (60 per minute per device), not in the token limit.
+      security:
+        - deviceToken: []
+      parameters:
+        - $ref: "#/components/parameters/ObjectId"
+        - name: Range
+          in: header
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The audio.
+          content:
+            audio/*:
+              schema:
+                type: string
+                format: binary
+        "206":
+          description: A part of the audio.
+          content:
+            audio/*:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "410":
+          $ref: "#/components/responses/Gone"
+        "416":
+          description: The range does not fit the audio.
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /voicemail:
+    get:
+      tags: [calls]
+      operationId: getVoicemail
+      summary: Voicemail messages and the boxes.
+      description: |
+        `admin`: every box of the PBX (`box` filters on one). `user`: only the own box (box id = id of the own extension); another
+        box is `403 forbidden`. `available: false` = the PBX did not answer: show a notice, not an empty list.
+      security:
+        - deviceToken: []
+      parameters:
+        - name: box
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/Locale"
+      responses:
+        "200":
+          description: The messages.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoicemailPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /voicemail/{boxId}/{ref}:
+    delete:
+      tags: [calls]
+      operationId: deleteVoicemail
+      summary: Delete one message (a `user` only from the own box).
+      security:
+        - deviceToken: []
+      parameters:
+        - name: boxId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/VoicemailRef"
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /voicemail/{boxId}/{ref}/audio:
+    get:
+      tags: [calls]
+      operationId: getVoicemailAudio
+      summary: The audio of one message. Supports `Range` (206/416) and `HEAD`; Bearer header only.
+      security:
+        - deviceToken: []
+      parameters:
+        - name: boxId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/VoicemailRef"
+        - name: Range
+          in: header
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The audio.
+          content:
+            audio/*:
+              schema:
+                type: string
+                format: binary
+        "206":
+          description: A part of the audio.
+          content:
+            audio/*:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "410":
+          $ref: "#/components/responses/Gone"
+        "416":
+          description: The range does not fit the audio.
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /contacts:
+    get:
+      tags: [contacts]
+      operationId: getContacts
+      summary: Sync the customer's contacts (everything, or what changed since).
+      description: |
+        Without `since`: the complete set. With `since`: the changed contacts plus the ids deleted in the period.
+
+        Pages follow `nextCursor`. Every page of one run carries the SAME `serverTime`; the app stores it as the next `since` only
+        after the last page (`nextCursor: null`). The server subtracts 120 s from `since` (overlap), so a contact can arrive twice:
+        upsert on `id`. A `since` older than 90 days is `400 invalid_request` with `code: "resync"`: do a full sync and drop what
+        is not in it.
+      security:
+        - deviceToken: []
+      parameters:
+        - name: since
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: cursor
+          in: query
+          schema:
+            type: string
+            maxLength: 500
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+      responses:
+        "200":
+          description: A page.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactsPage"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    post:
+      tags: [contacts]
+      operationId: createContact
+      summary: Add a contact (every pairing may).
+      security:
+        - deviceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContactCreateRequest"
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactDetailResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /contacts/{id}:
+    get:
+      tags: [contacts]
+      operationId: getContact
+      summary: One contact with notes and lists.
+      security:
+        - deviceToken: []
+      parameters:
+        - $ref: "#/components/parameters/ObjectId"
+      responses:
+        "200":
+          description: The contact.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactDetailResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    patch:
+      tags: [contacts]
+      operationId: updateContact
+      summary: Change a contact (every pairing may).
+      description: |
+        `expectedUpdatedAt` is REQUIRED: the `updatedAt` the app showed. Another value is `409 stale`. `null` for a text field wipes it;
+        a left-out key is unchanged; `phones`, `tags` and `listIds` replace the whole set.
+      security:
+        - deviceToken: []
+      parameters:
+        - $ref: "#/components/parameters/ObjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContactUpdateRequest"
+      responses:
+        "200":
+          description: "Saved (`changed: false` = nothing was different)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactUpdateResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    delete:
+      tags: [contacts]
+      operationId: deleteContact
+      summary: Delete a contact for good (admin pairings only).
+      security:
+        - deviceToken: []
+      parameters:
+        - $ref: "#/components/parameters/ObjectId"
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactDeleteResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /contact-lists:
+    get:
+      tags: [contacts]
+      operationId: getContactLists
+      summary: The contact lists with their version.
+      security:
+        - deviceToken: []
+      responses:
+        "200":
+          description: The lists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactLists"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /contact-lists/{id}/contacts:
+    get:
+      tags: [contacts]
+      operationId: getContactListSnapshot
+      summary: The snapshot of one list, with its version as `ETag`.
+      description: |
+        `If-None-Match` equal to the current version (exact, `W/`, a list, or `*`) answers `304` with the `ETag` and no body. Lists above
+        500 contacts come in pages via `cursor`; the cursor carries the version, and a version change halfway is `409 stale`
+        (start again). `If-None-Match` is ignored on a cursor page.
+      security:
+        - deviceToken: []
+      parameters:
+        - $ref: "#/components/parameters/ObjectId"
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: If-None-Match
+          in: header
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The snapshot.
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: The list version in quotes, e.g. `"3"`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactListSnapshot"
+        "304":
+          description: Unchanged since `If-None-Match`.
+          headers:
+            ETag:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/RateLimited"
 components:
+  parameters:
+    ObjectId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    VoicemailRef:
+      name: ref
+      in: path
+      required: true
+      schema:
+        type: string
+      description: The sealed `ref` of a voicemail message.
+    Locale:
+      name: locale
+      in: query
+      schema:
+        type: string
+        enum: [nl, en]
+      description: Language of the labels and country names; default from `Accept-Language`, then Dutch.
   securitySchemes:
     deviceToken:
       type: http
@@ -175,6 +907,904 @@ components:
       bearerFormat: "fss_vapp_<43 base64url characters>"
       description: Device token returned by `POST /pair`. Only valid in the `Authorization` header.
   schemas:
+    Role:
+      type: string
+      enum: [user, admin]
+      description: |
+        `admin` = this pairing may manage the PBX from the app (chosen in the portal when the code is made, changeable later; a
+        change sends a `refresh` push). Anything else counts as `user`. Absent in the answer of a server from before roles existed.
+    Capabilities:
+      type: object
+      description: What the app may show for the role. Informational; the server enforces every route.
+      properties:
+        pbxManage:
+          type: boolean
+        recordings:
+          type: boolean
+        voicemail:
+          type: string
+          enum: [all, own, none]
+        calls:
+          type: string
+          enum: [all, own]
+        contacts:
+          type: object
+          properties:
+            read:
+              type: boolean
+            write:
+              type: boolean
+            delete:
+              type: boolean
+    PbxState:
+      type: string
+      enum: [active, frozen, setup, error]
+    PbxStatus:
+      type: object
+      required: [name, state, readOnly]
+      properties:
+        name:
+          type: string
+        state:
+          $ref: "#/components/schemas/PbxState"
+        readOnly:
+          type: boolean
+          description: "Frozen, still being set up or in an error state: every `/pbx/*` change answers `409 read_only`."
+    SyncState:
+      type: string
+      enum: [ok, pending, error]
+      description: "`pending` = the PBX does not run the latest settings yet (\"wordt bijgewerkt\"); `error` = it did not work."
+    TargetType:
+      type: string
+      enum: [extension, ring_group, queue, ivr, business_hours, voicemail, recording, hangup, external]
+    Target:
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          $ref: "#/components/schemas/TargetType"
+        id:
+          type: string
+          format: uuid
+          description: An object of this PBX (never a PBX uuid). Not for `hangup` and `external`.
+        number:
+          type: string
+          description: "`external` only."
+    TargetOption:
+      type: object
+      required: [value, type, name]
+      description: A choice for "where does the call go".
+      properties:
+        value:
+          type: string
+          description: "`type:id`, `external` or `none`."
+        type:
+          $ref: "#/components/schemas/TargetType"
+        id:
+          type: ["string", "null"]
+        name:
+          type: string
+        extension:
+          type: ["string", "null"]
+        ofDevice:
+          type: boolean
+          description: The voicemail of an extension (as opposed to a shared mailbox).
+    NumberRef:
+      type: object
+      required: [id, number]
+      properties:
+        id:
+          type: string
+          format: uuid
+        number:
+          type: string
+    FlowWhen:
+      type: object
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum: [open, closed, no_answer, busy, timeout, key, no_choice, forward_always]
+        seconds:
+          type: integer
+        digit:
+          type: string
+    FlowBranch:
+      type: object
+      required: [when, node]
+      properties:
+        when:
+          $ref: "#/components/schemas/FlowWhen"
+        node:
+          $ref: "#/components/schemas/FlowNode"
+    FlowNode:
+      type: object
+      required: [kind]
+      description: One step of the call flow of a number, as a tree.
+      properties:
+        kind:
+          type: string
+          enum: [extension, ring_group, queue, ivr, business_hours, voicemail, recording, hangup, external, missing, loop, none, more]
+        id:
+          type: ["string", "null"]
+        name:
+          type: ["string", "null"]
+        extension:
+          type: ["string", "null"]
+        ofDevice:
+          type: boolean
+        number:
+          type: ["string", "null"]
+        dnd:
+          type: boolean
+        branches:
+          type: array
+          items:
+            $ref: "#/components/schemas/FlowBranch"
+    PbxNumber:
+      type: object
+      required: [id, number, version, sync]
+      properties:
+        id:
+          type: string
+          format: uuid
+        number:
+          type: string
+          description: National, without country code.
+        routing:
+          oneOf:
+            - $ref: "#/components/schemas/Target"
+            - type: "null"
+          description: "`null` = the start of the flow of the PBX."
+        blockListId:
+          type: ["string", "null"]
+        isDefault:
+          type: boolean
+        version:
+          type: integer
+          minimum: 1
+        sync:
+          $ref: "#/components/schemas/SyncState"
+        recordCalls:
+          type: boolean
+        recordAnnouncementSoundId:
+          type: ["string", "null"]
+        recordBillingActive:
+          type: boolean
+        flow:
+          $ref: "#/components/schemas/FlowNode"
+    PbxOverview:
+      type: object
+      required: [pbx, numbers, deviceCount, ringGroupCount, outboundBlocked]
+      properties:
+        pbx:
+          $ref: "#/components/schemas/PbxStatus"
+        numbers:
+          type: array
+          items:
+            $ref: "#/components/schemas/PbxNumber"
+        entryFlow:
+          oneOf:
+            - $ref: "#/components/schemas/FlowNode"
+            - type: "null"
+        deviceCount:
+          type: integer
+        connectedCount:
+          type: ["integer", "null"]
+          description: "`null` = the PBX did not answer."
+        ringGroupCount:
+          type: integer
+        outboundBlocked:
+          type: boolean
+          description: Calling out is temporarily off (fraud guard or administrative hold).
+    FollowMeStep:
+      type: object
+      additionalProperties: false
+      required: [target]
+      properties:
+        target:
+          $ref: "#/components/schemas/Target"
+        delaySeconds:
+          type: integer
+          minimum: 0
+          maximum: 120
+        timeoutSeconds:
+          type: integer
+          minimum: 5
+          maximum: 300
+    PbxDevice:
+      type: object
+      required: [id, name, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        version:
+          type: integer
+          minimum: 1
+        extension:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        voicemailEnabled:
+          type: boolean
+        voicemailToEmail:
+          type: boolean
+        voicemailAttachFile:
+          type: boolean
+        outboundNumberId:
+          type: ["string", "null"]
+        dnd:
+          type: boolean
+        suspended:
+          type: boolean
+        recordCalls:
+          type: boolean
+        noAnswerSeconds:
+          type: integer
+        noAnswerTarget:
+          oneOf: [{ $ref: "#/components/schemas/Target" }, { type: "null" }]
+        busyTarget:
+          oneOf: [{ $ref: "#/components/schemas/Target" }, { type: "null" }]
+        notRegisteredTarget:
+          oneOf: [{ $ref: "#/components/schemas/Target" }, { type: "null" }]
+        forwardAlways:
+          oneOf: [{ $ref: "#/components/schemas/Target" }, { type: "null" }]
+        followMe:
+          type: array
+          items:
+            $ref: "#/components/schemas/FollowMeStep"
+        sync:
+          $ref: "#/components/schemas/SyncState"
+        registration:
+          description: "`null` = unknown (the PBX did not answer)."
+          oneOf:
+            - type: object
+              required: [connected, count]
+              properties:
+                connected:
+                  type: boolean
+                count:
+                  type: integer
+                agent:
+                  type: ["string", "null"]
+            - type: "null"
+    PbxDevices:
+      type: object
+      required: [devices, targets, numbers]
+      properties:
+        devices:
+          type: array
+          items:
+            $ref: "#/components/schemas/PbxDevice"
+        targets:
+          type: array
+          items:
+            $ref: "#/components/schemas/TargetOption"
+        numbers:
+          type: array
+          items:
+            $ref: "#/components/schemas/NumberRef"
+    PbxDevicePatch:
+      type: object
+      additionalProperties: false
+      required: [version]
+      minProperties: 2
+      properties:
+        version:
+          type: integer
+          minimum: 1
+        voicemailEnabled:
+          type: boolean
+        voicemailToEmail:
+          type: boolean
+        voicemailAttachFile:
+          type: boolean
+        outboundNumberId:
+          type: ["string", "null"]
+          description: "`null` = the first number of the PBX."
+        dnd:
+          type: boolean
+        noAnswerSeconds:
+          type: integer
+          minimum: 5
+          maximum: 120
+        noAnswerTarget:
+          oneOf: [{ $ref: "#/components/schemas/Target" }, { type: "null" }]
+        busyTarget:
+          oneOf: [{ $ref: "#/components/schemas/Target" }, { type: "null" }]
+        notRegisteredTarget:
+          oneOf: [{ $ref: "#/components/schemas/Target" }, { type: "null" }]
+        forwardAlways:
+          oneOf: [{ $ref: "#/components/schemas/Target" }, { type: "null" }]
+        followMe:
+          type: array
+          maxItems: 10
+          items:
+            $ref: "#/components/schemas/FollowMeStep"
+    RingGroupMember:
+      type: object
+      additionalProperties: false
+      required: [extensionId]
+      properties:
+        extensionId:
+          type: string
+          format: uuid
+        delaySeconds:
+          type: integer
+        timeoutSeconds:
+          type: integer
+    RingStrategy:
+      type: string
+      enum: [all, sequence, round]
+      description: "`all` = everybody at once, `sequence` = one after the other, `round` = take turns."
+    PbxRingGroup:
+      type: object
+      required: [id, name, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        version:
+          type: integer
+          minimum: 1
+        extension:
+          type: ["string", "null"]
+        strategy:
+          $ref: "#/components/schemas/RingStrategy"
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/RingGroupMember"
+        timeoutTarget:
+          oneOf: [{ $ref: "#/components/schemas/Target" }, { type: "null" }]
+        sync:
+          $ref: "#/components/schemas/SyncState"
+    PbxRingGroups:
+      type: object
+      required: [ringGroups, devices, targets]
+      properties:
+        ringGroups:
+          type: array
+          items:
+            $ref: "#/components/schemas/PbxRingGroup"
+        devices:
+          type: array
+          items:
+            type: object
+            required: [id, name]
+            properties:
+              id:
+                type: string
+                format: uuid
+              name:
+                type: string
+              extension:
+                type: ["string", "null"]
+        targets:
+          type: array
+          items:
+            $ref: "#/components/schemas/TargetOption"
+    PbxRingGroupCreate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+        strategy:
+          $ref: "#/components/schemas/RingStrategy"
+        members:
+          type: array
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/RingGroupMember"
+        timeoutTarget:
+          oneOf: [{ $ref: "#/components/schemas/Target" }, { type: "null" }]
+    PbxRingGroupPatch:
+      type: object
+      additionalProperties: false
+      required: [version]
+      minProperties: 2
+      properties:
+        version:
+          type: integer
+          minimum: 1
+        name:
+          type: string
+        strategy:
+          $ref: "#/components/schemas/RingStrategy"
+        members:
+          type: array
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/RingGroupMember"
+        timeoutTarget:
+          oneOf: [{ $ref: "#/components/schemas/Target" }, { type: "null" }]
+    PbxRingGroupCreated:
+      type: object
+      required: [ringGroupId]
+      properties:
+        ringGroupId:
+          type: string
+          format: uuid
+    HoursWeekEntry:
+      type: object
+      additionalProperties: false
+      required: [day, from, to]
+      properties:
+        day:
+          type: integer
+          minimum: 1
+          maximum: 7
+          description: 1 = Monday ... 7 = Sunday.
+        from:
+          type: string
+          pattern: "^\\d{2}:\\d{2}$"
+        to:
+          type: string
+          pattern: "^\\d{2}:\\d{2}$"
+          description: "`24:00` = until midnight."
+    PbxHoliday:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        date:
+          type: ["string", "null"]
+          description: "`YYYY-MM-DD` for an own date."
+        rule:
+          type: ["string", "null"]
+          description: A fixed holiday (see `holidayRules`).
+        target:
+          oneOf: [{ $ref: "#/components/schemas/Target" }, { type: "null" }]
+    PbxHoursItem:
+      type: object
+      required: [id, name, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        extension:
+          type: ["string", "null"]
+        timezone:
+          type: string
+        week:
+          type: array
+          items:
+            $ref: "#/components/schemas/HoursWeekEntry"
+        openTarget:
+          oneOf: [{ $ref: "#/components/schemas/Target" }, { type: "null" }]
+        closedTarget:
+          oneOf: [{ $ref: "#/components/schemas/Target" }, { type: "null" }]
+        holidays:
+          type: array
+          items:
+            $ref: "#/components/schemas/PbxHoliday"
+        version:
+          type: integer
+          minimum: 1
+        sync:
+          $ref: "#/components/schemas/SyncState"
+    PbxHours:
+      type: object
+      required: [hours, targets, holidayRules]
+      properties:
+        hours:
+          type: array
+          items:
+            $ref: "#/components/schemas/PbxHoursItem"
+        targets:
+          type: array
+          items:
+            $ref: "#/components/schemas/TargetOption"
+        holidayRules:
+          type: array
+          items:
+            type: object
+            required: [rule, label]
+            properties:
+              rule:
+                type: string
+              label:
+                type: string
+    HolidayInput:
+      description: "A fixed holiday `{ rule }` or an own date `{ name, date }`."
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [rule]
+          properties:
+            rule:
+              type: string
+        - type: object
+          additionalProperties: false
+          required: [name, date]
+          properties:
+            name:
+              type: string
+            date:
+              type: string
+              pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+    PbxHoursPatch:
+      type: object
+      additionalProperties: false
+      required: [version]
+      minProperties: 2
+      properties:
+        version:
+          type: integer
+          minimum: 1
+        week:
+          type: array
+          maxItems: 28
+          items:
+            $ref: "#/components/schemas/HoursWeekEntry"
+        openTarget:
+          oneOf: [{ $ref: "#/components/schemas/Target" }, { type: "null" }]
+        closedTarget:
+          oneOf: [{ $ref: "#/components/schemas/Target" }, { type: "null" }]
+        holidays:
+          type: array
+          items:
+            $ref: "#/components/schemas/HolidayInput"
+        holidayTarget:
+          oneOf: [{ $ref: "#/components/schemas/Target" }, { type: "null" }]
+          description: "What happens on a holiday; `null` = the same as outside opening hours."
+    PbxRoutingPatch:
+      type: object
+      additionalProperties: false
+      required: [target, version]
+      properties:
+        target:
+          oneOf: [{ $ref: "#/components/schemas/Target" }, { type: "null" }]
+        version:
+          type: integer
+          minimum: 1
+    CallItem:
+      type: object
+      required: [id, direction, outcome, startedLabel, durationLabel, hasRecording]
+      properties:
+        id:
+          type: string
+          format: uuid
+        direction:
+          type: string
+          enum: [inbound, outbound, internal]
+        outcome:
+          type: string
+          enum: [answered, missed, voicemail, unknown]
+        number:
+          type: ["string", "null"]
+        ourNumber:
+          type: ["string", "null"]
+        extension:
+          type: ["string", "null"]
+        extensionName:
+          type: ["string", "null"]
+        country:
+          type: ["string", "null"]
+        countryName:
+          type: ["string", "null"]
+        lineType:
+          type: ["string", "null"]
+          enum: [fixed, mobile, null]
+        category:
+          type: ["string", "null"]
+          enum: [fixed, mobile, special, short, emergency, satellite, unknown, null]
+        startedLabel:
+          type: string
+        startedSort:
+          type: ["string", "null"]
+          format: date-time
+        durationLabel:
+          type: string
+        durationSeconds:
+          type: ["integer", "null"]
+        hasRecording:
+          type: boolean
+        recordingExpired:
+          type: boolean
+          description: Admin only; absent for a `user` pairing.
+    CallsPage:
+      type: object
+      required: [month, months, calls, truncated]
+      properties:
+        month:
+          type: string
+          pattern: "^\\d{4}-\\d{2}$"
+        months:
+          type: array
+          items:
+            type: string
+        calls:
+          type: array
+          items:
+            $ref: "#/components/schemas/CallItem"
+        truncated:
+          type: boolean
+    VoicemailBox:
+      type: object
+      required: [id, name, shared]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        number:
+          type: ["string", "null"]
+        shared:
+          type: boolean
+    VoicemailMessage:
+      type: object
+      required: [ref, boxId, receivedLabel, durationLabel, isNew]
+      properties:
+        ref:
+          type: string
+          description: A sealed reference for this PBX and box. Never the message id of the PBX.
+        boxId:
+          type: string
+          format: uuid
+        boxName:
+          type: string
+        boxNumber:
+          type: ["string", "null"]
+        caller:
+          type: ["string", "null"]
+        callerName:
+          type: ["string", "null"]
+        receivedLabel:
+          type: string
+        receivedSort:
+          type: ["string", "null"]
+          format: date-time
+        durationLabel:
+          type: string
+        isNew:
+          type: boolean
+        transcription:
+          type: ["string", "null"]
+        daysLeft:
+          type: ["integer", "null"]
+    VoicemailPage:
+      type: object
+      required: [boxes, messages, available]
+      properties:
+        boxes:
+          type: array
+          items:
+            $ref: "#/components/schemas/VoicemailBox"
+        boxId:
+          type: ["string", "null"]
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/VoicemailMessage"
+        available:
+          type: boolean
+    ContactPhone:
+      type: object
+      additionalProperties: false
+      required: [number]
+      properties:
+        number:
+          type: string
+        label:
+          type: string
+          enum: [mobile, work, home, main, fax, other]
+        isPrimary:
+          type: boolean
+    ContactItem:
+      type: object
+      required: [id, name, phones, tags, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        firstName:
+          type: ["string", "null"]
+        lastName:
+          type: ["string", "null"]
+        company:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        phones:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContactPhone"
+        tags:
+          type: array
+          items:
+            type: string
+        updatedAt:
+          type: string
+          description: Opaque timestamp (ISO 8601). Send it back unchanged as `expectedUpdatedAt`.
+    ContactDetailItem:
+      allOf:
+        - $ref: "#/components/schemas/ContactItem"
+        - type: object
+          properties:
+            notes:
+              type: ["string", "null"]
+            listIds:
+              type: array
+              items:
+                type: string
+                format: uuid
+    ContactsPage:
+      type: object
+      required: [contacts, deleted, nextCursor, serverTime]
+      properties:
+        contacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContactItem"
+        deleted:
+          type: array
+          items:
+            type: string
+            format: uuid
+        nextCursor:
+          type: ["string", "null"]
+        serverTime:
+          type: string
+          description: "The same on every page of one run; keep it as the next `since` after the last page. Opaque ISO 8601 timestamp."
+    ContactDetailResponse:
+      type: object
+      required: [contact]
+      properties:
+        contact:
+          $ref: "#/components/schemas/ContactDetailItem"
+    ContactUpdateResponse:
+      type: object
+      required: [contact, changed]
+      properties:
+        contact:
+          $ref: "#/components/schemas/ContactDetailItem"
+        changed:
+          type: boolean
+    ContactDeleteResponse:
+      type: object
+      required: [deleted]
+      properties:
+        deleted:
+          type: integer
+    ContactLists:
+      type: object
+      required: [lists]
+      properties:
+        lists:
+          type: array
+          items:
+            type: object
+            required: [id, name, version, contactCount]
+            properties:
+              id:
+                type: string
+                format: uuid
+              name:
+                type: string
+              version:
+                type: integer
+              contactCount:
+                type: integer
+    ContactListSnapshot:
+      type: object
+      required: [list, contacts, nextCursor]
+      properties:
+        list:
+          type: object
+          required: [id, name, version]
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+            version:
+              type: integer
+        contacts:
+          type: array
+          items:
+            type: object
+            required: [id, name, phones]
+            properties:
+              id:
+                type: string
+                format: uuid
+              name:
+                type: string
+              company:
+                type: ["string", "null"]
+              phones:
+                type: array
+                items:
+                  type: object
+                  required: [number, label]
+                  properties:
+                    number:
+                      type: string
+                    label:
+                      type: string
+              email:
+                type: ["string", "null"]
+        nextCursor:
+          type: ["string", "null"]
+    ContactCreateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        firstName:
+          type: ["string", "null"]
+        lastName:
+          type: ["string", "null"]
+        company:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        phones:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContactPhone"
+        tags:
+          type: array
+          items:
+            type: string
+        listIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+    ContactUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedUpdatedAt]
+      properties:
+        expectedUpdatedAt:
+          type: string
+          format: date-time
+          description: The `updatedAt` the app showed. Required; another value is `409 stale`.
+        name:
+          type: string
+        firstName:
+          type: ["string", "null"]
+        lastName:
+          type: ["string", "null"]
+        company:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        phones:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContactPhone"
+        tags:
+          type: array
+          items:
+            type: string
+        listIds:
+          type: array
+          items:
+            type: string
+            format: uuid
     Platform:
       type: string
       enum: [ios, android]
@@ -336,7 +1966,11 @@ components:
         listsAvailable:
           type: integer
           minimum: 0
-          description: Number of customer contact lists in the portal (served by a later API route).
+          description: Number of customer contact lists in the portal (`GET /contact-lists`).
+        total:
+          type: integer
+          minimum: 0
+          description: "Number of customer contacts (`GET /contacts`). Only in `GET /me`."
     MeResponse:
       type: object
       required: [account, sip, internal, contacts, push, serverTime]
@@ -360,6 +1994,12 @@ components:
         serverTime:
           type: string
           format: date-time
+        role:
+          $ref: "#/components/schemas/Role"
+        capabilities:
+          $ref: "#/components/schemas/Capabilities"
+        pbx:
+          $ref: "#/components/schemas/PbxStatus"
     InternalContact:
       type: object
       required: [number, name]
@@ -431,13 +2071,44 @@ components:
           type: string
           description: |
             Machine-readable code. Known values: `invalid_request`, `invalid_json`, `not_found`, `unauthorized`,
-            `rate_limited`, `payload_too_large`, `unavailable`, `not_ready`.
+            `rate_limited`, `payload_too_large`, `unavailable`, `not_ready`, `forbidden`, `read_only`, `stale`, `in_use`,
+            `conflict`, `blocked_destination`, `gone`, `busy`.
         message:
           type: string
           description: Human-readable detail for `invalid_request`. Not localised; do not show it to users.
         retryable:
           type: boolean
           description: "On `503`: the same request may succeed shortly (pairing token not consumed)."
+        code:
+          type: string
+          description: |
+            Detail of `invalid_request` (the portal's code, e.g. `invalid_phone`, `invalid_target`, `invalid_hours`; `resync` = the contacts
+            `since` is older than 90 days) and of `conflict` (e.g. `limit_reached`).
+        field:
+          type: string
+          description: The request field that is wrong (`invalid_request`).
+        required:
+          type: string
+          description: "On `403 forbidden`: the role that is needed (`admin`)."
+        version:
+          type: integer
+          description: "On `409 stale` of the PBX objects: the current version."
+        places:
+          type: array
+          description: "On `409 in_use`: where it is still used (names the customer chose)."
+          items:
+            type: object
+            required: [kind, name]
+            properties:
+              kind:
+                type: string
+              name:
+                type: string
+        blocked:
+          type: array
+          description: "On `422 blocked_destination`: the external numbers a block list stops."
+          items:
+            type: string
   responses:
     InvalidRequest:
       description: Malformed JSON or an invalid / unknown field.
@@ -485,6 +2156,33 @@ components:
         Retry-After:
           schema:
             type: integer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: "This pairing may not do that (role `user` on an admin route, or on another voicemail box). `required` = the role that is needed."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: |
+        The object changed in the meantime (`stale`, with the current `version` where the server knows it), or another state
+        conflict: `read_only` (PBX frozen or being set up), `in_use` (with `places`), `busy`, `not_ready`, `conflict` (with `code`,
+        e.g. `limit_reached`), ...
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    BlockedDestination:
+      description: A block list stops these external numbers (`blocked`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Gone:
+      description: Gone for good (a recording past its retention period).
       content:
         application/json:
           schema:

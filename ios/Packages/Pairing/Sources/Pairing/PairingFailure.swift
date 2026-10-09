@@ -33,7 +33,7 @@ public enum PairingFailure: Error, Equatable, Sendable {
                 self = .temporarilyUnavailable
             case .transport:
                 self = .network
-            case .invalidRequest, .payloadTooLarge, .decoding, .unexpectedStatus:
+            case .invalidRequest, .payloadTooLarge, .decoding, .unexpectedStatus, .forbidden, .readOnly, .stale, .inUse, .conflict, .blockedDestination, .gone, .resync, .invalid:
                 self = .other
             }
         case is SecretStoreError:

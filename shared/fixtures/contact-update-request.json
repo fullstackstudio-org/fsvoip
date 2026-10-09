@@ -1,0 +1,17 @@
+{
+  "expectedUpdatedAt": "2026-10-07T09:30:12.345Z",
+  "firstName": null,
+  "phones": [
+    {
+      "number": "+31701234567",
+      "label": "work",
+      "isPrimary": true
+    },
+    {
+      "number": "+31612345678",
+      "label": "mobile",
+      "isPrimary": false
+    }
+  ],
+  "notes": "Nieuw nummer van de eigenaar."
+}

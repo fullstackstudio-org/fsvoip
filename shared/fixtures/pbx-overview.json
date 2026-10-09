@@ -1,0 +1,109 @@
+{
+  "pbx": {
+    "name": "Voorbeeld Bouw",
+    "state": "active",
+    "readOnly": false
+  },
+  "numbers": [
+    {
+      "id": "d4e5f6a7-b8c9-4d0e-a1f2-b3c4d5e6f7a8",
+      "number": "0850607848",
+      "routing": {
+        "type": "business_hours",
+        "id": "c3b2a1f0-e9d8-4c7b-a6f5-e4d3c2b1a0f9"
+      },
+      "blockListId": null,
+      "isDefault": true,
+      "version": 3,
+      "sync": "ok",
+      "recordCalls": false,
+      "recordAnnouncementSoundId": null,
+      "recordBillingActive": false,
+      "flow": {
+        "kind": "business_hours",
+        "id": "c3b2a1f0-e9d8-4c7b-a6f5-e4d3c2b1a0f9",
+        "name": "Kantoortijden",
+        "extension": "500",
+        "ofDevice": false,
+        "number": null,
+        "dnd": false,
+        "branches": [
+          {
+            "when": {
+              "kind": "open"
+            },
+            "node": {
+              "kind": "ring_group",
+              "id": "9e8d7c6b-5a49-4382-b1a0-f9e8d7c6b5a4",
+              "name": "Iedereen",
+              "extension": "200",
+              "ofDevice": false,
+              "number": null,
+              "dnd": false,
+              "branches": [
+                {
+                  "when": {
+                    "kind": "no_answer",
+                    "seconds": 25
+                  },
+                  "node": {
+                    "kind": "voicemail",
+                    "id": "2f4a6c8e-1b3d-4f5a-8c7e-9a0b1c2d3e4f",
+                    "name": "Algemeen",
+                    "extension": null,
+                    "ofDevice": false,
+                    "number": null,
+                    "dnd": false,
+                    "branches": []
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "when": {
+              "kind": "closed"
+            },
+            "node": {
+              "kind": "voicemail",
+              "id": "2f4a6c8e-1b3d-4f5a-8c7e-9a0b1c2d3e4f",
+              "name": "Algemeen",
+              "extension": null,
+              "ofDevice": false,
+              "number": null,
+              "dnd": false,
+              "branches": []
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "e5f6a7b8-c9d0-4e1f-b2a3-c4d5e6f7a8b9",
+      "number": "0850607849",
+      "routing": null,
+      "blockListId": null,
+      "isDefault": false,
+      "version": 1,
+      "sync": "pending",
+      "recordCalls": false,
+      "recordAnnouncementSoundId": null,
+      "recordBillingActive": false,
+      "flow": {
+        "kind": "none",
+        "id": null,
+        "name": null,
+        "extension": null,
+        "ofDevice": false,
+        "number": null,
+        "dnd": false,
+        "branches": []
+      }
+    }
+  ],
+  "entryFlow": null,
+  "deviceCount": 3,
+  "connectedCount": 2,
+  "ringGroupCount": 1,
+  "outboundBlocked": false
+}

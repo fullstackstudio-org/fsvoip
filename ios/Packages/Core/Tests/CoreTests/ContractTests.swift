@@ -29,13 +29,13 @@ final class ContractTests: XCTestCase {
     // MARK: Every fixture has a test
 
     func testEveryFixtureIsCoveredByAContractTest() throws {
-        let covered: Set<String> = [
+        let covered: Set<String> = Set([
             "pair-request", "pair-request-minimal", "pair-response", "pair-response-tls",
             "me-response", "me-response-no-sip", "me-patch-request", "me-patch-request-clear", "me-patch-response",
             "push-token-request", "push-token-request-clear", "ok-response",
             "error-not-found", "error-unauthorized", "error-rate-limited", "error-invalid-request", "error-unavailable-retryable",
             "push-ring", "push-ring-anonymous", "push-revoked", "push-refresh", "apns-voip-body", "apns-alert-body", "fcm-message",
-        ]
+        ]).union(BeheerContractTests.coveredFixtures)
 
         XCTAssertEqual(Set(try Fixtures.names()), covered, "A fixture was added or removed without a contract test")
     }

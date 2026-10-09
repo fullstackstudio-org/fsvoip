@@ -1,0 +1,31 @@
+{
+  "contact": {
+    "id": "6f7a8b9c-0d1e-4f2a-8b3c-4d5e6f7a8b9c",
+    "name": "Bakkerij Smit",
+    "firstName": null,
+    "lastName": null,
+    "company": "Bakkerij Smit",
+    "email": "info@bakkerijsmit.nl",
+    "phones": [
+      {
+        "number": "+31701234567",
+        "label": "work",
+        "isPrimary": true
+      },
+      {
+        "number": "+31612345678",
+        "label": "mobile",
+        "isPrimary": false
+      }
+    ],
+    "tags": [
+      "klant"
+    ],
+    "updatedAt": "2026-10-09T08:20:00.000Z",
+    "notes": "Nieuw nummer van de eigenaar.",
+    "listIds": [
+      "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+    ]
+  },
+  "changed": true
+}
