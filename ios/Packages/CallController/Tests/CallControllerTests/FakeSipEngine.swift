@@ -62,7 +62,12 @@ final class FakeSipEngine: SipEngine {
         return CallID("out-1")
     }
 
-    func answer(_ call: CallID) throws { log.append("answer \(call)") }
+    /// Runs inside `answer`, like liblinphone, which reports Connected and StreamsRunning before `accept` returns.
+    var onAnswer: ((CallID) -> Void)?
+    func answer(_ call: CallID) throws {
+        log.append("answer \(call)")
+        onAnswer?(call)
+    }
     func decline(_ call: CallID, reason: DeclineReason) throws { log.append(reason == .busy ? "busy \(call)" : "decline \(call)") }
     func hangup(_ call: CallID) throws { log.append("hangup \(call)") }
     func setHold(_ call: CallID, onHold: Bool) throws { log.append("hold \(onHold)") }
