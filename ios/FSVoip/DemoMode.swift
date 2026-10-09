@@ -2,7 +2,7 @@
 //
 // DEBUG builds only: a demo of the app without a phone system, for the simulator, screenshots and UI checks.
 // Start with the launch argument `-FSVoipDemo YES` (two paired example extensions) or `-FSVoipDemo onboarding`
-// (nothing paired yet). `-FSVoipDemoScreen <dialer|recents|contacts|settings|pbx|voicemail|recordings|account|incall|incoming|push|pairing|failed|scanner>`
+// (nothing paired yet). `-FSVoipDemoScreen <dialer|onhold|recents|voicemail|contacts|settings|pbx|recordings|appearance|incall|incoming|push|pairing|failed|scanner>`
 // opens a screen directly. Nothing here talks to a server or a PBX, and nothing is written to the Keychain.
 
 #if DEBUG
@@ -56,7 +56,8 @@ enum DemoMode {
             requestMicrophone: { true },
             contacts: ContactsHub(store: InMemoryContactsStore(), api: { _ in demoContacts }, settings: InMemoryContactsSettings(), minimumInterval: 0),
             pbx: PbxHub(service: DemoPbxService(adminAccountId: exampleAccounts[0].id), gate: gate),
-            media: MediaHub(service: DemoMediaService(adminAccountId: exampleAccounts[0].id), gate: gate)
+            media: MediaHub(service: DemoMediaService(adminAccountId: exampleAccounts[0].id), gate: gate),
+            availability: AvailabilityHub(service: DemoAvailabilityService())
         )
 
         open(defaults.string(forKey: "FSVoipDemoScreen"), model: model, engine: engine)
@@ -72,9 +73,18 @@ enum DemoMode {
             model.selectedTab = .recents
         case "contacts":
             model.selectedTab = .contacts
-        case "settings", "pbx", "voicemail", "recordings":
-            // `pbx`, `voicemail` and `recordings` also open the first account and that section (see `SettingsView`).
-            model.selectedTab = .settings
+        case "onhold":
+            model.selectedTab = .onHold
+        case "voicemail":
+            model.selectedTab = .voicemail
+        case "settings":
+            model.openSettings()
+        case "pbx":
+            model.openSettings(.centrale)
+        case "recordings":
+            model.openSettings(.recordings)
+        case "appearance":
+            model.openSettings(.appearance)
         case "scanner":
             model.isScannerPresented = true
         case "pairing":
@@ -472,3 +482,14 @@ final class DemoContactsAPI: ContactsAPI, @unchecked Sendable {
     }
 }
 #endif
+
+/// Do not disturb in memory: switching works, nothing leaves the phone.
+final class DemoAvailabilityService: AvailabilityServicing, @unchecked Sendable {
+    func load(for account: StoredAccount) async throws -> AvailabilityHub.State {
+        AvailabilityHub.State(doNotDisturb: false, version: 1)
+    }
+
+    func setDoNotDisturb(_ dnd: Bool, version: Int, for account: StoredAccount) async throws -> AvailabilityHub.State {
+        AvailabilityHub.State(doNotDisturb: dnd, version: version + 1)
+    }
+}

@@ -56,7 +56,6 @@ struct DialerView: View {
             .frame(maxWidth: .infinity)
         }
         .navigationTitle(L10n.string("tab.dialer"))
-        .toolbar(.hidden, for: .navigationBar)
     }
 
     private var numberDisplay: some View {

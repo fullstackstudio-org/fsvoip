@@ -27,11 +27,23 @@ public final class FSVoipAppModel: ObservableObject {
         }
     }
 
-    public enum Tab: Hashable {
+    /// The five tabs. Settings is a sheet (`isSettingsPresented`), not a tab.
+    public enum Tab: Hashable, CaseIterable {
         case dialer
+        case onHold
+        /// "Geschiedenis".
         case recents
+        case voicemail
         case contacts
-        case settings
+    }
+
+    /// Where the settings sheet opens.
+    public enum SettingsStart: Equatable {
+        case root
+        /// The "Centrale" section of the first admin account (demo screens and links).
+        case centrale
+        case recordings
+        case appearance
     }
 
     public struct Notice: Identifiable, Equatable {
@@ -56,6 +68,11 @@ public final class FSVoipAppModel: ObservableObject {
     @Published public private(set) var internalContacts: [String: [InternalContact]] = [:]
     @Published public var notice: Notice?
     @Published public var selectedTab: Tab = .dialer
+    @Published public var isSettingsPresented = false
+    @Published public var settingsStart: SettingsStart = .root
+    /// What `GET /me` said each pairing may do (role and capabilities), from the last refresh. Not stored on the phone: after a restart
+    /// nothing is offered until the server has answered (fail closed).
+    @Published public private(set) var meByAccount: [String: MeResponse] = [:]
     /// Bumped whenever a per-account setting changes, so the settings screens redraw.
     @Published public private(set) var settingsRevision = 0
 
@@ -66,6 +83,8 @@ public final class FSVoipAppModel: ObservableObject {
     public let pbx: PbxHub?
     /// Voicemail and recordings with their player (`nil` = not offered).
     public let media: MediaHub?
+    /// Do-not-disturb of the own extension ("Beschikbaar"); `nil` = not offered.
+    public let availability: AvailabilityHub?
 
     private let accountStore: AccountStore
     private let service: AccountServicing
@@ -97,12 +116,14 @@ public final class FSVoipAppModel: ObservableObject {
         contacts: ContactsHub? = nil,
         pbx: PbxHub? = nil,
         media: MediaHub? = nil,
+        availability: AvailabilityHub? = nil,
         logger: FSLogger = FSLogger(category: "app")
     ) {
         self.phone = phone
         self.contacts = contacts ?? ContactsHub()
         self.pbx = pbx
         self.media = media
+        self.availability = availability
         self.accountStore = accountStore
         self.service = service
         self.preferences = preferences
@@ -210,6 +231,7 @@ public final class FSVoipAppModel: ObservableObject {
 
                     // The one `GET /me` of this refresh feeds the contacts and the "Centrale" section alike.
                     if let me {
+                        meByAccount[updated.id] = me
                         self.contacts.apply(capabilities: me.capabilities?.contacts ?? ContactCapabilities(), accountId: updated.id)
                         pbx?.apply(me: me, accountId: updated.id)
                         media?.apply(me: me, accountId: updated.id)
@@ -278,6 +300,42 @@ public final class FSVoipAppModel: ObservableObject {
 
         cleanUp(accountId: accountId)
         reloadAccounts()
+    }
+
+    // MARK: Roles and capabilities
+
+    /// What this pairing may do. `nil` until the server has answered.
+    public func capabilities(for accountId: String) -> AppCapabilities? {
+        meByAccount[accountId]?.capabilities
+    }
+
+    /// Fail closed: only an `admin` the server confirmed.
+    public func isAdmin(_ accountId: String) -> Bool {
+        meByAccount[accountId]?.effectiveRole == .admin
+    }
+
+    /// Show "Beheer" for this account: the admin role AND the `pbxManage` capability (what the "Centrale" hub concluded from the same
+    /// `GET /me`; it also hides at once on a 403).
+    public func canManagePbx(_ accountId: String) -> Bool {
+        (pbx?.isAvailable(accountId) ?? false) && (meByAccount[accountId]?.canManagePbx ?? false)
+    }
+
+    public func canManageSounds(_ accountId: String) -> Bool {
+        canManagePbx(accountId) && capabilities(for: accountId)?.sounds == .manage
+    }
+
+    public func canInvite(_ accountId: String) -> Bool {
+        canManagePbx(accountId) && (capabilities(for: accountId)?.invite ?? false)
+    }
+
+    /// Does any pairing offer parking ("On hold")?
+    public var canPark: Bool {
+        meByAccount.values.contains { $0.canPark }
+    }
+
+    public func openSettings(_ start: SettingsStart = .root) {
+        settingsStart = start
+        isSettingsPresented = true
     }
 
     // MARK: Settings
@@ -555,6 +613,8 @@ public final class FSVoipAppModel: ObservableObject {
         media?.forget(accountId: accountId)
         preferences.removePreferences(for: accountId)
         internalContacts[accountId] = nil
+        meByAccount[accountId] = nil
+        availability?.forget(accountId: accountId)
         // Unpairing removes the address book of that account from this phone.
         contacts.forget(accountId: accountId)
         settingsRevision += 1

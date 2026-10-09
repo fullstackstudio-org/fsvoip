@@ -3,24 +3,23 @@ import SipEngine
 import SwiftUI
 import UIKit
 
-/// FullStack Studio house style for FSVoip. System fonts and colours carry the app; lime is the accent and is spent
-/// on exactly three things: the call button, the "connected" light of a line and the primary action of the pairing
-/// flow.
+/// Alias of `Theme` (the design tokens live in `design/Theme.swift`). Kept so the screens that predate the design system keep
+/// compiling; new code uses `Theme`.
 enum Brand {
     /// `#c7ff4a`
-    static let lime = Color(red: 199 / 255, green: 255 / 255, blue: 74 / 255)
+    static let lime = Theme.accent
     /// `#101317`, text on lime and the in-call background.
-    static let ink = Color(red: 16 / 255, green: 19 / 255, blue: 23 / 255)
+    static let ink = Theme.ink
     /// `#1d232b`, the lighter end of the in-call background.
-    static let inkRaised = Color(red: 29 / 255, green: 35 / 255, blue: 43 / 255)
+    static let inkRaised = Theme.inkRaised
     /// "Connecting": a warm amber that reads on light and dark.
-    static let amber = Color(red: 232 / 255, green: 162 / 255, blue: 58 / 255)
+    static let amber = Theme.busy
     /// Hang up / decline.
-    static let hangUp = Color(red: 235 / 255, green: 64 / 255, blue: 52 / 255)
+    static let hangUp = Theme.danger
 
     /// Digits on the keypad and the dialled number: rounded, light, like a phone's own keypad.
     static func digits(_ size: CGFloat, weight: Font.Weight = .light) -> Font {
-        .system(size: size, weight: weight, design: .rounded)
+        Theme.digits(size, weight: weight)
     }
 }
 
@@ -30,9 +29,11 @@ struct PrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.headline)
-            .foregroundStyle(Brand.ink)
+            .foregroundStyle(Theme.onAccent)
+            .multilineTextAlignment(.center)
             .frame(maxWidth: .infinity, minHeight: 52)
-            .background(Brand.lime.opacity(isEnabled ? (configuration.isPressed ? 0.75 : 1) : 0.4), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .padding(.horizontal, Theme.Spacing.s)
+            .background(Theme.accent.opacity(isEnabled ? (configuration.isPressed ? 0.75 : 1) : 0.4), in: Theme.card(Theme.Radius.s))
     }
 }
 
@@ -40,9 +41,11 @@ struct SecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.headline)
-            .foregroundStyle(.primary)
+            .foregroundStyle(Theme.textPrimary)
+            .multilineTextAlignment(.center)
             .frame(maxWidth: .infinity, minHeight: 52)
-            .background(Color(.secondarySystemFill).opacity(configuration.isPressed ? 0.6 : 1), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .padding(.horizontal, Theme.Spacing.s)
+            .background(Theme.raised.opacity(configuration.isPressed ? 0.6 : 1), in: Theme.card(Theme.Radius.s))
     }
 }
 
@@ -68,7 +71,7 @@ extension RegistrationState {
         case .registered: return Brand.lime
         case .registering: return Brand.amber
         case .failed: return Brand.hangUp
-        case .unregistered: return Color(.systemGray3)
+        case .unregistered: return Theme.textTertiary
         }
     }
 
@@ -106,7 +109,7 @@ struct NoticeBanner: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: notice.isError ? "exclamationmark.circle.fill" : "checkmark.circle.fill")
-                .foregroundStyle(notice.isError ? Brand.hangUp : Color.green)
+                .foregroundStyle(notice.isError ? Theme.danger : Theme.accentText)
                 .accessibilityHidden(true)
             Text(notice.message)
                 .font(.subheadline)
