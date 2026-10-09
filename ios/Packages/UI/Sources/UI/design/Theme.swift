@@ -36,10 +36,10 @@ enum Theme {
     static let uiRaised = UIColor.adaptive(dark: UIColor(hex: 0x1D232B), light: .secondarySystemBackground)
     /// Hairlines: white 8 % on dark, black 8 % on light.
     static let uiSeparator = UIColor.adaptive(dark: UIColor.white.withAlphaComponent(0.08), light: UIColor.black.withAlphaComponent(0.08))
-    /// Text: white, 70 % and 45 % on dark; ink, 70 % and 45 % on light.
+    /// Text: white, 70 % and 55 % on dark; ink, 70 % and 62 % on light (both readable at 4.5:1 on every surface).
     static let uiTextPrimary = UIColor.adaptive(dark: .white, light: UIColor(hex: 0x101317))
     static let uiTextSecondary = UIColor.adaptive(dark: UIColor.white.withAlphaComponent(0.70), light: UIColor(hex: 0x101317).withAlphaComponent(0.70))
-    static let uiTextTertiary = UIColor.adaptive(dark: UIColor.white.withAlphaComponent(0.45), light: UIColor(hex: 0x101317).withAlphaComponent(0.45))
+    static let uiTextTertiary = UIColor.adaptive(dark: UIColor.white.withAlphaComponent(0.55), light: UIColor(hex: 0x101317).withAlphaComponent(0.62))
     /// Lime as TEXT or ICON: lime on dark, ink on light (lime on white does not read).
     static let uiAccentText = UIColor.adaptive(dark: UIColor(hex: 0xC7FF4A), light: UIColor(hex: 0x101317))
     /// The selected segment: lime text on a raised surface (dark) / on ink (light).

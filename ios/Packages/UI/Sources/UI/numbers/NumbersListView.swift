@@ -8,6 +8,11 @@ struct NumbersListView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.pbxClose) private var close
+    #if DEBUG
+    /// Demo mode only (`-FSVoipDemoNumber open|<step>`): open the first number without tapping, for screenshots.
+    @State private var demoNumberId: String?
+    @State private var demoOpens = false
+    #endif
 
     var body: some View {
         SheetShell(title: L10n.string("numbers.title"), back: { dismiss() }, onClose: { (close ?? { dismiss() })() }) {
@@ -46,7 +51,25 @@ struct NumbersListView: View {
         .task { await model.loadIfNeeded(.numbers) }
         .onDisappear { model.stopPolling() }
         .accessibilityIdentifier("numbers-list")
+        #if DEBUG
+        .navigationDestination(isPresented: $demoOpens) {
+            if let id = demoNumberId {
+                NumberView(model: model, numberId: id)
+            }
+        }
+        .onAppear { openDemoNumber(model.numbers?.numbers.first?.id) }
+        .onChange(of: model.numbers?.numbers.first?.id) { openDemoNumber($0) }
+        #endif
     }
+
+    #if DEBUG
+    private func openDemoNumber(_ id: String?) {
+        guard let id, UserDefaults.standard.string(forKey: "FSVoipDemoNumber") != nil, !demoOpens else { return }
+
+        demoNumberId = id
+        demoOpens = true
+    }
+    #endif
 
     private func title(_ entry: PbxNumberEntry) -> String {
         let name = entry.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

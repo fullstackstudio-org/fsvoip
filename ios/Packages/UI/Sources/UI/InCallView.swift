@@ -10,6 +10,7 @@ struct InCallView: View {
     @ObservedObject var phone: PhoneController
     let session: CallSession
     @State private var showsKeypad = false
+    @ScaledMetric(relativeTo: .largeTitle) private var titleSize: CGFloat = 34
     @State private var sentDigits = ""
     @State private var isParking = false
 
@@ -48,6 +49,14 @@ struct InCallView: View {
         .foregroundStyle(.white)
         .environment(\.colorScheme, .dark)
         .accessibilityIdentifier("in-call-screen")
+        #if DEBUG
+        .task {
+            // Demo mode only (`-FSVoipDemoScreen parkcall`): park the demo call a few seconds after it connected.
+            guard UserDefaults.standard.string(forKey: "FSVoipDemoScreen") == "parkcall" else { return }
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            park()
+        }
+        #endif
         .onChange(of: session.id) { _ in
             showsKeypad = false
             sentDigits = ""
@@ -72,7 +81,7 @@ struct InCallView: View {
             .background(Color.white.opacity(0.08), in: Capsule())
 
             Text(session.remoteTitle ?? L10n.string("call.anonymous"))
-                .font(.system(size: 34, weight: .semibold))
+                .font(.system(size: titleSize, weight: .semibold))
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
                 .minimumScaleFactor(0.6)

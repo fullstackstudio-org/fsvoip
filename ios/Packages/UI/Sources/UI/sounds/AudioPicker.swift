@@ -139,7 +139,7 @@ private struct AudioPickerContent: View {
                         Text(row.name)
                             .font(.body)
                             .foregroundStyle(Theme.textPrimary)
-                            .lineLimit(2)
+                            .adaptiveLineLimit(2)
                             .multilineTextAlignment(.leading)
 
                         SoundDurationChip(seconds: row.duration)
@@ -155,7 +155,7 @@ private struct AudioPickerContent: View {
 
                 if row.playable {
                     Button {
-                        withAnimation(.easeOut(duration: 0.15)) { toggleOpen(row) }
+                        Motion.run(.easeOut(duration: 0.15)) { toggleOpen(row) }
                     } label: {
                         HStack(spacing: 4) {
                             Text(L10n.string("sounds.listen"))

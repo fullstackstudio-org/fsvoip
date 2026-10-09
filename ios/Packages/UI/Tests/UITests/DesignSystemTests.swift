@@ -44,6 +44,23 @@ final class DesignSystemTests: XCTestCase {
         XCTAssertEqual(rgb(Theme.uiAccentText, style: .light), rgb(Theme.uiSegmentSelected, style: .light), "the trap: accentText on this fill is invisible on light")
     }
 
+    func testSecondaryAndTertiaryTextReadAtFourPointFiveOnEverySurface() {
+        for style in [UIUserInterfaceStyle.light, .dark] {
+            for surface in [Theme.uiBackground, Theme.uiSheet, Theme.uiRaised] {
+                let fill = rgb(surface, style: style)
+
+                for text in [Theme.uiTextSecondary, Theme.uiTextTertiary] {
+                    let resolved = text.resolvedColor(with: UITraitCollection(userInterfaceStyle: style))
+                    var (r, g, b, a) = (CGFloat(0), CGFloat(0), CGFloat(0), CGFloat(0))
+                    resolved.getRed(&r, green: &g, blue: &b, alpha: &a)
+                    let over = zip([r, g, b], fill).map { Int((Double($0) * Double(a) * 255 + Double($1) * (1 - Double(a))).rounded()) }
+
+                    XCTAssertGreaterThan(Self.contrast(over, fill), 4.5, "\(style.rawValue)")
+                }
+            }
+        }
+    }
+
     private static func contrast(_ a: [Int], _ b: [Int]) -> Double {
         func luminance(_ c: [Int]) -> Double {
             let v = c.map { x -> Double in

@@ -357,7 +357,7 @@ struct ContactsView: View {
         if reduceMotion {
             proxy.scrollTo(target, anchor: .top)
         } else {
-            withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(target, anchor: .top) }
+            Motion.run(.easeOut(duration: 0.15)) { proxy.scrollTo(target, anchor: .top) }
         }
     }
 

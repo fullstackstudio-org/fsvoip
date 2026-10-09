@@ -50,11 +50,11 @@ struct AudioPlayerBar: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(nowPlaying.title)
                     .font(.headline)
-                    .lineLimit(1)
+                    .adaptiveLineLimit(1)
                 Text(nowPlaying.subtitle)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .adaptiveLineLimit(1)
             }
             .accessibilityElement(children: .combine)
 
@@ -245,7 +245,7 @@ private struct Scrubber: View {
                         onSeek(min(1, max(0, value.location.x / width)) * duration)
                     }
             )
-            .animation(.easeOut(duration: 0.12), value: dragFraction == nil)
+            .motionAnimation(.easeOut(duration: 0.12), value: dragFraction == nil)
         }
         .frame(height: 32)
         .opacity(isLoading ? 0.5 : 1)

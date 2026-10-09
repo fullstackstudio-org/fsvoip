@@ -14,6 +14,7 @@ struct SoundRecorderSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.openURL) private var openURL
+    @ScaledMetric(relativeTo: .largeTitle) private var timerSize: CGFloat = 54
 
     init(model: SoundsModel, onAdded: @escaping (String) -> Void) {
         self.model = model
@@ -90,7 +91,7 @@ struct SoundRecorderSheet: View {
             }
 
             Text(MediaFormat.clock(recorder.elapsed))
-                .font(.system(size: 54, weight: .light, design: .rounded).monospacedDigit())
+                .font(.system(size: timerSize, weight: .light, design: .rounded).monospacedDigit())
                 .foregroundStyle(Theme.textPrimary)
                 .minimumScaleFactor(0.5)
                 .accessibilityLabel(String(format: L10n.string("sounds.record.elapsed"), MediaFormat.clock(recorder.elapsed)))

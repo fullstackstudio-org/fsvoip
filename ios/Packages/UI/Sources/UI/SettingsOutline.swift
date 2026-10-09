@@ -66,6 +66,10 @@ struct SettingsOutline: Equatable {
         case .profile: return [.profile]
         case .callPreferences: return [.callPreferences]
         case .invite: return [.invite]
+        case .numbers: return [.centrale(.numbers)]
+        case .devices: return [.centrale(.devices)]
+        case .ringGroups: return [.centrale(.ringGroups)]
+        case .hours: return [.centrale(.hours)]
         }
     }
 }

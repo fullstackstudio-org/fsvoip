@@ -254,20 +254,20 @@ private struct VoicemailRow: View {
                 Text(title)
                     .font(.body.weight(isNew ? .semibold : .regular))
                     .foregroundStyle(isGone ? Theme.textTertiary : Theme.textPrimary)
-                    .lineLimit(2)
+                    .adaptiveLineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(subtitle)
                     .font(.footnote)
                     .foregroundStyle(Theme.textSecondary)
-                    .lineLimit(2)
+                    .adaptiveLineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
 
                 if let transcription, !transcription.isEmpty {
                     Text(transcription)
                         .font(.footnote)
                         .foregroundStyle(Theme.textTertiary)
-                        .lineLimit(2)
+                        .adaptiveLineLimit(2)
                         .padding(.top, 1)
                 }
 
@@ -335,7 +335,7 @@ private struct VoicemailDetailSheet: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .animation(.easeOut(duration: 0.22), value: model.nowPlaying)
+        .motionAnimation(.easeOut(duration: 0.22), value: model.nowPlaying)
         .onDisappear { hub.player.stop() }
         .presentationDetents([.large])
         .confirmationDialog(L10n.string("media.delete.title"), isPresented: $confirmsDelete, titleVisibility: .visible) {

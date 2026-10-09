@@ -50,6 +50,11 @@ public final class FSVoipAppModel: ObservableObject {
         case profile
         case callPreferences
         case invite
+        /// Single parts of the Centrale (demo screens).
+        case numbers
+        case devices
+        case ringGroups
+        case hours
     }
 
     public struct Notice: Identifiable, Equatable {

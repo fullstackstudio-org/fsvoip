@@ -134,7 +134,7 @@ struct SoundsView: View {
                         Text(sound.name)
                             .font(.body)
                             .foregroundStyle(Theme.textPrimary)
-                            .lineLimit(2)
+                            .adaptiveLineLimit(2)
                         SoundDurationChip(seconds: model.duration(of: sound))
                     }
 
@@ -149,7 +149,7 @@ struct SoundsView: View {
 
                 if sound.playable {
                     Button {
-                        withAnimation(.easeOut(duration: 0.15)) { toggleOpen(sound) }
+                        Motion.run(.easeOut(duration: 0.15)) { toggleOpen(sound) }
                     } label: {
                         HStack(spacing: 4) {
                             Text(L10n.string("sounds.listen"))

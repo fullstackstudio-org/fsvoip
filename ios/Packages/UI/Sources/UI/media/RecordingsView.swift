@@ -37,7 +37,7 @@ struct RecordingsView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .animation(.easeOut(duration: 0.22), value: model.nowPlaying)
+        .motionAnimation(.easeOut(duration: 0.22), value: model.nowPlaying)
         .refreshable { await model.load() }
         .task {
             await model.load()
@@ -162,12 +162,12 @@ private struct RecordingRow: View {
                     Text(title)
                         .font(.body)
                         .foregroundStyle(isGone ? Theme.textSecondary : Theme.textPrimary)
-                        .lineLimit(2)
+                        .adaptiveLineLimit(2)
 
                     Text(subtitle)
                         .font(.footnote)
                         .foregroundStyle(Theme.textSecondary)
-                        .lineLimit(2)
+                        .adaptiveLineLimit(2)
 
                     if isGone {
                         Text(L10n.string("media.unavailable.row"))

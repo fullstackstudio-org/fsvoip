@@ -72,6 +72,14 @@ struct DialerView: View {
                 await model.outbound.load(account)
             }
         }
+        #if DEBUG
+        .task {
+            // Demo mode only (`-FSVoipDemoScreen chooser`): open the "Bellen via" chooser without tapping.
+            guard UserDefaults.standard.string(forKey: "FSVoipDemoScreen") == "chooser" else { return }
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            showsChooser = true
+        }
+        #endif
         .sheet(isPresented: $showsChooser) {
             OutboundChooserSheet(model: model, outbound: model.outbound, accountId: accountId) { chosenAccountId = $0 }
         }

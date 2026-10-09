@@ -263,7 +263,7 @@ struct HistoryRow: View {
                 Text(title)
                     .font(.body.weight(.semibold))
                     .foregroundStyle(entry.isMissed ? Theme.danger : Theme.textPrimary)
-                    .lineLimit(2)
+                    .adaptiveLineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: Theme.Spacing.xs) {
@@ -275,7 +275,7 @@ struct HistoryRow: View {
                     Text(subtitle)
                         .font(.footnote)
                         .foregroundStyle(entry.isMissed ? Theme.danger : Theme.textSecondary)
-                        .lineLimit(2)
+                        .adaptiveLineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -392,7 +392,7 @@ private struct HistoryDetailSheet: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .animation(.easeOut(duration: 0.22), value: history.nowPlaying)
+        .motionAnimation(.easeOut(duration: 0.22), value: history.nowPlaying)
         .onDisappear { history.stopPlayer() }
         .presentationDetents([.large])
         .sheet(isPresented: $addsContact) {

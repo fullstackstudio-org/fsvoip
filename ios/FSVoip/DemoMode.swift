@@ -2,8 +2,8 @@
 //
 // DEBUG builds only: a demo of the app without a phone system, for the simulator, screenshots and UI checks.
 // Start with the launch argument `-FSVoipDemo YES` (two paired example extensions) or `-FSVoipDemo onboarding`
-// (nothing paired yet). `-FSVoipDemoScreen <dialer|onhold|recents|voicemail|contacts|settings|pbx|recordings|sounds|appearance|incall|incoming|push|pairing|failed|scanner>`
-// opens a screen directly. `-FSVoipDemoContactsScreen <detail|edit|new|sources|phone|filter>` goes one step further inside the Contacts tab.
+// (nothing paired yet). `-FSVoipDemoScreen <dialer|chooser|onhold|recents|voicemail|contacts|settings|pbx|numbers|devices|ringgroups|hours|recordings|sounds|appearance|profile|callprefs|invite|incall|parkcall|incoming|push|pairing|failed|scanner>`
+// opens a screen directly. `-FSVoipDemoNumber <open|name|hours|welcome|forwarding|recording>` goes inside the first number of `numbers`. `-FSVoipDemoContactsScreen <detail|edit|new|sources|phone|filter>` goes one step further inside the Contacts tab.
 // Nothing here talks to a server or a PBX, and nothing is written to the Keychain.
 
 #if DEBUG
@@ -85,6 +85,14 @@ enum DemoMode {
             model.openSettings()
         case "pbx":
             model.openSettings(.centrale)
+        case "numbers":
+            model.openSettings(.numbers)
+        case "devices":
+            model.openSettings(.devices)
+        case "ringgroups":
+            model.openSettings(.ringGroups)
+        case "hours":
+            model.openSettings(.hours)
         case "recordings":
             model.openSettings(.recordings)
         case "sounds":
@@ -105,7 +113,7 @@ enum DemoMode {
             DemoAccountService.failNextPair = true
             model.handleIncoming(url: link)
             Task { await model.confirmPairing() }
-        case "incall":
+        case "incall", "parkcall":
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                 model.call("0612345678", from: exampleAccounts[0].id)
             }

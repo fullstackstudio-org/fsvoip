@@ -11,7 +11,7 @@ the app, also when it is closed. iOS first (Swift, SwiftUI, CallKit, PushKit); A
 - The server side of the FullStack Studio platform is closed source. The app only talks to it through the public API in
   [`shared/openapi.yaml`](shared/openapi.yaml).
 
-> Status: iOS 0.1.0 (5). Pairing (QR camera, universal link, `fsvoip://`), several accounts, registration over TLS,
+> Status: iOS 0.2.0 (6). Pairing (QR camera, universal link, `fsvoip://`), several accounts, registration over TLS,
 > outgoing and incoming calls (also with the app in the background or closed: PushKit + CallKit + the PBX push gate),
 > in-call controls, per-account settings, **contacts** (sync with the customer's address book, lists, name recognition on
 > incoming calls), **voicemail** and, for administrators, the **Centrale** section (call flow, extensions, ring groups,
@@ -106,7 +106,8 @@ DEBUG builds have a demo mode that needs no server and no phone system:
 ```sh
 xcrun simctl launch booted nl.fullstackstudio.fsvoip -FSVoipDemo YES            # two example extensions
 xcrun simctl launch booted nl.fullstackstudio.fsvoip -FSVoipDemo onboarding     # nothing paired yet
-#   add -FSVoipDemoScreen <dialer|recents|contacts|settings|pbx|voicemail|recordings|account|incall|incoming|push|pairing|failed|scanner> to open a screen directly
+#   add -FSVoipDemoScreen <dialer|chooser|onhold|recents|contacts|voicemail|settings|pbx|numbers|devices|ringgroups|hours|sounds|recordings|profile|callprefs|invite|appearance|incall|parkcall|incoming|push|pairing|failed|scanner> to open a screen directly
+#   add -FSVoipDemoNumber <open|name|hours|welcome|forwarding|recording> with `numbers` to go inside the first number
 ```
 
 The demo uses an in-memory store, a fake SIP engine and a loop-back instead of CallKit; it writes nothing to the
@@ -119,9 +120,16 @@ hours, voicemail with playable audio, recordings and a few contacts. Face ID is 
 |---|---|
 | `pbx` | Settings → account → Centrale (call flow, extensions, ring groups, hours, numbers) |
 | `voicemail` | Settings → account → Voicemail with the audio bar |
+| `numbers` | Settings → account → Nummers; with `-FSVoipDemoNumber open` the first number, with a step name that step's sheet |
+| `devices`, `ringgroups`, `hours` | those parts of the Centrale |
+| `sounds`, `invite` | Geluiden (play, record) and Gebruiker uitnodigen |
+| `profile`, `callprefs`, `appearance` | the own-extension pages and appearance |
+| `chooser` | the dialer with the "Bellen via" chooser sheet open |
+| `onhold` | the On hold tab with example parked calls |
+| `incall`, `parkcall` | an outgoing call; `parkcall` parks it after four seconds |
 | `recordings` | Settings → account → Recordings (administrators) |
 | `contacts` | The Contacts tab with example contacts and lists |
-| `recents`, `dialer`, `settings`, `account`, `incall`, `incoming`, `push`, `pairing`, `failed`, `scanner` | the other screens |
+| `recents`, `dialer`, `settings`, `account`, `incoming`, `push`, `pairing`, `failed`, `scanner` | the other screens |
 
 ## How to test on a device
 
@@ -235,6 +243,12 @@ that the build's push environment matches its signing (`FSVOIP_PUSH_ENV`), and t
 | Settings → account → **Voicemail** | own box | every box of the PBX |
 | Settings → account → **Recordings** | not shown | all calls of the PBX, play the recording |
 | **Contacts** tab | read, add and change | also delete |
+| Settings → **Profiel**, **Oproepvoorkeuren** (own extension) | yes | yes |
+| Settings → **Nummers**, **Geluiden**, **Gebruiker uitnodigen** | not shown | yes (Face ID) |
+| Dialer **"Bellen via"**, **Parkeren**, tab **On hold** | yes, when the server says so (`callerChoice`, `park`) | yes; hanging up a parked call: only own (user) / any (admin) |
+| **Recents** | calls of the whole PBX, no recordings | with recordings |
+
+The complete route-by-route permission matrix is in [shared/README.md](shared/README.md#permissions-per-role).
 
 The role comes from `GET /me` (`role`, `capabilities`) and is read again at start-up, when the app comes to the foreground and after a
 `refresh` push. When the role is taken away in the portal the section disappears at the next read, an open section is closed and
@@ -270,7 +284,29 @@ and a second phone for the calls.
    the app) Centrale and Recordings are gone and Voicemail shows only the own box. Give the role back and check that the sections return.
 8. **Revoke.** Remove the pairing in the portal: the account disappears from the app.
 
-Also check `Settings → version`: it must show `0.1.0 (5)`.
+Also check `Settings → version`: it must show `0.2.0 (6)`.
+
+The checklist for the v2 features (caller choice, parking, sounds, inviting, number chain, accessibility) is in [docs/testing.md](docs/testing.md).
+
+## Release: build 6 to TestFlight
+
+Do this only after Sebas has approved and the matching server (FSS v2 routes, FssApi 1.9.0) is live. The version is in
+`ios/Config/Shared.xcconfig` (`MARKETING_VERSION`, `CURRENT_PROJECT_VERSION`); raise `CURRENT_PROJECT_VERSION` for every upload. Changes are in
+[docs/changelog.md](docs/changelog.md).
+
+```sh
+cp ios/Local.xcconfig.example ios/Local.xcconfig        # once; team FDGV4X8F27, never committed
+scripts/build.sh                                         # must be green
+cd ios && xcodegen generate && cd ..
+xcodebuild archive -project ios/FSVoip.xcodeproj -scheme FSVoip -configuration Release \
+    -destination 'generic/platform=iOS' -archivePath build/FSVoip.xcarchive -allowProvisioningUpdates
+# Upload (build/ExportOptions.plist: app-store-connect, destination upload, automatic signing):
+xcodebuild -exportArchive -archivePath build/FSVoip.xcarchive -exportOptionsPlist build/ExportOptions.plist -allowProvisioningUpdates
+```
+
+Then, in App Store Connect: wait for processing, add the build to the group *Publieke beta*, paste the "Nieuw" text from the changelog as test notes.
+`build/` is git-ignored; if `ExportOptions.plist` is missing, recreate it with `method app-store-connect`, `destination upload`, `teamID FDGV4X8F27`,
+`signingStyle automatic`, `uploadSymbols true`, `manageAppVersionAndBuildNumber false`. No signing material, key or token belongs in git.
 
 ## Contract and tests
 

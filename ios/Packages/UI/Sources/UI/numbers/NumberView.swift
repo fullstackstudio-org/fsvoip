@@ -69,7 +69,20 @@ struct NumberView: View {
             }
         }
         .accessibilityIdentifier("number-view")
+        #if DEBUG
+        .onAppear { openDemoStep() }
+        .onChange(of: chain != nil) { _ in openDemoStep() }
+        #endif
     }
+
+    #if DEBUG
+    /// Demo mode only: open one step sheet directly (`-FSVoipDemoNumber name|hours|welcome|forwarding|recording`).
+    private func openDemoStep() {
+        guard chain != nil, editing == nil, let raw = UserDefaults.standard.string(forKey: "FSVoipDemoNumber"), let step = Step(rawValue: raw) else { return }
+
+        editing = step
+    }
+    #endif
 
     private func header(_ chain: NumberChain) -> some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {

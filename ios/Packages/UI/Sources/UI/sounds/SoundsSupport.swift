@@ -192,7 +192,7 @@ struct SoundUploadBar: View {
                 Text(String(format: L10n.string("sounds.upload.progress"), upload.name))
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Theme.textPrimary)
-                    .lineLimit(2)
+                    .adaptiveLineLimit(2)
 
                 Spacer(minLength: Theme.Spacing.s)
 

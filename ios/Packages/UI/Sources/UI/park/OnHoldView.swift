@@ -283,13 +283,13 @@ private struct ParkedRow: View {
                         Text(title)
                             .font(.body.weight(.semibold))
                             .foregroundStyle(Theme.textPrimary)
-                            .lineLimit(2)
+                            .adaptiveLineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
 
                         Text(subtitle)
                             .font(.footnote.monospacedDigit())
                             .foregroundStyle(Theme.textSecondary)
-                            .lineLimit(2)
+                            .adaptiveLineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
 
                         if let remaining {
