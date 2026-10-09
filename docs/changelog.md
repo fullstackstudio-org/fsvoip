@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.0 (build 7) — TestFlight-feedback
+
+### Nieuw (NL)
+
+- **Opnemen terwijl de app open is** zet het belscherm nu meteen op het lopende gesprek (bleef soms op "Verbinden…" staan).
+- **Inkomend gesprek:** Weigeren en Opnemen staan onderaan het scherm.
+- **Voicemail** heeft weer een icoon in de tabbalk.
+- **Instellingen:** rijen en de nummerkiezer lopen over de volle breedte.
+
 ## 0.2.0 (build 6) — FSVoip v2
 
 Release candidate with the whole of plan `fsvoip-app-v2`. Needs the matching server (FSS with the v2 routes, FssApi module 1.9.0 on the PBX).
