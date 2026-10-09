@@ -85,6 +85,8 @@ public final class FSVoipAppModel: ObservableObject {
     public let pbx: PbxHub?
     /// Voicemail and recordings with their player (`nil` = not offered).
     public let media: MediaHub?
+    /// Parking and the "On hold" tab; `nil` = not offered.
+    public let park: ParkModel?
     /// Do-not-disturb of the own extension ("Beschikbaar"); `nil` = not offered.
     public let availability: AvailabilityHub?
     /// "Uitbellen via": the number the next call goes out with.
@@ -109,6 +111,8 @@ public final class FSVoipAppModel: ObservableObject {
     private var mediaAccessLost: AnyCancellable?
     private var callActivity: AnyCancellable?
     private var outboundChanges: AnyCancellable?
+    private var parkChanges: AnyCancellable?
+    @Published private var chosenParkAccountId: String?
 
     public init(
         phone: PhoneController,
@@ -124,6 +128,7 @@ public final class FSVoipAppModel: ObservableObject {
         pbx: PbxHub? = nil,
         media: MediaHub? = nil,
         availability: AvailabilityHub? = nil,
+        park: ParkServicing? = nil,
         outboundNumbers: OutboundNumbersServicing? = nil,
         logger: FSLogger = FSLogger(category: "app")
     ) {
@@ -132,6 +137,7 @@ public final class FSVoipAppModel: ObservableObject {
         self.pbx = pbx
         self.media = media
         self.availability = availability
+        self.park = park.map { ParkModel(service: $0) }
         outbound = OutboundChoiceModel(service: outboundNumbers, preferences: preferences)
         history = HistoryModel(media: media)
         self.accountStore = accountStore
@@ -145,6 +151,7 @@ public final class FSVoipAppModel: ObservableObject {
         self.logger = logger
 
         outbound.capabilities = { [weak self] accountId in self?.capabilities(for: accountId) }
+        parkChanges = self.park?.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         outboundChanges = outbound.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         history.nameLookup = { [weak self] number in self?.name(forNumber: number) }
         phone.anonymousCallerText = L10n.string("call.anonymous")
@@ -152,6 +159,19 @@ public final class FSVoipAppModel: ObservableObject {
         phone.onCallFinished = { [weak self] call in
             self?.recentsStore.add(call)
             self?.recents = self?.recentsStore.all() ?? []
+            self?.park?.callFinished(call, account: self?.account(id: call.accountId))
+        }
+        self.park?.dial = { [weak self] number, accountId in
+            self?.call(number, from: accountId, useChosenNumber: false) ?? false
+        }
+        self.park?.notify = { [weak self] message, isError in
+            self?.notice = Notice(message: message, isError: isError)
+        }
+        self.park?.isAdmin = { [weak self] accountId in
+            self?.meByAccount[accountId]?.effectiveRole == .admin
+        }
+        self.park?.onRevoked = { [weak self] in
+            Task { await self?.refreshAccounts() }
         }
         pbx?.onRevoked = { [weak self] in
             Task { await self?.refreshAccounts() }
@@ -347,6 +367,58 @@ public final class FSVoipAppModel: ObservableObject {
         meByAccount.values.contains { $0.canPark }
     }
 
+    /// Does this pairing offer parking (the park button in a call, the "On hold" tab)?
+    public func canPark(_ accountId: String) -> Bool {
+        park != nil && (meByAccount[accountId]?.canPark ?? false)
+    }
+
+    /// The accounts that can park, in the order of the accounts.
+    var parkAccounts: [StoredAccount] {
+        accounts.filter { canPark($0.id) }
+    }
+
+    /// The account the "On hold" tab shows: the one the user chose, else the default outgoing one if it can park, else the first.
+    var parkAccount: StoredAccount? {
+        let candidates = parkAccounts
+
+        if let chosenParkAccountId, let chosen = candidates.first(where: { $0.id == chosenParkAccountId }) {
+            return chosen
+        }
+
+        if let preferred = defaultOutgoingAccountId, let account = candidates.first(where: { $0.id == preferred }) {
+            return account
+        }
+
+        return candidates.first
+    }
+
+    func chooseParkAccount(_ accountId: String) {
+        chosenParkAccountId = accountId
+    }
+
+    /// Parks the running call of `session` and says what happened. The PBX ends our leg of the call after a successful park; this
+    /// never shows that as a failure.
+    public func parkCall(_ session: CallSession) async {
+        guard let park, canPark(session.accountId.rawValue), let account = account(id: session.accountId.rawValue) else {
+            return
+        }
+
+        guard let callId = session.engineCallID?.rawValue, !callId.isEmpty else {
+            notice = Notice(message: ParkFailure.callNotFound.message, isError: true)
+
+            return
+        }
+
+        switch await park.park(callId: callId, account: account) {
+        case let .parked(slot):
+            notice = Notice(message: String(format: L10n.string("park.notice.parked"), ParkFormat.slot(slot)), isError: false)
+        case let .failed(failure):
+            notice = Notice(message: failure.message, isError: true)
+        case .ignored:
+            break
+        }
+    }
+
     public func openSettings(_ start: SettingsStart = .root) {
         settingsStart = start
         isSettingsPresented = true
@@ -384,7 +456,7 @@ public final class FSVoipAppModel: ObservableObject {
 
     /// Start a call. Returns `false` (with a notice) when it could not start.
     @discardableResult
-    public func call(_ number: String, from accountId: String?) -> Bool {
+    public func call(_ number: String, from accountId: String?, useChosenNumber: Bool = true) -> Bool {
         guard let accountId = accountId ?? defaultOutgoingAccountId else {
             notice = Notice(message: L10n.string("call.error.noAccount"), isError: true)
             return false
@@ -392,7 +464,7 @@ public final class FSVoipAppModel: ObservableObject {
 
         do {
             // The chosen number rides along with this one call; without the capability the options are empty.
-            try phone.startCall(number: number, accountId: accountId, options: outbound.options(for: accountId))
+            try phone.startCall(number: number, accountId: accountId, options: useChosenNumber ? outbound.options(for: accountId) : .none)
             return true
         } catch let error as PhoneError {
             notice = Notice(message: Self.message(for: error), isError: true)
@@ -631,6 +703,7 @@ public final class FSVoipAppModel: ObservableObject {
         meByAccount[accountId] = nil
         availability?.forget(accountId: accountId)
         outbound.forget(accountId: accountId)
+        park?.forget(accountId: accountId)
         history.forget(accountId: accountId)
         // Unpairing removes the address book of that account from this phone.
         contacts.forget(accountId: accountId)

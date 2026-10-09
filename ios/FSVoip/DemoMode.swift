@@ -59,6 +59,7 @@ enum DemoMode {
             pbx: PbxHub(service: DemoPbxService(adminAccountId: exampleAccounts[0].id), gate: gate),
             media: MediaHub(service: DemoMediaService(adminAccountId: exampleAccounts[0].id), gate: gate, soundService: DemoSoundService()),
             availability: AvailabilityHub(service: DemoAvailabilityService()),
+            park: DemoParkService(),
             outboundNumbers: DemoOutboundNumbersService()
         )
 

@@ -11,6 +11,7 @@ struct InCallView: View {
     let session: CallSession
     @State private var showsKeypad = false
     @State private var sentDigits = ""
+    @State private var isParking = false
 
     private var isEnded: Bool {
         session.phase.isEnded
@@ -166,10 +167,36 @@ struct InCallView: View {
                 .disabled(!session.phase.isConnected)
                 .accessibilityIdentifier("hold-button")
             }
+
+            // Parking: put the call on a numbered slot for the whole team. Only when the PBX offers it and the call is connected.
+            if model.canPark(session.accountId.rawValue) {
+                GridRow {
+                    ControlButton(symbol: "parkingsign", titleKey: "call.park", isOn: isParking) {
+                        park()
+                    }
+                    .disabled(!session.phase.isConnected || isParking)
+                    .accessibilityIdentifier("park-button")
+                    .accessibilityHint(L10n.string("call.park.hint"))
+
+                    Color.clear
+                        .gridCellUnsizedAxes([.horizontal, .vertical])
+                }
+            }
         }
         .frame(maxWidth: .infinity)
         .disabled(isEnded)
         .opacity(isEnded ? 0.4 : 1)
+    }
+
+    private func park() {
+        guard !isParking else { return }
+
+        isParking = true
+
+        Task {
+            await model.parkCall(session)
+            isParking = false
+        }
     }
 
     private var dtmfKeypad: some View {

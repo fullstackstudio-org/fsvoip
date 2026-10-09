@@ -215,23 +215,6 @@ private struct ShellBarItems: View {
     }
 }
 
-// MARK: - Tabs without a screen of their own yet
-
-/// "On hold": parked calls arrive in a later task; until then an honest empty state.
-struct OnHoldTab: View {
-    @ObservedObject var model: FSVoipAppModel
-
-    var body: some View {
-        EmptyState(
-            symbol: "pause.circle",
-            title: L10n.string("onHold.empty.title"),
-            message: L10n.string(model.canPark ? "onHold.empty.message" : "onHold.unavailable.message")
-        )
-        .background(Theme.background)
-        .navigationTitle(L10n.string("tab.onHold"))
-    }
-}
-
 /// Stands in when the app has no availability service, so the toolbar can observe a hub unconditionally.
 private struct NoAvailabilityService: AvailabilityServicing {
     func load(for account: StoredAccount) async throws -> AvailabilityHub.State { AvailabilityHub.State(doNotDisturb: false, version: 0) }

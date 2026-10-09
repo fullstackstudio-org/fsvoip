@@ -54,6 +54,18 @@ public struct ParkedCall: Decodable, Equatable, Sendable, Identifiable {
     /// Parked by this pairing.
     public var mine: Bool
 
+    public init(id: String, slot: Int, retrieveNumber: String? = nil, callerNumber: String? = nil, callerName: String? = nil, parkedAt: Date? = nil, expiresAt: Date? = nil, parkedBy: ParkedBy? = nil, mine: Bool = false) {
+        self.id = id
+        self.slot = slot
+        self.retrieveNumber = retrieveNumber
+        self.callerNumber = callerNumber
+        self.callerName = callerName
+        self.parkedAt = parkedAt
+        self.expiresAt = expiresAt
+        self.parkedBy = parkedBy
+        self.mine = mine
+    }
+
     private enum CodingKeys: String, CodingKey {
         case id, slot, retrieveNumber, callerNumber, callerName, parkedAt, expiresAt, parkedBy, mine
     }
@@ -78,6 +90,11 @@ public struct ParkedCallsPage: Decodable, Equatable, Sendable {
     public var calls: [ParkedCall]
     /// `false` = parking does not work on this PBX right now: hide the section.
     public var available: Bool
+
+    public init(calls: [ParkedCall], available: Bool = true) {
+        self.calls = calls
+        self.available = available
+    }
 
     private enum CodingKeys: String, CodingKey {
         case calls, available
