@@ -2,10 +2,12 @@
 import Core
 import FSContacts
 import SwiftUI
+import UIKit
 
 struct ContactDetailView: View {
     @ObservedObject var model: FSVoipAppModel
     @ObservedObject private var hub: ContactsHub
+    @ObservedObject private var favorites = FavoriteContacts.shared
     let entryId: String
     @Environment(\.dismiss) private var dismiss
 
@@ -34,109 +36,74 @@ struct ContactDetailView: View {
                 Color.clear.onAppear { dismiss() }
             }
         }
+        .background(Theme.background.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
     }
 
     private func content(_ entry: ContactEntry) -> some View {
-        List {
-            Section {
-                VStack(spacing: 10) {
-                    ContactAvatar(name: entry.displayName, size: 76)
-                    Text(entry.displayName)
-                        .font(.title2.bold())
-                        .multilineTextAlignment(.center)
+        ScrollView {
+            VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+                header(entry)
+                actions(entry)
 
-                    if let company = entry.company, !company.isEmpty, company != entry.displayName {
-                        Text(company)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-                .accessibilityElement(children: .combine)
-            }
+                numbers(entry)
 
-            Section {
-                if entry.phones.isEmpty {
-                    L10n.text("contacts.detail.noNumbers")
-                        .foregroundStyle(.secondary)
-                }
-
-                ForEach(entry.phones, id: \.self) { phone in
-                    numberRow(phone, entry: entry)
-                }
-            } header: {
-                L10n.text("contacts.detail.numbers")
-            }
-
-            if let email = entry.email, !email.isEmpty {
-                Section {
-                    if let url = URL(string: "mailto:\(email)") {
-                        Link(email, destination: url)
-                    } else {
-                        Text(email)
-                    }
-                } header: {
-                    L10n.text("contacts.detail.email")
-                }
-            }
-
-            if let notes = detail?.notes, !notes.isEmpty {
-                Section {
-                    Text(notes)
-                } header: {
-                    L10n.text("contacts.detail.notes")
-                }
-            }
-
-            if let names = listNames(entry), !names.isEmpty {
-                Section {
-                    Text(names.joined(separator: ", "))
-                } header: {
-                    L10n.text("contacts.detail.lists")
-                }
-            }
-
-            switch entry.source {
-            case .device:
-                Section { L10n.text("contacts.detail.deviceNote").font(.footnote).foregroundStyle(.secondary) }
-            case .internalExtensions:
-                Section { L10n.text("contacts.detail.colleagueNote").font(.footnote).foregroundStyle(.secondary) }
-            case .customer:
-                EmptyView()
-            }
-
-            if let errorText {
-                Section {
-                    Text(errorText)
-                        .font(.footnote)
-                        .foregroundStyle(Brand.hangUp)
-                }
-            }
-
-            if hub.canDelete(entry) {
-                Section {
-                    Button(role: .destructive) {
-                        confirmsDelete = true
-                    } label: {
-                        HStack {
-                            L10n.text("contacts.detail.delete")
-                            if isDeleting {
-                                Spacer()
-                                ProgressView()
+                if let email = entry.email, !email.isEmpty {
+                    SettingsGroup(title: L10n.string("contacts.detail.email")) {
+                        if let url = URL(string: "mailto:\(email)") {
+                            Link(destination: url) {
+                                SettingsRow(symbol: "envelope", title: email, showsChevron: false)
                             }
+                        } else {
+                            SettingsRow(symbol: "envelope", title: email, showsChevron: false)
                         }
                     }
-                    .disabled(isDeleting)
-                    .accessibilityIdentifier("contact-delete")
+                }
+
+                recentCalls(entry)
+
+                if let notes = detail?.notes, !notes.isEmpty {
+                    SettingsGroup(title: L10n.string("contacts.detail.notes")) {
+                        SettingsRow(title: notes, showsChevron: false)
+                    }
+                }
+
+                if let names = listNames(entry), !names.isEmpty {
+                    SettingsGroup(title: L10n.string("contacts.detail.lists")) {
+                        SettingsRow(title: names.joined(separator: ", "), showsChevron: false)
+                    }
+                }
+
+                sourceNote(entry)
+
+                if let errorText {
+                    Text(errorText)
+                        .font(.footnote)
+                        .foregroundStyle(Theme.danger)
+                        .padding(.horizontal, Theme.Spacing.l)
+                }
+
+                if hub.canDelete(entry) {
+                    SettingsGroup {
+                        Button {
+                            confirmsDelete = true
+                        } label: {
+                            SettingsRow(symbol: "trash", title: L10n.string("contacts.detail.delete"), showsChevron: false, isDestructive: true)
+                        }
+                        .buttonStyle(RowButtonStyle())
+                        .disabled(isDeleting)
+                        .accessibilityIdentifier("contact-delete")
+                    }
                 }
             }
+            .padding(.horizontal, Theme.Spacing.l)
+            .padding(.bottom, Theme.Spacing.xl)
         }
         .toolbar {
             if hub.canWrite(entry) {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(L10n.string("contacts.detail.edit")) { showsEdit = true }
+                        .foregroundStyle(Theme.textPrimary)
                         .accessibilityIdentifier("contact-edit")
                 }
             }
@@ -157,58 +124,231 @@ struct ContactDetailView: View {
         #endif
     }
 
+    // MARK: Header and actions
+
+    private func header(_ entry: ContactEntry) -> some View {
+        VStack(spacing: Theme.Spacing.s) {
+            InitialsAvatar(name: entry.displayName, size: 84)
+
+            Text(entry.displayName)
+                .font(.title2.bold())
+                .foregroundStyle(Theme.textPrimary)
+                .multilineTextAlignment(.center)
+                .accessibilityAddTraits(.isHeader)
+
+            if let company = entry.company, !company.isEmpty, company != entry.displayName {
+                Text(company)
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.textSecondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, Theme.Spacing.m)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func actions(_ entry: ContactEntry) -> some View {
+        let first = entry.phones.first?.number
+
+        return HStack(spacing: Theme.Spacing.m) {
+            actionButton(symbol: "phone.fill", title: L10n.string("contacts.call"), isPrimary: true, isEnabled: first != nil) {
+                if let first { model.call(first, from: nil) }
+            }
+            .accessibilityIdentifier("contact-call")
+
+            actionButton(symbol: "doc.on.doc", title: L10n.string("contacts.copy"), isEnabled: first != nil) {
+                if let first {
+                    UIPasteboard.general.string = first
+                    Haptics.tap()
+                }
+            }
+
+            actionButton(
+                symbol: favorites.contains(entry.id) ? "star.fill" : "star",
+                title: L10n.string(favorites.contains(entry.id) ? "contacts.favorite.remove" : "contacts.favorite.add")
+            ) {
+                favorites.toggle(entry.id)
+            }
+            .accessibilityIdentifier("contact-favorite")
+        }
+        .padding(.bottom, Theme.Spacing.l)
+    }
+
+    private func actionButton(symbol: String, title: String, isPrimary: Bool = false, isEnabled: Bool = true, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: Theme.Spacing.xs) {
+                Image(systemName: symbol)
+                    .font(.title3)
+                    .accessibilityHidden(true)
+                Text(title)
+                    .font(.footnote.weight(.medium))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .foregroundStyle(isPrimary ? Theme.onAccent : Theme.textPrimary)
+            .frame(maxWidth: .infinity, minHeight: 64)
+            .padding(.vertical, Theme.Spacing.xs)
+            .background(isPrimary ? Theme.accent : Theme.raised, in: Theme.card(Theme.Radius.s))
+            .opacity(isEnabled ? 1 : 0.4)
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+    }
+
     // MARK: Numbers
 
     @ViewBuilder
-    private func numberRow(_ phone: ContactPhoneEntry, entry: ContactEntry) -> some View {
-        if model.accounts.count > 1 {
-            Menu {
-                ForEach(model.accounts) { account in
-                    Button {
-                        model.call(phone.number, from: account.id)
-                    } label: {
-                        Label(String(format: L10n.string("contacts.call.with"), account.displayLabel), systemImage: "phone")
-                    }
-                }
-            } label: {
-                numberLabel(phone)
-            } primaryAction: {
-                model.call(phone.number, from: nil)
+    private func numbers(_ entry: ContactEntry) -> some View {
+        SettingsGroup(title: L10n.string("contacts.detail.numbers")) {
+            if entry.phones.isEmpty {
+                SettingsRow(title: L10n.string("contacts.detail.noNumbers"), showsChevron: false)
             }
-            .accessibilityIdentifier("contact-number")
-        } else {
-            Button {
-                model.call(phone.number, from: nil)
-            } label: {
-                numberLabel(phone)
+
+            ForEach(entry.phones, id: \.self) { phone in
+                numberRow(phone)
             }
-            .accessibilityIdentifier("contact-number")
         }
     }
 
+    @ViewBuilder
+    private func numberRow(_ phone: ContactPhoneEntry) -> some View {
+        Group {
+            if model.accounts.count > 1 {
+                Menu {
+                    ForEach(model.accounts) { account in
+                        Button {
+                            model.call(phone.number, from: account.id)
+                        } label: {
+                            Label(String(format: L10n.string("contacts.call.with"), account.displayLabel), systemImage: "phone")
+                        }
+                    }
+                } label: {
+                    numberLabel(phone)
+                } primaryAction: {
+                    model.call(phone.number, from: nil)
+                }
+            } else {
+                Button {
+                    model.call(phone.number, from: nil)
+                } label: {
+                    numberLabel(phone)
+                }
+                .buttonStyle(RowButtonStyle())
+            }
+        }
+        .contextMenu {
+            Button {
+                UIPasteboard.general.string = phone.number
+            } label: {
+                Label(L10n.string("contacts.copy"), systemImage: "doc.on.doc")
+            }
+        }
+        .accessibilityIdentifier("contact-number")
+    }
+
     private func numberLabel(_ phone: ContactPhoneEntry) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Theme.Spacing.m) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(phone.label.title)
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
                 Text(phone.number)
                     .font(.body)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(Theme.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            Spacer()
+            Spacer(minLength: Theme.Spacing.s)
 
             Image(systemName: "phone.fill")
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Brand.ink)
+                .foregroundStyle(Theme.onAccent)
                 .frame(width: 34, height: 34)
-                .background(Circle().fill(Brand.lime))
+                .background(Circle().fill(Theme.accent))
                 .accessibilityHidden(true)
         }
-        .contentShape(Rectangle())
+        .settingsRowChrome()
         .accessibilityElement(children: .combine)
         .accessibilityLabel(String(format: L10n.string("contacts.call.number"), phone.label.title, phone.number))
+    }
+
+    // MARK: Recent calls
+
+    @ViewBuilder
+    private func recentCalls(_ entry: ContactEntry) -> some View {
+        let calls = ContactRecentCalls.matching(model.recents, phones: entry.phones.map(\.number))
+
+        if !entry.phones.isEmpty {
+            SettingsGroup(title: L10n.string("contacts.detail.recent")) {
+                if calls.isEmpty {
+                    SettingsRow(title: L10n.string("contacts.detail.recent.empty"), showsChevron: false)
+                }
+
+                ForEach(calls) { call in
+                    recentRow(call)
+                }
+            }
+        }
+    }
+
+    private func recentRow(_ call: RecentCall) -> some View {
+        let isMissed = call.direction == .incoming && call.outcome == .missed
+
+        return HStack(spacing: Theme.Spacing.m) {
+            Image(systemName: call.direction == .outgoing ? "arrow.up.right" : "arrow.down.left")
+                .font(.footnote.weight(.bold))
+                .foregroundStyle(isMissed ? Theme.danger : Theme.textSecondary)
+                .frame(width: 20)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(Self.outcome(call))
+                    .font(.body)
+                    .foregroundStyle(isMissed ? Theme.danger : Theme.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(call.startedAt.formatted(date: .abbreviated, time: .shortened))
+                    .font(.footnote)
+                    .foregroundStyle(Theme.textSecondary)
+            }
+
+            Spacer(minLength: Theme.Spacing.s)
+        }
+        .settingsRowChrome()
+        .accessibilityElement(children: .combine)
+    }
+
+    private static func outcome(_ call: RecentCall) -> String {
+        switch call.outcome {
+        case .answered:
+            let total = max(0, Int(call.duration.rounded()))
+
+            return String(format: "%d:%02d", total / 60, total % 60)
+        case .missed: return L10n.string("recents.outcome.missed")
+        case .declined: return L10n.string("recents.outcome.declined")
+        case .notAnswered: return L10n.string("recents.outcome.notAnswered")
+        case .failed: return L10n.string("recents.outcome.failed")
+        }
+    }
+
+    @ViewBuilder
+    private func sourceNote(_ entry: ContactEntry) -> some View {
+        switch entry.source {
+        case .device:
+            note("contacts.detail.deviceNote")
+        case .internalExtensions:
+            note("contacts.detail.colleagueNote")
+        case .customer:
+            EmptyView()
+        }
+    }
+
+    private func note(_ key: String) -> some View {
+        Text(L10n.string(key))
+            .font(.footnote)
+            .foregroundStyle(Theme.textTertiary)
+            .padding(.horizontal, Theme.Spacing.l)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     // MARK: Data

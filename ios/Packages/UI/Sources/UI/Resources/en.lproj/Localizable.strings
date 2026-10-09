@@ -152,7 +152,7 @@
 "contacts.edit.lists" = "Lists";
 "contacts.edit.account" = "Save in";
 "contacts.edit.account.footer" = "The contact goes into this company's address book and shows up in the portal too.";
-"contacts.edit.needs" = "Enter a name and a phone number or email address.";
+"contacts.edit.needs" = "Enter a phone number, or a name with an email address.";
 "contacts.edit.discard.title" = "Discard changes?";
 "contacts.edit.discard.confirm" = "Discard";
 "contacts.edit.discard.keep" = "Keep editing";
@@ -542,3 +542,29 @@
 "voicemail.empty.message" = "This extension has no voicemail box, or you have no access to it.";
 "settings.dot.connecting" = "Connecting";
 "settings.dot.offline" = "Offline";
+
+/* Task 8: Contacts in the new form */
+"contacts.segment.centrale" = "Phone system";
+"contacts.segment.phone" = "Phone";
+"contacts.filter.pillAll" = "All";
+"contacts.filter.favorites" = "Favorites";
+"contacts.filter.internal" = "Internal";
+"contacts.filter.label" = "Filter: %@";
+"contacts.favorites.empty" = "You have no favorites yet. Choose ··· on a contact to add one.";
+"contacts.search.clear" = "Clear search";
+"contacts.row.more" = "More actions for %@";
+"contacts.call" = "Call";
+"contacts.copy" = "Copy";
+"contacts.favorite.add" = "Favorite";
+"contacts.favorite.remove" = "Remove favorite";
+"contacts.favorite.label" = "Favorite";
+"contacts.phone.off.title" = "Contacts of this phone";
+"contacts.phone.off.message" = "Let FSVoip read the contacts of this phone to show names and numbers here. They stay on your phone.";
+"contacts.phone.off.enable" = "Use contacts";
+"contacts.phone.denied.title" = "No access to contacts";
+"contacts.detail.recent" = "Recent calls";
+"contacts.detail.recent.empty" = "No calls with this number yet.";
+"contacts.edit.name" = "Name";
+"contacts.edit.country" = "Country code";
+"contacts.edit.labelPicker" = "Type of number";
+"contacts.edit.removeNumber" = "Remove number";

@@ -3,21 +3,6 @@ import Core
 import FSContacts
 import SwiftUI
 
-/// The round initials of a contact.
-struct ContactAvatar: View {
-    let name: String
-    var size: CGFloat = 40
-
-    var body: some View {
-        Text(ContactBrowsing.initials(for: name))
-            .font(.system(size: size * 0.38, weight: .semibold, design: .rounded))
-            .foregroundStyle(.secondary)
-            .frame(width: size, height: size)
-            .background(Circle().fill(Color(.secondarySystemFill)))
-            .accessibilityHidden(true)
-    }
-}
-
 extension ContactPhoneLabel {
     var title: String {
         switch self {
