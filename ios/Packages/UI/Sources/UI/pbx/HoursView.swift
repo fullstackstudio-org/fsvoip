@@ -72,6 +72,7 @@ struct HoursEditView: View {
     @State private var original: PbxHours
     @State private var draft: HoursDraft
     @State private var failure: PbxFailure?
+    @State private var editingDay: Int?
     @Environment(\.dismiss) private var dismiss
 
     init(model: PbxSectionModel, hours: PbxHours) {
@@ -95,8 +96,15 @@ struct HoursEditView: View {
             PbxFormError(failure: failure)
 
             Group {
-                ForEach(HoursDraft.weekdays, id: \.self) { day in
-                    daySection(day)
+                Section {
+                    DayBars(week: WeekPlan(days: draft.days), isEnabled: !model.isReadOnly) { day in
+                        editingDay = day
+                    }
+                    .listRowInsets(EdgeInsets())
+                } header: {
+                    Text(L10n.string("numbers.hours.tab.week"))
+                } footer: {
+                    Text(L10n.string("numbers.hours.bars.footer"))
                 }
 
                 Section {
@@ -117,53 +125,14 @@ struct HoursEditView: View {
                 PbxSaveButton(isSaving: model.isSaving, isEnabled: hasChanges && !model.isReadOnly, action: save)
             }
         }
-        .accessibilityIdentifier("pbx-hours-edit")
-    }
-
-    private func daySection(_ day: Int) -> some View {
-        let intervals = draft.days[day] ?? []
-
-        return Section {
-            Toggle(PbxVocabulary.weekday(day), isOn: Binding(
-                get: { !(draft.days[day] ?? []).isEmpty },
-                set: { open in draft.days[day] = open ? [HoursDraft.defaultInterval] : [] }
-            ))
-
-            ForEach(intervals) { interval in
-                if let index = (draft.days[day] ?? []).firstIndex(where: { $0.id == interval.id }) {
-                    HStack {
-                        TimeField(label: L10n.string("pbx.hours.from"), text: Binding(
-                            get: { draft.days[day]?[index].from ?? "09:00" },
-                            set: { draft.days[day]?[index].from = $0 }
-                        ), isEnd: false)
-                        Text("–")
-                            .accessibilityHidden(true)
-                        TimeField(label: L10n.string("pbx.hours.to"), text: Binding(
-                            get: { draft.days[day]?[index].to ?? "17:00" },
-                            set: { draft.days[day]?[index].to = $0 }
-                        ), isEnd: true)
-                        Spacer()
-                        Button(role: .destructive) {
-                            draft.days[day]?.remove(at: index)
-                        } label: {
-                            Image(systemName: "minus.circle.fill")
-                        }
-                        .buttonStyle(.borderless)
-                        .accessibilityLabel(L10n.string("pbx.hours.removeSlot"))
-                    }
+        .navigationDestination(isPresented: Binding(get: { editingDay != nil }, set: { if !$0 { editingDay = nil } })) {
+            if let day = editingDay {
+                ChainSubPage(title: original.name) {
+                    DaySlotsEditor(day: day, slots: Binding(get: { draft.days[day] ?? [] }, set: { draft.days[day] = $0 }), isEnabled: !model.isReadOnly)
                 }
-            }
-
-            if !intervals.isEmpty, intervals.count < HoursDraft.intervalsPerDay {
-                Button {
-                    draft.days[day]?.append(HoursInterval(from: "13:00", to: "17:00"))
-                } label: {
-                    Label(L10n.string("pbx.hours.addSlot"), systemImage: "plus.circle")
-                        .font(.subheadline)
-                }
-                .buttonStyle(.borderless)
             }
         }
+        .accessibilityIdentifier("pbx-hours-edit")
     }
 
     private func save() {

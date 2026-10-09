@@ -1,0 +1,32 @@
+{
+  "numbers": [
+    {
+      "id": "d4e5f6a7-b8c9-4d0e-a1f2-b3c4d5e6f7a8",
+      "number": "0850607848",
+      "name": "Hoofdnummer",
+      "mode": "simple",
+      "summary": {
+        "hours": "ma-vr 9:00-17:00",
+        "welcome": true,
+        "forwarding": "standard",
+        "recording": false
+      },
+      "sync": "ok",
+      "version": 4
+    },
+    {
+      "id": "e5f6a7b8-c9d0-4e1f-b2a3-c4d5e6f7a8b9",
+      "number": "0850607849",
+      "name": null,
+      "mode": "advanced",
+      "summary": {
+        "hours": "Uit",
+        "welcome": false,
+        "forwarding": "advanced",
+        "recording": true
+      },
+      "sync": "pending",
+      "version": 2
+    }
+  ]
+}

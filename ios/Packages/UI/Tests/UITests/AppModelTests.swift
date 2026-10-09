@@ -417,10 +417,10 @@ final class DialerInputTests: XCTestCase {
     }
 }
 
-final class RecentRowFormatTests: XCTestCase {
+final class HistoryFormatTests: XCTestCase {
     func testDuration() {
-        XCTAssertEqual(RecentRow.duration(42), "0:42")
-        XCTAssertEqual(RecentRow.duration(312), "5:12")
-        XCTAssertEqual(RecentRow.duration(3723), "1:02:03")
+        XCTAssertEqual(HistoryFormat.duration(42), "0:42")
+        XCTAssertEqual(HistoryFormat.duration(312), "5:12")
+        XCTAssertEqual(HistoryFormat.duration(3723), "1:02:03")
     }
 }

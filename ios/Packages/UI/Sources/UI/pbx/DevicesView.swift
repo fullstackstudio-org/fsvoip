@@ -2,32 +2,46 @@
 import Core
 import SwiftUI
 
+/// "Toestellen": every toestel of the centrale with whether it is connected and what it does with a call.
 struct DevicesView: View {
     @ObservedObject var model: PbxSectionModel
 
-    var body: some View {
-        List {
-            PbxNoticesSection(model: model)
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.pbxClose) private var close
 
-            if let response = model.devices {
-                Section {
-                    ForEach(response.devices) { device in
-                        NavigationLink {
-                            DeviceEditView(model: model, device: device)
-                        } label: {
-                            DeviceRow(device: device, options: response.targets)
+    var body: some View {
+        SheetShell(title: L10n.string("pbx.devices.title"), back: { dismiss() }, onClose: { (close ?? { dismiss() })() }) {
+            VStack(alignment: .leading, spacing: 0) {
+                SectionNoticeCards(model: model)
+
+                if let response = model.devices {
+                    if response.devices.isEmpty {
+                        EmptyState(symbol: "phone", title: L10n.string("pbx.devices.empty"))
+                    } else {
+                        SettingsGroup(footer: L10n.string("pbx.devices.footer")) {
+                            ForEach(response.devices) { device in
+                                NavigationLink {
+                                    DeviceEditView(model: model, device: device)
+                                } label: {
+                                    DeviceRow(device: device, options: response.targets)
+                                }
+                                .buttonStyle(RowButtonStyle())
+                                .accessibilityIdentifier("pbx-device-row")
+                            }
                         }
-                        .accessibilityIdentifier("pbx-device-row")
                     }
-                } footer: {
-                    Text(L10n.string("pbx.devices.footer"))
+                } else if model.isLoading {
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                        .padding(Theme.Spacing.xl)
+                } else if model.loadFailure != nil || model.isOutdated {
+                    EmptyState(symbol: "wifi.exclamationmark", title: L10n.string("pbx.devices.loadFailed"), actionTitle: L10n.string("action.retry")) {
+                        Task { await model.refresh(.devices) }
+                    }
                 }
-            } else if model.isLoading {
-                ProgressView()
-                    .frame(maxWidth: .infinity)
             }
         }
-        .navigationTitle(L10n.string("pbx.devices.title"))
+        .toolbar(.hidden, for: .navigationBar)
         .refreshable { await model.refresh(.devices) }
         .task { await model.loadIfNeeded(.devices) }
         .accessibilityIdentifier("pbx-devices")
@@ -38,53 +52,59 @@ private struct DeviceRow: View {
     let device: PbxDevice
     let options: [PbxTargetOption]
 
-    private var connection: (text: String, tint: Color)? {
+    private var connection: String? {
         guard let registration = device.registration else {
             return nil
         }
 
-        return registration.connected
-            ? (L10n.string("pbx.device.connected"), Color.green)
-            : (L10n.string("pbx.device.disconnected"), Color(.systemGray))
+        return registration.connected ? L10n.string("pbx.device.connected") : L10n.string("pbx.device.disconnected")
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(device.name)
-                    .font(.body.weight(.medium))
-                if let number = device.extensionNumber {
-                    Text(number)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            }
+        HStack(spacing: Theme.Spacing.m) {
+            InitialsAvatar(name: device.name, size: 40, dot: device.registration?.connected == true ? Theme.accent : nil)
 
-            if let connection {
-                HStack(spacing: 6) {
-                    Circle().fill(connection.tint).frame(width: 8, height: 8)
-                        .accessibilityHidden(true)
-                    Text(connection.text)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: Theme.Spacing.s) {
+                    Text(device.name)
+                        .font(.body)
+                        .foregroundStyle(Theme.textPrimary)
+                    if let number = device.extensionNumber {
+                        Text(number)
+                            .font(.subheadline)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                }
+
+                if let connection {
+                    Text(connection)
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                 }
+
+                if let forward = device.forwardAlways {
+                    Label(String(format: L10n.string("pbx.device.forwarding"), PbxVocabulary.describe(forward, options: options)), systemImage: "arrow.uturn.forward")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.busy)
+                }
+
+                if device.dnd {
+                    Label(L10n.string("pbx.flow.dnd"), systemImage: "moon.fill")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.busy)
+                }
+
+                PbxSyncBadge(sync: device.sync)
             }
 
-            if let forward = device.forwardAlways {
-                Label(String(format: L10n.string("pbx.device.forwarding"), PbxVocabulary.describe(forward, options: options)), systemImage: "arrow.uturn.forward")
-                    .font(.footnote)
-                    .foregroundStyle(Brand.amber)
-            }
+            Spacer(minLength: Theme.Spacing.s)
 
-            if device.dnd {
-                Label(L10n.string("pbx.flow.dnd"), systemImage: "moon.fill")
-                    .font(.footnote)
-                    .foregroundStyle(Brand.amber)
-            }
-
-            PbxSyncBadge(sync: device.sync)
+            Image(systemName: "chevron.right")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Theme.textTertiary)
+                .accessibilityHidden(true)
         }
-        .padding(.vertical, 2)
+        .settingsRowChrome()
         .accessibilityElement(children: .combine)
     }
 }
@@ -112,102 +132,97 @@ struct DeviceEditView: View {
     }
 
     var body: some View {
-        Form {
-            PbxNoticesSection(model: model)
-
-            PbxFormError(failure: failure)
-
-            Group {
-                Section {
-                    Toggle(L10n.string("pbx.device.voicemail"), isOn: $draft.voicemailEnabled)
+        ChainEditorScaffold(model: model, title: original.name, isDirty: hasChanges, message: failure.map(ChainEditorMessage.failure), onSave: save) {
+            VStack(alignment: .leading, spacing: 0) {
+                SettingsGroup(title: original.name) {
+                    ToggleRow(title: L10n.string("pbx.device.voicemail"), explanation: L10n.string("pbx.device.voicemail.footer"), isOn: $draft.voicemailEnabled)
                         .accessibilityIdentifier("pbx-voicemail-toggle")
-                } header: {
-                    Text(original.name)
-                } footer: {
-                    Text(L10n.string("pbx.device.voicemail.footer"))
-                }
-
-                Section {
-                    Toggle(L10n.string("pbx.device.dnd"), isOn: $draft.dnd)
+                    ToggleRow(title: L10n.string("pbx.device.dnd"), explanation: L10n.string("pbx.device.dnd.footer"), isOn: $draft.dnd)
                         .accessibilityIdentifier("pbx-dnd-toggle")
-                } footer: {
-                    Text(L10n.string("pbx.device.dnd.footer"))
                 }
 
-                Section {
-                    TargetRow(title: L10n.string("pbx.device.forward.title"), target: $draft.forwardAlways, options: options, noneLabel: L10n.string("pbx.device.forward.off"))
+                SettingsGroup(footer: L10n.string("pbx.device.forward.footer")) {
+                    TargetChoiceRow(title: L10n.string("pbx.device.forward.title"), target: $draft.forwardAlways, options: options, noneLabel: L10n.string("pbx.device.forward.off"), symbol: "arrow.uturn.forward")
                         .accessibilityIdentifier("pbx-forward-row")
-                } footer: {
-                    Text(L10n.string("pbx.device.forward.footer"))
                 }
 
-                Section {
+                SettingsGroup(title: L10n.string("pbx.device.noAnswer.title"), footer: L10n.string("pbx.device.noAnswer.footer")) {
                     Stepper(value: $draft.noAnswerSeconds, in: DeviceDraft.noAnswerRange, step: 5) {
                         Text(String(format: L10n.string("pbx.device.noAnswer.after"), draft.noAnswerSeconds))
+                            .foregroundStyle(Theme.textPrimary)
                     }
-                    TargetRow(title: L10n.string("pbx.device.noAnswer.then"), target: $draft.noAnswerTarget, options: options, noneLabel: L10n.string(draft.voicemailEnabled ? "pbx.device.noAnswer.default.voicemail" : "pbx.device.noAnswer.default.ring"))
-                } header: {
-                    Text(L10n.string("pbx.device.noAnswer.title"))
-                } footer: {
-                    Text(L10n.string("pbx.device.noAnswer.footer"))
+                    .settingsRowChrome()
+
+                    TargetChoiceRow(title: L10n.string("pbx.device.noAnswer.then"), target: $draft.noAnswerTarget, options: options, noneLabel: L10n.string(draft.voicemailEnabled ? "pbx.device.noAnswer.default.voicemail" : "pbx.device.noAnswer.default.ring"))
                 }
 
-                Section {
-                    TargetRow(title: L10n.string("pbx.device.busy.then"), target: $draft.busyTarget, options: options, noneLabel: L10n.string("pbx.device.busy.default"))
-                } header: {
-                    Text(L10n.string("pbx.device.busy.title"))
+                SettingsGroup(title: L10n.string("pbx.device.busy.title")) {
+                    TargetChoiceRow(title: L10n.string("pbx.device.busy.then"), target: $draft.busyTarget, options: options, noneLabel: L10n.string("pbx.device.busy.default"))
                 }
 
-                Section {
-                    TargetRow(title: L10n.string("pbx.device.offline.then"), target: $draft.notRegisteredTarget, options: options, noneLabel: L10n.string("pbx.device.offline.default"))
-                } header: {
-                    Text(L10n.string("pbx.device.offline.title"))
+                SettingsGroup(title: L10n.string("pbx.device.offline.title")) {
+                    TargetChoiceRow(title: L10n.string("pbx.device.offline.then"), target: $draft.notRegisteredTarget, options: options, noneLabel: L10n.string("pbx.device.offline.default"))
                 }
 
-                followMeSection
-            }
-            .disabled(model.isReadOnly)
-        }
-        .navigationTitle(original.name)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                PbxSaveButton(isSaving: model.isSaving, isEnabled: hasChanges && !model.isReadOnly, action: save)
+                followMeGroup
             }
         }
         .accessibilityIdentifier("pbx-device-edit")
     }
 
-    private var followMeSection: some View {
-        Section {
+    private var followMeGroup: some View {
+        SettingsGroup(title: L10n.string("pbx.followMe.title"), footer: L10n.string("pbx.followMe.footer")) {
             ForEach(draft.followMe.indices, id: \.self) { index in
                 NavigationLink {
-                    FollowMeStepView(step: $draft.followMe[index], options: options)
+                    FollowMeStepView(
+                        step: stepBinding(index),
+                        options: options,
+                        canMoveUp: index > 0,
+                        canMoveDown: index < draft.followMe.count - 1,
+                        onMove: { move(index, by: $0) },
+                        onDelete: { remove(index) }
+                    )
                 } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(PbxVocabulary.describe(draft.followMe[index].target, options: options))
-                        Text(String(format: L10n.string("pbx.followMe.timing"), draft.followMe[index].delaySeconds, draft.followMe[index].timeoutSeconds))
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                    .accessibilityElement(children: .combine)
+                    SettingsRow(title: PbxVocabulary.describe(draft.followMe[index].target, options: options), subtitle: String(format: L10n.string("pbx.followMe.timing"), draft.followMe[index].delaySeconds, draft.followMe[index].timeoutSeconds))
                 }
+                .buttonStyle(RowButtonStyle())
+                .accessibilityIdentifier("pbx-followme-row")
             }
-            .onDelete { draft.followMe.remove(atOffsets: $0) }
-            .onMove { draft.followMe.move(fromOffsets: $0, toOffset: $1) }
 
             if draft.followMe.count < DeviceDraft.followMeLimit {
                 Button {
                     draft.followMe.append(FollowMeStep(target: .external(""), delaySeconds: draft.followMe.isEmpty ? 0 : 10))
                 } label: {
-                    Label(L10n.string("pbx.followMe.add"), systemImage: "plus.circle")
+                    SettingsRow(symbol: "plus.circle", title: L10n.string("pbx.followMe.add"), showsChevron: false)
                 }
+                .buttonStyle(RowButtonStyle())
+                .accessibilityIdentifier("pbx-followme-add")
             }
-        } header: {
-            Text(L10n.string("pbx.followMe.title"))
-        } footer: {
-            Text(L10n.string("pbx.followMe.footer"))
         }
+    }
+
+    /// A binding that survives the step being deleted while its page is still on screen.
+    private func stepBinding(_ index: Int) -> Binding<FollowMeStep> {
+        let fallback = FollowMeStep(target: .external(""))
+
+        return Binding(
+            get: { draft.followMe.indices.contains(index) ? draft.followMe[index] : fallback },
+            set: { if draft.followMe.indices.contains(index) { draft.followMe[index] = $0 } }
+        )
+    }
+
+    private func move(_ index: Int, by offset: Int) {
+        let target = index + offset
+
+        guard draft.followMe.indices.contains(index), draft.followMe.indices.contains(target) else { return }
+
+        draft.followMe.swapAt(index, target)
+    }
+
+    private func remove(_ index: Int) {
+        guard draft.followMe.indices.contains(index) else { return }
+
+        draft.followMe.remove(at: index)
     }
 
     private func save() {
@@ -233,29 +248,64 @@ struct DeviceEditView: View {
 struct FollowMeStepView: View {
     @Binding var step: FollowMeStep
     let options: [PbxTargetOption]
+    var canMoveUp = false
+    var canMoveDown = false
+    var onMove: (Int) -> Void = { _ in }
+    var onDelete: () -> Void = {}
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.pbxClose) private var close
 
     private var target: Binding<PbxTarget?> {
         Binding(get: { step.target }, set: { if let value = $0 { step.target = value } })
     }
 
     var body: some View {
-        Form {
-            Section {
-                TargetRow(title: L10n.string("pbx.followMe.who"), target: target, options: options, allowsNone: false)
-            }
+        SheetShell(title: L10n.string("pbx.followMe.step"), back: { dismiss() }, onClose: { (close ?? { dismiss() })() }) {
+            VStack(alignment: .leading, spacing: 0) {
+                SettingsGroup {
+                    TargetChoiceRow(title: L10n.string("pbx.followMe.who"), target: target, options: options, allowsNone: false)
+                }
 
-            Section {
-                Stepper(value: $step.delaySeconds, in: 0 ... 120, step: 5) {
-                    Text(String(format: L10n.string("pbx.followMe.delay"), step.delaySeconds))
+                SettingsGroup(footer: L10n.string("pbx.followMe.step.footer")) {
+                    Stepper(value: $step.delaySeconds, in: 0 ... 120, step: 5) {
+                        Text(String(format: L10n.string("pbx.followMe.delay"), step.delaySeconds)).foregroundStyle(Theme.textPrimary)
+                    }
+                    .settingsRowChrome()
+
+                    Stepper(value: $step.timeoutSeconds, in: 5 ... 120, step: 5) {
+                        Text(String(format: L10n.string("pbx.followMe.timeout"), step.timeoutSeconds)).foregroundStyle(Theme.textPrimary)
+                    }
+                    .settingsRowChrome()
                 }
-                Stepper(value: $step.timeoutSeconds, in: 5 ... 120, step: 5) {
-                    Text(String(format: L10n.string("pbx.followMe.timeout"), step.timeoutSeconds))
+
+                SettingsGroup {
+                    if canMoveUp {
+                        Button { onMove(-1) } label: {
+                            SettingsRow(symbol: "arrow.up", title: L10n.string("pbx.followMe.moveUp"), showsChevron: false)
+                        }
+                        .buttonStyle(RowButtonStyle())
+                    }
+
+                    if canMoveDown {
+                        Button { onMove(1) } label: {
+                            SettingsRow(symbol: "arrow.down", title: L10n.string("pbx.followMe.moveDown"), showsChevron: false)
+                        }
+                        .buttonStyle(RowButtonStyle())
+                    }
+
+                    Button {
+                        dismiss()
+                        // After the page has gone: its binding must not read a step that no longer exists.
+                        DispatchQueue.main.async { onDelete() }
+                    } label: {
+                        SettingsRow(symbol: "trash", title: L10n.string("pbx.followMe.remove"), showsChevron: false, isDestructive: true)
+                    }
+                    .buttonStyle(RowButtonStyle())
+                    .accessibilityIdentifier("pbx-followme-remove")
                 }
-            } footer: {
-                Text(L10n.string("pbx.followMe.step.footer"))
             }
         }
-        .navigationTitle(L10n.string("pbx.followMe.step"))
-        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .navigationBar)
     }
 }

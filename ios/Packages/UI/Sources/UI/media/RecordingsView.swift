@@ -8,6 +8,7 @@ struct RecordingsView: View {
     @StateObject private var model: RecordingsModel
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.pbxClose) private var close
 
     init(hub: MediaHub, account: StoredAccount) {
         self.hub = hub
@@ -15,29 +16,28 @@ struct RecordingsView: View {
     }
 
     var body: some View {
-        List {
-            if let banner = model.banner {
-                Section {
-                    MediaNotice(symbol: banner.isError ? "exclamationmark.circle.fill" : "info.circle.fill", tint: banner.isError ? Brand.hangUp : .secondary, text: banner.text)
+        SheetShell(title: L10n.string("media.recordings.title"), back: { dismiss() }, onClose: { (close ?? { dismiss() })() }) {
+            VStack(alignment: .leading, spacing: 0) {
+                if let banner = model.banner {
+                    NoticeCard(symbol: banner.isError ? "exclamationmark.circle.fill" : "info.circle.fill", tint: banner.isError ? Theme.danger : Theme.textSecondary, title: banner.text)
                         .accessibilityIdentifier("media-banner")
                 }
-            }
 
-            if model.page != nil {
-                monthSection
-            }
+                if model.page != nil {
+                    monthGroup
+                }
 
-            content
+                content
+            }
         }
-        .navigationTitle(L10n.string("media.recordings.title"))
-        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .navigationBar)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if let nowPlaying = model.nowPlaying {
                 AudioPlayerBar(player: hub.player, nowPlaying: nowPlaying, kind: .recording, onClose: model.closePlayer, onRetry: model.retryPlaying)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .animation(.easeOut(duration: 0.22), value: model.nowPlaying)
+        .motionAnimation(.easeOut(duration: 0.22), value: model.nowPlaying)
         .refreshable { await model.load() }
         .task {
             await model.load()
@@ -47,8 +47,8 @@ struct RecordingsView: View {
         .accessibilityIdentifier("recordings-list")
     }
 
-    private var monthSection: some View {
-        Section {
+    private var monthGroup: some View {
+        SettingsGroup(title: L10n.string("media.recordings.month")) {
             Menu {
                 ForEach(model.months, id: \.self) { month in
                     Button {
@@ -58,21 +58,19 @@ struct RecordingsView: View {
                     }
                 }
             } label: {
-                HStack {
-                    Label(model.monthTitle.capitalized, systemImage: "calendar")
-                        .foregroundStyle(.primary)
-                    Spacer()
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
-                }
+                SettingsRow(symbol: "calendar", title: model.monthTitle.capitalized, showsChevron: false)
+                    .overlay(alignment: .trailing) {
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.textTertiary)
+                            .padding(.trailing, Theme.Spacing.l)
+                            .accessibilityHidden(true)
+                    }
             }
+            .buttonStyle(RowButtonStyle())
             .accessibilityLabel(L10n.string("media.recordings.month"))
             .accessibilityValue(model.monthTitle)
             .accessibilityIdentifier("recordings-month")
-        } header: {
-            Text(L10n.string("media.recordings.month"))
         }
     }
 
@@ -80,37 +78,26 @@ struct RecordingsView: View {
     private var content: some View {
         if model.page == nil {
             if model.isLoading {
-                Section {
-                    HStack {
-                        Spacer()
-                        ProgressView()
-                        Spacer()
-                    }
-                }
+                ProgressView()
+                    .frame(maxWidth: .infinity)
+                    .padding(Theme.Spacing.xl)
             } else if let failure = model.failure {
-                Section {
-                    MediaNotice(symbol: "exclamationmark.circle.fill", tint: Brand.hangUp, text: failure.message(for: .recording))
+                NoticeCard(symbol: "exclamationmark.circle.fill", tint: Theme.danger, title: failure.message(for: .recording))
 
-                    if failure.isRetryable {
-                        Button(L10n.string("action.retry")) { Task { await model.load() } }
-                    }
+                if failure.isRetryable {
+                    Button(L10n.string("action.retry")) { Task { await model.load() } }
+                        .buttonStyle(SecondaryButtonStyle())
                 }
             }
         } else if model.isLoading {
-            Section {
-                HStack {
-                    Spacer()
-                    ProgressView()
-                    Spacer()
-                }
-            }
+            ProgressView()
+                .frame(maxWidth: .infinity)
+                .padding(Theme.Spacing.xl)
         } else if model.rows.isEmpty {
-            Section {
-                MediaEmpty(symbol: "waveform", title: L10n.string("media.recordings.empty.title"), message: L10n.string("media.recordings.empty.message"))
-                    .listRowBackground(Color.clear)
-            }
+            EmptyState(symbol: "waveform", title: L10n.string("media.recordings.empty.title"), message: L10n.string("media.recordings.empty.message"))
+                .frame(minHeight: 260)
         } else {
-            Section {
+            SettingsGroup(footer: footerText) {
                 ForEach(model.rows) { call in
                     RecordingRow(
                         title: model.title(for: call),
@@ -121,18 +108,19 @@ struct RecordingsView: View {
                     ) {
                         model.play(call)
                     }
-                    .listRowBackground(model.nowPlayingId == call.id ? Color(.secondarySystemFill) : nil)
-                }
-            } footer: {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(L10n.string("media.recordings.footer"))
-
-                    if model.isTruncated {
-                        Text(L10n.string("media.recordings.truncated"))
-                    }
                 }
             }
         }
+    }
+
+    private var footerText: String {
+        var text = L10n.string("media.recordings.footer")
+
+        if model.isTruncated {
+            text += "\n" + L10n.string("media.recordings.truncated")
+        }
+
+        return text
     }
 
     private func symbol(_ call: CallItem) -> String {
@@ -163,40 +151,36 @@ private struct RecordingRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 14) {
-                ZStack {
-                    Image(systemName: isPlaying ? "waveform" : "play.circle")
-                        .font(.title3)
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(isGone ? Color.secondary.opacity(0.5) : Color.primary)
-                }
-                .frame(width: 28, height: 28)
-                .accessibilityHidden(true)
+            HStack(spacing: Theme.Spacing.m) {
+                Image(systemName: isPlaying ? "waveform" : "play.circle")
+                    .font(.title3)
+                    .foregroundStyle(isPlaying ? Theme.accentText : (isGone ? Theme.textTertiary : Theme.textPrimary))
+                    .frame(width: 28, height: 28)
+                    .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(isGone ? Color.secondary : Color.primary)
-                        .lineLimit(1)
+                        .font(.body)
+                        .foregroundStyle(isGone ? Theme.textSecondary : Theme.textPrimary)
+                        .adaptiveLineLimit(2)
 
                     Text(subtitle)
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
+                        .foregroundStyle(Theme.textSecondary)
+                        .adaptiveLineLimit(2)
 
                     if isGone {
                         Text(L10n.string("media.unavailable.row"))
                             .font(.caption.weight(.medium))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.textSecondary)
                     }
                 }
 
                 Spacer(minLength: 0)
             }
-            .padding(.vertical, 4)
-            .contentShape(Rectangle())
+            .settingsRowChrome()
         }
-        .buttonStyle(.plain)
+        .buttonStyle(RowButtonStyle())
         .disabled(isGone)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)

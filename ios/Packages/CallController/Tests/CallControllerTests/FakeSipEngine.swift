@@ -21,6 +21,8 @@ final class FakeSipEngine: SipEngine {
     var log: [String] = []
     var muted = false
     var failNextCall = false
+    /// The options of every call started, in order.
+    var callOptions: [CallOptions] = []
 
     func start() throws { started = true }
     func stop() {}
@@ -49,13 +51,14 @@ final class FakeSipEngine: SipEngine {
 
     func refreshRegistration(of account: SipAccountID) { log.append("refresh \(account)") }
 
-    func call(number: String, from account: SipAccountID) throws -> CallID {
+    func call(number: String, from account: SipAccountID, options: CallOptions) throws -> CallID {
         if failNextCall {
             failNextCall = false
             throw SipEngineError.engine("boom")
         }
 
         log.append("call \(number) from \(account)")
+        callOptions.append(options)
         return CallID("out-1")
     }
 

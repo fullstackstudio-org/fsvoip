@@ -205,3 +205,70 @@ final class PbxHubTests: XCTestCase {
         XCTAssertEqual(hub.access(for: "b"), .unknown)
     }
 }
+
+/// The settings sheet: "Beheer" exists for an admin only.
+@MainActor
+final class SettingsOutlineTests: XCTestCase {
+    private func outline(me: MeResponse, service: FakePbxService = FakePbxService()) async throws -> SettingsOutline {
+        let store = AccountStore(secrets: InMemorySecretStore())
+        let account = StoredAccount(id: "a", label: "Jan", pbxName: "Voorbeeld Bouw", extensionName: "Jan", extensionNumber: "102", customerName: "Voorbeeld", deviceToken: Secret("fss_vapp_x"), installId: "a1b2c3d4e5f60718", sip: SIPCredentials(username: "102", password: Secret("pw"), domain: "x.powervoip.nl", proxy: "sip.powervoip.nl", port: 5061, transport: .tls, srv: true), pairedAt: Date(timeIntervalSince1970: 1_790_000_000))
+        try store.save(account)
+
+        let preferences = InMemoryPreferencesStore()
+        let accounts = RefreshingAccounts(store: store)
+        accounts.me = me
+        let model = FSVoipAppModel(
+            phone: PhoneController(engine: NullSipEngine(), system: ImmediateCallSystem(), audioRouting: MemoryAudioRouting(), preferences: preferences, endedLinger: 0),
+            accountStore: store,
+            service: accounts,
+            preferences: preferences,
+            recentsStore: RecentCallsStore(defaults: UserDefaults(suiteName: "fsvoip.settingstests.\(UUID().uuidString)")!),
+            device: { DeviceDescriptor(model: "iPhone17,1", osVersion: "26.0", appVersion: "0.1.0 (1)", installId: "a1b2c3d4e5f60718") },
+            requestMicrophone: { true },
+            pbx: PbxHub(service: service, gate: LocalAccessGate(authenticator: FakeLocalAuth()))
+        )
+        await model.refreshAccounts()
+
+        return SettingsOutline(model: model, accountId: "a")
+    }
+
+    func testAUserSeesNoManagement() async throws {
+        let outline = try await outline(me: PbxFixtures.meUser)
+
+        XCTAssertFalse(outline.showsAdmin)
+        XCTAssertTrue(outline.admin.isEmpty)
+    }
+
+    func testAnAdminSeesNumbersDevicesAndRingGroups() async throws {
+        let outline = try await outline(me: PbxFixtures.me)
+
+        XCTAssertTrue(outline.showsAdmin)
+        XCTAssertTrue(outline.admin.starts(with: [.numbers, .devices, .ringGroups]))
+    }
+
+    func testTheCentraleOverviewAndHoursAreInBeheerForAnAdminOnly() async throws {
+        let admin = try await outline(me: PbxFixtures.me)
+        XCTAssertTrue(admin.admin.contains(.overview))
+        XCTAssertTrue(admin.admin.contains(.hours))
+
+        let user = try await outline(me: PbxFixtures.meUser)
+        XCTAssertFalse(user.admin.contains(.overview))
+        XCTAssertFalse(user.admin.contains(.hours))
+    }
+
+    func testAnOldServerWithoutARoleShowsNoManagement() async throws {
+        var me = PbxFixtures.me
+        me.role = nil
+        me.capabilities = nil
+
+        let outline = try await outline(me: me)
+
+        XCTAssertFalse(outline.showsAdmin)
+    }
+
+    func testStartRequestsOpenTheRightPage() {
+        XCTAssertEqual(SettingsOutline.pages(for: .root), [])
+        XCTAssertEqual(SettingsOutline.pages(for: .centrale), [.centrale(.overview)])
+        XCTAssertEqual(SettingsOutline.pages(for: .recordings), [.recordings])
+    }
+}

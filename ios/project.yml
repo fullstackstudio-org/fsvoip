@@ -61,7 +61,7 @@ targets:
         NSCameraUsageDescription: FSVoip gebruikt de camera om de QR-code te scannen waarmee je dit toestel koppelt.
         ITSAppUsesNonExemptEncryption: false
         NSFaceIDUsageDescription: FSVoip vraagt Face ID of je toegangscode voordat je de instellingen van je centrale opent.
-        NSMicrophoneUsageDescription: FSVoip gebruikt de microfoon zodat de ander je kan horen tijdens een gesprek.
+        NSMicrophoneUsageDescription: FSVoip gebruikt de microfoon zodat de ander je kan horen tijdens een gesprek, en om geluiden voor je centrale op te nemen, zoals een welkomstbericht.
     entitlements:
       path: FSVoip/FSVoip.entitlements
       properties:

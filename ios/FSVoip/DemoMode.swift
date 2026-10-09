@@ -2,8 +2,9 @@
 //
 // DEBUG builds only: a demo of the app without a phone system, for the simulator, screenshots and UI checks.
 // Start with the launch argument `-FSVoipDemo YES` (two paired example extensions) or `-FSVoipDemo onboarding`
-// (nothing paired yet). `-FSVoipDemoScreen <dialer|recents|contacts|settings|pbx|voicemail|recordings|account|incall|incoming|push|pairing|failed|scanner>`
-// opens a screen directly. Nothing here talks to a server or a PBX, and nothing is written to the Keychain.
+// (nothing paired yet). `-FSVoipDemoScreen <dialer|chooser|onhold|recents|voicemail|contacts|settings|pbx|numbers|devices|ringgroups|hours|recordings|sounds|appearance|profile|callprefs|invite|incall|parkcall|incoming|push|pairing|failed|scanner>`
+// opens a screen directly. `-FSVoipDemoNumber <open|name|hours|welcome|forwarding|recording>` goes inside the first number of `numbers`. `-FSVoipDemoContactsScreen <detail|edit|new|sources|phone|filter>` goes one step further inside the Contacts tab.
+// Nothing here talks to a server or a PBX, and nothing is written to the Keychain.
 
 #if DEBUG
 import CallController
@@ -56,7 +57,11 @@ enum DemoMode {
             requestMicrophone: { true },
             contacts: ContactsHub(store: InMemoryContactsStore(), api: { _ in demoContacts }, settings: InMemoryContactsSettings(), minimumInterval: 0),
             pbx: PbxHub(service: DemoPbxService(adminAccountId: exampleAccounts[0].id), gate: gate),
-            media: MediaHub(service: DemoMediaService(adminAccountId: exampleAccounts[0].id), gate: gate)
+            media: MediaHub(service: DemoMediaService(adminAccountId: exampleAccounts[0].id), gate: gate, soundService: DemoSoundService()),
+            availability: AvailabilityHub(service: DemoAvailabilityService()),
+            selfExtension: SelfExtensionHub(service: DemoSelfExtensionService()),
+            park: DemoParkService(),
+            outboundNumbers: DemoOutboundNumbersService()
         )
 
         open(defaults.string(forKey: "FSVoipDemoScreen"), model: model, engine: engine)
@@ -72,9 +77,34 @@ enum DemoMode {
             model.selectedTab = .recents
         case "contacts":
             model.selectedTab = .contacts
-        case "settings", "pbx", "voicemail", "recordings":
-            // `pbx`, `voicemail` and `recordings` also open the first account and that section (see `SettingsView`).
-            model.selectedTab = .settings
+        case "onhold":
+            model.selectedTab = .onHold
+        case "voicemail":
+            model.selectedTab = .voicemail
+        case "settings":
+            model.openSettings()
+        case "pbx":
+            model.openSettings(.centrale)
+        case "numbers":
+            model.openSettings(.numbers)
+        case "devices":
+            model.openSettings(.devices)
+        case "ringgroups":
+            model.openSettings(.ringGroups)
+        case "hours":
+            model.openSettings(.hours)
+        case "recordings":
+            model.openSettings(.recordings)
+        case "sounds":
+            model.openSettings(.sounds)
+        case "appearance":
+            model.openSettings(.appearance)
+        case "profile":
+            model.openSettings(.profile)
+        case "callprefs":
+            model.openSettings(.callPreferences)
+        case "invite":
+            model.openSettings(.invite)
         case "scanner":
             model.isScannerPresented = true
         case "pairing":
@@ -83,7 +113,7 @@ enum DemoMode {
             DemoAccountService.failNextPair = true
             model.handleIncoming(url: link)
             Task { await model.confirmPairing() }
-        case "incall":
+        case "incall", "parkcall":
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                 model.call("0612345678", from: exampleAccounts[0].id)
             }
@@ -233,7 +263,7 @@ final class DemoSipEngine: SipEngine {
     func setRegistrationEnabled(_ enabled: Bool, for account: SipAccountID) {}
     func refreshRegistration(of account: SipAccountID) {}
 
-    func call(number: String, from account: SipAccountID) throws -> CallID {
+    func call(number: String, from account: SipAccountID, options: CallOptions) throws -> CallID {
         let id = CallID()
         live[id] = CallInfo(id: id, direction: .outgoing, accountId: account, remoteNumber: number, remoteName: nil, state: .outgoingInitiated)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in self?.change(id, .outgoingRinging) }
@@ -469,6 +499,118 @@ final class DemoContactsAPI: ContactsAPI, @unchecked Sendable {
 
     private static func decode<T: Decodable>(_ type: T.Type, _ object: [String: Any]) throws -> T {
         try FSVoipJSON.decoder().decode(type, from: JSONSerialization.data(withJSONObject: object))
+    }
+}
+
+/// The numbers of the example phone system: three, so the chooser has something to choose from.
+final class DemoOutboundNumbersService: OutboundNumbersServicing, @unchecked Sendable {
+    func numbers(for account: StoredAccount) async throws -> OutboundNumbers {
+        try await Task.sleep(nanoseconds: 150_000_000)
+
+        return OutboundNumbers(
+            numbers: [
+                SelfNumber(id: "n1", number: "0850607848", name: "Hoofdnummer", isDefault: true),
+                SelfNumber(id: "n2", number: "0850607849", name: "Werkplaats"),
+                SelfNumber(id: "n3", number: "0201234567", name: nil),
+            ],
+            defaultNumber: "0850607848"
+        )
+    }
+}
+
+/// The own extension in memory: saving works (the version moves on), nothing leaves the phone. An invitation is a placeholder link.
+final class DemoSelfExtensionService: SelfExtensionServicing, InviteServicing, @unchecked Sendable {
+    private let lock = NSLock()
+    private var state: SelfExtension
+
+    init() {
+        state = try! FSVoipJSON.decoder().decode(SelfExtension.self, from: Data(Self.json.utf8))
+    }
+
+    func load(for account: StoredAccount) async throws -> SelfExtension {
+        lock.lock()
+        defer { lock.unlock() }
+
+        return state
+    }
+
+    func patch(_ patch: SelfExtensionPatch, for account: StoredAccount) async throws -> SelfExtension? {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard patch.version == state.version else { throw APIError.stale(version: state.version) }
+
+        if let value = patch.dnd { state.dnd = value }
+        if let value = patch.noAnswerSeconds { state.noAnswerSeconds = value }
+        if let value = patch.voicemailEnabled { state.voicemailEnabled = value }
+        if let value = patch.voicemailToEmail { state.voicemailToEmail = value }
+
+        switch patch.forwardAlways {
+        case .keep: break
+        case .clear: state.forwardAlways = nil
+        case let .set(target): state.forwardAlways = target
+        }
+
+        switch patch.noAnswerTarget {
+        case .keep: break
+        case .clear: state.noAnswerTarget = nil
+        case let .set(target): state.noAnswerTarget = target
+        }
+
+        switch patch.email {
+        case .keep: break
+        case .clear: state.email = nil
+        case let .set(value): state.email = value
+        }
+
+        state.version += 1
+
+        return state
+    }
+
+    func invite(deviceId: String, for account: StoredAccount) async throws -> AppPairingResponse {
+        let expires = ISO8601DateFormatter().string(from: Date().addingTimeInterval(600))
+        let json = #"{"url":"https://fullstackstudio.nl/fsvoip/pair?t=fss_vpair_DEMOdemoDEMOdemoDEMOdemoDEMOdemoDEMOdemoDEM","expiresAt":"\#(expires)"}"#
+
+        return try FSVoipJSON.decoder().decode(AppPairingResponse.self, from: Data(json.utf8))
+    }
+
+    private static let json = #"""
+{
+  "id": "7a1d9c3e-5b2f-4e8a-9c01-6d3e8f2a4b57",
+  "name": "Jan de Vries",
+  "extension": "102",
+  "dnd": false,
+  "forwardAlways": null,
+  "noAnswerSeconds": 25,
+  "noAnswerTarget": { "type": "voicemail", "id": "7a1d9c3e-5b2f-4e8a-9c01-6d3e8f2a4b57" },
+  "voicemailEnabled": true,
+  "voicemailToEmail": true,
+  "email": "jan@voorbeeld-bouw.example",
+  "sync": "ok",
+  "version": 4,
+  "numbers": [],
+  "defaultNumber": null,
+  "targets": [
+    { "value": "extension:5c0a8e1f-2d7b-4a39-8f46-0b1c2d3e4f50", "type": "extension", "id": "5c0a8e1f-2d7b-4a39-8f46-0b1c2d3e4f50", "name": "Receptie", "extension": "100" },
+    { "value": "extension:1b2c3d4e-0a1b-4c2d-8e3f-5a6b7c8d9e01", "type": "extension", "id": "1b2c3d4e-0a1b-4c2d-8e3f-5a6b7c8d9e01", "name": "Pieter Jansen", "extension": "101" },
+    { "value": "ring_group:9e8d7c6b-5a49-4382-b1a0-f9e8d7c6b5a4", "type": "ring_group", "id": "9e8d7c6b-5a49-4382-b1a0-f9e8d7c6b5a4", "name": "Iedereen", "extension": "200" },
+    { "value": "voicemail:7a1d9c3e-5b2f-4e8a-9c01-6d3e8f2a4b57", "type": "voicemail", "id": "7a1d9c3e-5b2f-4e8a-9c01-6d3e8f2a4b57", "name": "Jan de Vries", "extension": "102", "ofDevice": true },
+    { "value": "voicemail:2f4a6c8e-1b3d-4f5a-8c7e-9a0b1c2d3e4f", "type": "voicemail", "id": "2f4a6c8e-1b3d-4f5a-8c7e-9a0b1c2d3e4f", "name": "Algemeen", "extension": "900" },
+    { "value": "external", "type": "external", "id": null, "name": "Extern nummer", "extension": null }
+  ]
+}
+"""#
+}
+
+/// Do not disturb in memory: switching works, nothing leaves the phone.
+final class DemoAvailabilityService: AvailabilityServicing, @unchecked Sendable {
+    func load(for account: StoredAccount) async throws -> AvailabilityHub.State {
+        AvailabilityHub.State(doNotDisturb: false, version: 1)
+    }
+
+    func setDoNotDisturb(_ dnd: Bool, version: Int, for account: StoredAccount) async throws -> AvailabilityHub.State {
+        AvailabilityHub.State(doNotDisturb: dnd, version: version + 1)
     }
 }
 #endif

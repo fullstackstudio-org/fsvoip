@@ -1,3 +1,0 @@
-"NSCameraUsageDescription" = "FSVoip uses the camera to scan the QR code that pairs this device.";
-"NSMicrophoneUsageDescription" = "FSVoip uses the microphone so the other person can hear you during a call.";
-"NSContactsUsageDescription" = "FSVoip reads the contacts of this phone to show a name on a call and to pick numbers. They stay on your phone.";

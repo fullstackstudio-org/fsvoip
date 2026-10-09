@@ -27,6 +27,12 @@ enum PbxFailure: Equatable {
     case authentication
     /// No passcode on this phone.
     case notAvailable
+    /// 409 `advanced`: the number is set up in more detail than the app can show; only name and recording here.
+    case advanced
+    /// A welcome message or menu needs a sound first.
+    case greetingRequired
+    /// Switching on call recording costs money: show the price and ask first.
+    case costRequired(RecordingCost?)
     case other
 
     static func classify(_ error: Error) -> PbxFailure {
@@ -41,7 +47,7 @@ enum PbxFailure: Equatable {
             return .revoked
         case .readOnly:
             return .readOnly
-        case .stale:
+        case .stale, .staleChain:
             return .stale
         case let .inUse(places):
             return .inUse(places.map(\.name))
@@ -53,11 +59,25 @@ enum PbxFailure: Equatable {
             return .unavailable
         case .transport:
             return .offline
-        case .invalid, .invalidRequest, .payloadTooLarge, .resync:
+        case .greetingRequired:
+            return .greetingRequired
+        case .invalid, .invalidRequest, .payloadTooLarge, .resync, .invalidAudio, .tooLarge:
             return .invalid
         case let .conflict(code):
             return .conflict(code)
-        case .notFound, .gone:
+        case .advanced:
+            return .advanced
+        case let .costNotAccepted(cost):
+            return .costRequired(cost)
+        case .tooMany:
+            return .conflict("too_many")
+        case .noFreeSlot:
+            return .conflict("no_free_slot")
+        case .parkUnavailable:
+            return .conflict("park_unavailable")
+        case .parkUncertain:
+            return .unavailable
+        case .notFound, .gone, .callNotFound:
             // The object is gone: reload and see.
             return .stale
         case .missingDeviceToken, .decoding:
@@ -105,6 +125,12 @@ enum PbxFailure: Equatable {
             return L10n.string("pbx.error.authentication")
         case .notAvailable:
             return L10n.string("pbx.lock.noPasscode")
+        case .advanced:
+            return L10n.string("pbx.error.advanced")
+        case .greetingRequired:
+            return L10n.string("pbx.error.greetingRequired")
+        case .costRequired:
+            return L10n.string("pbx.error.costRequired")
         case .other:
             return L10n.string("error.generic")
         }
@@ -125,6 +151,25 @@ enum PbxSaveOutcome: Equatable {
         switch self {
         case .saved, .unchanged, .stale: return true
         case .failed: return false
+        }
+    }
+}
+
+/// What a step of a number's chain did.
+enum ChainSaveOutcome: Equatable {
+    case saved
+    /// Nothing differed: nothing was sent.
+    case unchanged
+    /// Changed in the meantime: the fresh chain is in the model; the form stays open and keeps what was typed.
+    case stale
+    /// Switching recording on costs money: show the price (this one, or the one of the chain) and ask.
+    case costRequired(RecordingCost?)
+    case failed(PbxFailure)
+
+    var closesForm: Bool {
+        switch self {
+        case .saved, .unchanged: return true
+        case .stale, .costRequired, .failed: return false
         }
     }
 }

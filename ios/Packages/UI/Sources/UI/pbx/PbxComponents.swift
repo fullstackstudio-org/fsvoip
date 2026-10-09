@@ -111,11 +111,11 @@ struct PbxSyncBadge: View {
         case .pending:
             Label(L10n.string("pbx.sync.pending"), systemImage: "arrow.triangle.2.circlepath")
                 .font(.caption.weight(.medium))
-                .foregroundStyle(Brand.amber)
+                .foregroundStyle(Theme.busy)
         case .error:
             Label(L10n.string("pbx.sync.error"), systemImage: "exclamationmark.triangle.fill")
                 .font(.caption.weight(.medium))
-                .foregroundStyle(Brand.hangUp)
+                .foregroundStyle(Theme.danger)
         case .ok, .unknown:
             EmptyView()
         }

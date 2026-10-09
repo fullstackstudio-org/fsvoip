@@ -7,6 +7,10 @@ import SwiftUI
 struct PbxSectionView: View {
     @ObservedObject var hub: PbxHub
     let account: StoredAccount
+    /// Which part opens behind the lock (the settings sheet has a row for each).
+    var part: PbxPart = .overview
+    /// Closes the settings sheet (the close button of the new-style pages).
+    var close: (() -> Void)?
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
@@ -24,7 +28,13 @@ struct PbxSectionView: View {
         Group {
             switch lock {
             case .open:
-                PbxOverviewView(model: hub.section(for: account))
+                switch part {
+                case .overview: PbxOverviewView(model: hub.section(for: account))
+                case .devices: DevicesView(model: hub.section(for: account))
+                case .ringGroups: RingGroupsView(model: hub.section(for: account))
+                case .hours: HoursView(model: hub.section(for: account))
+                case .numbers: NumbersListView(model: hub.section(for: account))
+                }
             case .checking:
                 ProgressView(L10n.string("pbx.lock.checking"))
             case .locked:
@@ -35,7 +45,8 @@ struct PbxSectionView: View {
                 PbxLockedView(symbol: "lock.slash.fill", title: L10n.string("pbx.lock.noPasscode.title"), message: L10n.string("pbx.lock.noPasscode"), buttonTitle: nil, action: {})
             }
         }
-        .navigationTitle(L10n.string("pbx.title"))
+        .environment(\.pbxClose, close)
+        .navigationTitle(L10n.string(Self.titleKey(part)))
         .navigationBarTitleDisplayMode(.inline)
         .task { await unlock() }
         .onChange(of: hub.isAvailable(account.id)) { available in
@@ -47,6 +58,16 @@ struct PbxSectionView: View {
                 lock = .checking
                 Task { await unlock() }
             }
+        }
+    }
+
+    static func titleKey(_ part: PbxPart) -> String {
+        switch part {
+        case .overview: return "pbx.title"
+        case .devices: return "pbx.devices.title"
+        case .ringGroups: return "pbx.ringGroups.title"
+        case .hours: return "pbx.hours.title"
+        case .numbers: return "numbers.title"
         }
     }
 
@@ -97,39 +118,5 @@ private struct PbxLockedView: View {
         .padding(24)
         .frame(maxWidth: 420)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-/// The "Centrale" row of the account screen.
-struct PbxAccountSection: View {
-    @ObservedObject var hub: PbxHub
-    let account: StoredAccount
-    /// Demo mode only (`-FSVoipDemoScreen pbx`): open the section without tapping, for screenshots.
-    @State private var opensDemoSection = Self.isDemoScreen
-
-    private static var isDemoScreen: Bool {
-        #if DEBUG
-        UserDefaults.standard.string(forKey: "FSVoipDemoScreen") == "pbx"
-        #else
-        false
-        #endif
-    }
-
-    var body: some View {
-        if hub.isAvailable(account.id) {
-            Section {
-                NavigationLink {
-                    PbxSectionView(hub: hub, account: account)
-                } label: {
-                    Label(L10n.string("pbx.title"), systemImage: "switch.2")
-                }
-                .accessibilityIdentifier("pbx-section-link")
-            } footer: {
-                Text(L10n.string("pbx.section.footer"))
-            }
-            .navigationDestination(isPresented: $opensDemoSection) {
-                PbxSectionView(hub: hub, account: account)
-            }
-        }
     }
 }

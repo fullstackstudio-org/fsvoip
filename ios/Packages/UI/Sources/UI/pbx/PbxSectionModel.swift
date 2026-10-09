@@ -8,6 +8,8 @@ enum PbxPart: Hashable, CaseIterable {
     case devices
     case ringGroups
     case hours
+    /// The numbers as chains (`GET /pbx/numbers`).
+    case numbers
 }
 
 struct PbxBanner: Identifiable, Equatable {
@@ -31,6 +33,11 @@ final class PbxSectionModel: ObservableObject {
     @Published private(set) var devices: PbxDevicesResponse?
     @Published private(set) var ringGroups: PbxRingGroupsResponse?
     @Published private(set) var hours: PbxHoursResponse?
+    @Published private(set) var numbers: PbxNumbersPage?
+    /// The chains of the numbers that were opened, by number id.
+    @Published private(set) var chains: [String: NumberChain] = [:]
+    /// A chain that could not be loaded, by number id.
+    @Published private(set) var chainFailures: [String: PbxFailure] = [:]
     /// The centrale does not accept changes now (frozen, being set up, error). Only a fresh answer can lift it.
     @Published private(set) var isReadOnly: Bool
     /// The last reload failed because there is no connection: what is shown is the last known state.
@@ -89,6 +96,8 @@ final class PbxSectionModel: ObservableObject {
         if devices?.devices.contains(where: { $0.sync == .pending }) == true { return true }
         if ringGroups?.ringGroups.contains(where: { $0.sync == .pending }) == true { return true }
         if hours?.hours.contains(where: { $0.sync == .pending }) == true { return true }
+        if numbers?.numbers.contains(where: { $0.sync == .pending }) == true { return true }
+        if chains.values.contains(where: { $0.sync == .pending }) { return true }
 
         return false
     }
@@ -111,6 +120,8 @@ final class PbxSectionModel: ObservableObject {
                 ringGroups = try await service.ringGroups(for: account)
             case .hours:
                 hours = try await service.hours(for: account)
+            case .numbers:
+                numbers = try await service.numbers(for: account)
             }
 
             isOutdated = false
@@ -129,6 +140,7 @@ final class PbxSectionModel: ObservableObject {
         case .devices: missing = devices == nil
         case .ringGroups: missing = ringGroups == nil
         case .hours: missing = hours == nil
+        case .numbers: missing = numbers == nil
         }
 
         if missing {
@@ -160,6 +172,136 @@ final class PbxSectionModel: ObservableObject {
         if devices != nil { await load(.devices) }
         if ringGroups != nil { await load(.ringGroups) }
         if hours != nil { await load(.hours) }
+        if numbers != nil { await load(.numbers) }
+
+        for id in chains.keys.sorted() {
+            await loadChain(id)
+        }
+    }
+
+    // MARK: Number chains
+
+    /// Reads the chain of one number (again).
+    func loadChain(_ numberId: String) async {
+        do {
+            let chain = try await service.numberChain(for: account, numberId: numberId)
+            chains[numberId] = chain
+            chainFailures[numberId] = nil
+            isOutdated = false
+        } catch {
+            let failure = PbxFailure.classify(error)
+
+            switch failure {
+            case .accessLost, .revoked, .offline, .readOnly:
+                handleLoadError(error)
+            default:
+                chainFailures[numberId] = failure
+            }
+        }
+    }
+
+    /// The chain screen opens: load it when it is not there, and keep the five-minute window alive.
+    func loadChainIfNeeded(_ numberId: String) async {
+        if chains[numberId] == nil {
+            isLoading = true
+            await loadChain(numberId)
+            isLoading = false
+        }
+
+        gate.touch()
+        startPollingIfNeeded()
+    }
+
+    /// One step of a chain (`nil` = nothing changed, nothing is sent). The answer is the fresh chain.
+    func saveChainStep(numberId: String, _ step: (any NumberChainStepRequest)?) async -> ChainSaveOutcome {
+        guard let step else {
+            return .unchanged
+        }
+
+        return await mutateChain(numberId: numberId) {
+            try await self.send(step, numberId: numberId)
+        }
+    }
+
+    private func send<Step: NumberChainStepRequest>(_ step: Step, numberId: String) async throws -> NumberChain {
+        try await service.saveChainStep(for: account, numberId: numberId, step: step)
+    }
+
+    /// Call recording of a number (`nil` = nothing changed).
+    func saveRecording(numberId: String, _ patch: NumberRecordingPatch?) async -> ChainSaveOutcome {
+        guard let patch else {
+            return .unchanged
+        }
+
+        return await mutateChain(numberId: numberId) {
+            try await self.service.setNumberRecording(for: self.account, numberId: numberId, patch: patch)
+        }
+    }
+
+    /// Like `mutate`, but the answer is the fresh chain and a "changed in the meantime" keeps the form open: the fresh chain is
+    /// shown, what the user typed stays (the form rebases onto it).
+    private func mutateChain(numberId: String, _ send: @escaping () async throws -> NumberChain) async -> ChainSaveOutcome {
+        guard !isReadOnly else {
+            return .failed(.readOnly)
+        }
+
+        // Taken before the Face ID prompt: a second tap while it is open must not send a second request.
+        guard !isSaving else {
+            return .unchanged
+        }
+
+        isSaving = true
+        defer { isSaving = false }
+
+        switch await gate.ensureUnlocked(reason: authReason()) {
+        case .unlocked:
+            break
+        case .unavailable:
+            return .failed(.notAvailable)
+        case .cancelled, .failed:
+            return .failed(.authentication)
+        }
+
+        let fresh: NumberChain
+
+        do {
+            fresh = try await send()
+        } catch let APIError.staleChain(chain) {
+            chains[numberId] = chain
+            return .stale
+        } catch let APIError.costNotAccepted(cost) {
+            return .costRequired(cost)
+        } catch {
+            let failure = PbxFailure.classify(error)
+
+            switch failure {
+            case .stale:
+                // A plain 409 without the chain: read it again.
+                await loadChain(numberId)
+                return .stale
+            case .advanced:
+                // The number turned out to be more than the chain can show: show it read-only.
+                await loadChain(numberId)
+                return .failed(.advanced)
+            default:
+                let outcome = await handleSaveError(error)
+                if case let .failed(reason) = outcome { return .failed(reason) }
+                return .failed(failure)
+            }
+        }
+
+        chains[numberId] = fresh
+        chainFailures[numberId] = nil
+        banner = nil
+        syncTimedOut = false
+
+        if numbers != nil { await load(.numbers) }
+        if overview != nil { await load(.overview) }
+
+        gate.touch()
+        startPollingIfNeeded()
+
+        return .saved
     }
 
     private func handleLoadError(_ error: Error) {
@@ -258,6 +400,14 @@ final class PbxSectionModel: ObservableObject {
             return .failed(.readOnly)
         }
 
+        // Taken before the Face ID prompt: a second tap while it is open must not send a second request.
+        guard !isSaving else {
+            return .unchanged
+        }
+
+        isSaving = true
+        defer { isSaving = false }
+
         switch await gate.ensureUnlocked(reason: authReason()) {
         case .unlocked:
             break
@@ -266,9 +416,6 @@ final class PbxSectionModel: ObservableObject {
         case .cancelled, .failed:
             return .failed(.authentication)
         }
-
-        isSaving = true
-        defer { isSaving = false }
 
         do {
             try await send()

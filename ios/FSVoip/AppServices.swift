@@ -84,7 +84,11 @@ final class AppServices {
             pushTokens: reporter,
             requestNotifications: { await Self.requestNotificationPermission() },
             pbx: PbxHub(service: LivePbxService(api: api), gate: gate),
-            media: MediaHub(service: LiveMediaService(api: api), gate: gate)
+            media: MediaHub(service: LiveMediaService(api: api), gate: gate),
+            availability: AvailabilityHub(service: LiveAvailabilityService(api: api)),
+            selfExtension: SelfExtensionHub(service: LiveSelfExtensionService(api: api)),
+            park: LiveParkService(api: api),
+            outboundNumbers: LiveOutboundNumbersService(api: api)
         )
     }
 

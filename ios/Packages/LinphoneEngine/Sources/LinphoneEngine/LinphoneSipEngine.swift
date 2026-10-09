@@ -239,7 +239,7 @@ public final class LinphoneSipEngine: SipEngine {
 
     // MARK: Calls
 
-    public func call(number: String, from id: SipAccountID) throws -> CallID {
+    public func call(number: String, from id: SipAccountID, options: CallOptions) throws -> CallID {
         let core = try requireCore()
 
         guard let account = accounts[id], let config = accountConfigs[id] else {
@@ -255,6 +255,7 @@ public final class LinphoneSipEngine: SipEngine {
             let params = try core.createCallParams(call: nil)
             params.account = account
             params.videoEnabled = false
+            Self.apply(options, to: params)
 
             guard let call = core.inviteAddressWithParams(addr: address, params: params) else {
                 throw SipEngineError.engine("The call could not be started")
@@ -267,6 +268,13 @@ public final class LinphoneSipEngine: SipEngine {
             throw error
         } catch {
             throw SipEngineError.engine("\(error)")
+        }
+    }
+
+    /// Put the headers of `options` on the INVITE that `sink` will become. Exactly the ones `CallOptions.headers` lists.
+    static func apply(_ options: CallOptions, to sink: some InviteHeaderSink) {
+        for header in options.headers {
+            sink.addInviteHeader(name: header.name, value: header.value)
         }
     }
 
@@ -644,5 +652,16 @@ final class LinphoneAudio: SipAudioControl {
 
     func activate(_ active: Bool) {
         engine?.activateAudioSession(active)
+    }
+}
+
+/// Where the extra headers of an outgoing INVITE go: the call parameters of the stack, or a recorder in the tests.
+protocol InviteHeaderSink {
+    func addInviteHeader(name: String, value: String)
+}
+
+extension CallParams: InviteHeaderSink {
+    func addInviteHeader(name: String, value: String) {
+        addCustomHeader(headerName: name, headerValue: value)
     }
 }

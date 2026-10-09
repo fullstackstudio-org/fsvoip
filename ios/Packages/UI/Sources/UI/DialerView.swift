@@ -9,6 +9,7 @@ struct DialerView: View {
     @ObservedObject var model: FSVoipAppModel
     @State private var input = DialerInput()
     @State private var chosenAccountId: String?
+    @State private var showsChooser = false
 
     private var accountId: String? {
         if let chosenAccountId, model.account(id: chosenAccountId) != nil {
@@ -23,8 +24,9 @@ struct DialerView: View {
             let key = Self.keySize(for: geometry.size)
 
             VStack(spacing: 0) {
-                LineSelector(model: model, selectedId: accountId) { chosenAccountId = $0 }
-                    .padding(.top, 8)
+                if let account = accountId.flatMap({ model.account(id: $0) }) {
+                    UnavailableBanner(model: model, account: account)
+                }
 
                 Spacer(minLength: 8)
 
@@ -51,21 +53,49 @@ struct DialerView: View {
                 }
                 .frame(width: key * 3 + Keypad.spacing(for: key) * 2)
                 .padding(.top, Keypad.spacing(for: key))
-                .padding(.bottom, 28)
+
+                if let account = accountId.flatMap({ model.account(id: $0) }) {
+                    OutboundBar(model: model, outbound: model.outbound, account: account, opensChooser: { showsChooser = true })
+                        .padding(.horizontal, Theme.Spacing.l)
+                        .padding(.top, Theme.Spacing.m)
+                }
+
+                Spacer().frame(height: Theme.Spacing.l)
             }
             .frame(maxWidth: .infinity)
         }
+        .background(Theme.background)
         .navigationTitle(L10n.string("tab.dialer"))
-        .toolbar(.hidden, for: .navigationBar)
+        .task(id: accountId.map { "\($0)/\(model.capabilities(for: $0)?.callerChoice == true)" }) {
+            // Names and the default of the numbers; only asked when the PBX supports the choice, and never while dialling.
+            if let account = accountId.flatMap({ model.account(id: $0) }) {
+                await model.outbound.load(account)
+            }
+        }
+        #if DEBUG
+        .task {
+            // Demo mode only (`-FSVoipDemoScreen chooser`): open the "Bellen via" chooser without tapping.
+            guard UserDefaults.standard.string(forKey: "FSVoipDemoScreen") == "chooser" else { return }
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            showsChooser = true
+        }
+        #endif
+        .sheet(isPresented: $showsChooser) {
+            OutboundChooserSheet(model: model, outbound: model.outbound, accountId: accountId) { chosenAccountId = $0 }
+        }
     }
 
     private var numberDisplay: some View {
         VStack(spacing: 6) {
-            Text(input.isEmpty ? " " : input.number)
-                .font(Brand.digits(input.number.count > 13 ? 30 : 40))
+            Text(input.isEmpty ? L10n.string("dialer.placeholder") : input.number)
+                .font(input.isEmpty ? .body : Brand.digits(input.number.count > 13 ? 30 : 40))
+                .foregroundStyle(input.isEmpty ? Theme.textTertiary : Theme.textPrimary)
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
+                .frame(maxWidth: .infinity, minHeight: input.isEmpty ? 44 : 0)
+                .padding(.horizontal, Theme.Spacing.m)
+                .background(input.isEmpty ? Theme.raised : Color.clear, in: Theme.card(Theme.Radius.s))
                 .padding(.horizontal, 24)
                 .accessibilityIdentifier("dialed-number")
                 .accessibilityLabel(input.isEmpty ? L10n.string("dialer.empty") : input.number)
@@ -74,10 +104,6 @@ struct DialerView: View {
                 Text(name)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-            } else if input.isEmpty {
-                L10n.text("dialer.hint")
-                    .font(.subheadline)
-                    .foregroundStyle(.tertiary)
             } else {
                 Text(" ").font(.subheadline)
             }
@@ -139,68 +165,190 @@ struct DialerView: View {
 
     static func keySize(for size: CGSize) -> CGFloat {
         // Fit four rows of keys plus the call row and the display into the height; never wider than the screen.
-        let byHeight = (size.height - 120) / 6.4
+        let byHeight = (size.height - 190) / 6.4
         let byWidth = (size.width - 96) / 3
 
         return max(56, min(84, byHeight, byWidth))
     }
 }
 
-/// Which line (paired account) the call goes out on, with its light.
-struct LineSelector: View {
+/// Under the call button, always there: the number this call goes out with (`[icoon] [Naam · nummer ⌄]`). Tapping it opens the chooser.
+/// Without the capability, or with a single number, it is a label; there is no chevron then and nothing to open.
+struct OutboundBar: View {
     @ObservedObject var model: FSVoipAppModel
-    let selectedId: String?
-    let select: (String) -> Void
+    @ObservedObject var outbound: OutboundChoiceModel
+    let account: StoredAccount
+    let opensChooser: () -> Void
 
-    var body: some View {
-        if let selectedId, let account = model.account(id: selectedId) {
-            if model.accounts.count > 1 {
-                Menu {
-                    ForEach(model.accounts) { option in
-                        Button {
-                            select(option.id)
-                        } label: {
-                            Label(option.displayLabel + " · " + model.registration(for: option.id).label, systemImage: option.id == selectedId ? "checkmark" : "phone")
-                        }
-                    }
-                } label: {
-                    chip(account, chevron: true)
-                }
-                .accessibilityIdentifier("line-selector")
-            } else {
-                chip(account, chevron: false)
-            }
-        }
+    private var state: RegistrationState {
+        model.registration(for: account.id)
     }
 
-    private func chip(_ account: StoredAccount, chevron: Bool) -> some View {
-        let state = model.registration(for: account.id)
+    private var choosable: Bool {
+        outbound.canChoose(account.id) || model.accounts.count > 1
+    }
 
-        return HStack(spacing: 8) {
-            StatusLight(state: state)
-            Text(account.displayLabel)
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
-                .foregroundStyle(.primary)
+    var body: some View {
+        VStack(spacing: Theme.Spacing.xs) {
+            if choosable {
+                Button(action: opensChooser) { content(chevron: true) }
+                    .buttonStyle(.plain)
+                    .accessibilityHint(L10n.string("outbound.bar.hint"))
+                    .accessibilityIdentifier("outbound-bar")
+            } else {
+                content(chevron: false)
+                    .accessibilityIdentifier("outbound-bar")
+            }
 
             if state != .registered {
                 Text(state.label)
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .foregroundStyle(Theme.textSecondary)
+                    .lineLimit(2)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func content(chevron: Bool) -> some View {
+        HStack(spacing: Theme.Spacing.s) {
+            Image(systemName: "phone.arrow.up.right")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Theme.accentText)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 0) {
+                if model.accounts.count > 1 {
+                    Text(account.displayLabel)
+                        .font(.caption)
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(1)
+                }
+
+                Text(outbound.label(account.id))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.textPrimary)
+                    .monospacedDigit()
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if chevron {
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.caption2.weight(.bold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
+                    .accessibilityHidden(true)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 9)
-        .background(Color(.secondarySystemBackground), in: Capsule())
+        .padding(.horizontal, Theme.Spacing.m)
+        .frame(maxWidth: .infinity, minHeight: Theme.minimumTarget, alignment: .leading)
+        .background(Theme.raised, in: Theme.card(Theme.Radius.s))
+        .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(String(format: L10n.string("dialer.lineAccessibility"), account.displayLabel, state.label))
+        .accessibilityLabel(String(format: L10n.string("outbound.bar.accessibility"), outbound.label(account.id)))
+    }
+}
+
+/// The sheet behind the bar: with several accounts first the account, then the number. Choosing a number sets it for the next
+/// call of that account and closes the sheet; no network, no waiting.
+struct OutboundChooserSheet: View {
+    @ObservedObject var model: FSVoipAppModel
+    @ObservedObject var outbound: OutboundChoiceModel
+    let accountId: String?
+    let selectAccount: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        SheetShell(title: L10n.string("outbound.sheet.title"), onClose: { dismiss() }) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.l) {
+                if model.accounts.count > 1 {
+                    SettingsGroup(title: L10n.string("outbound.sheet.account")) {
+                        ForEach(model.accounts) { account in
+                            ChoiceRow(
+                                title: account.displayLabel,
+                                subtitle: model.registration(for: account.id).label,
+                                isSelected: account.id == accountId
+                            ) {
+                                selectAccount(account.id)
+                                Task { await outbound.load(account) }
+                            }
+                            .accessibilityIdentifier("outbound-account-\(account.id)")
+                        }
+                    }
+                }
+
+                if let accountId, outbound.canChoose(accountId) {
+                    SettingsGroup(title: L10n.string("outbound.sheet.number"), footer: L10n.string("outbound.sheet.footer")) {
+                        ForEach(outbound.numbers(for: accountId)) { number in
+                            ChoiceRow(title: OutboundChoiceModel.title(for: number), isSelected: outbound.selected(accountId)?.number == number.number) {
+                                outbound.select(number.number, accountId: accountId)
+                                dismiss()
+                            }
+                            .accessibilityIdentifier("outbound-number-\(number.number)")
+                        }
+                    }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+}
+
+/// "Je bent niet beschikbaar": do-not-disturb is on, so incoming calls do not reach this phone. One tap makes you available again.
+struct UnavailableBanner: View {
+    @ObservedObject var model: FSVoipAppModel
+    let account: StoredAccount
+
+    var body: some View {
+        if let hub = model.availability {
+            Content(hub: hub, account: account)
+        }
+    }
+
+    private struct Content: View {
+        @ObservedObject var hub: AvailabilityHub
+        let account: StoredAccount
+
+        var body: some View {
+            if hub.isAvailable(account.id) == false {
+                HStack(spacing: Theme.Spacing.m) {
+                    Image(systemName: "moon.fill")
+                        .foregroundStyle(Theme.danger)
+                        .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        L10n.text("dialer.unavailable.title")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Theme.textPrimary)
+                        L10n.text("dialer.unavailable.message")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer(minLength: Theme.Spacing.s)
+
+                    Button {
+                        Task { await hub.setAvailable(true, account: account) }
+                    } label: {
+                        L10n.text("dialer.unavailable.action")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Theme.accentText)
+                            .frame(minHeight: Theme.minimumTarget)
+                    }
+                    .disabled(hub.saving.contains(account.id))
+                    .accessibilityIdentifier("unavailable-action")
+                }
+                .padding(.horizontal, Theme.Spacing.m)
+                .padding(.vertical, Theme.Spacing.s)
+                .background(Theme.raised, in: Theme.card(Theme.Radius.s))
+                .overlay(Theme.card(Theme.Radius.s).strokeBorder(Theme.danger.opacity(0.5), lineWidth: 1))
+                .accessibilityElement(children: .contain)
+                .padding(.horizontal, Theme.Spacing.l)
+                .padding(.top, Theme.Spacing.s)
+                .accessibilityIdentifier("unavailable-banner")
+            }
+        }
     }
 }
 

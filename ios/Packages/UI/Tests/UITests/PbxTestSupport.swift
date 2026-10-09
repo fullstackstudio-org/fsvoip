@@ -27,6 +27,31 @@ enum PbxFixtures {
     static var me: MeResponse { decode("me-response-admin") }
     static var meFrozen: MeResponse { decode("me-response-admin-frozen") }
     static var meUser: MeResponse { decode("me-response-user") }
+    static var simpleChain: NumberChain { decode("number-chain-simple") }
+    static var advancedChain: NumberChain { decode("number-chain-advanced") }
+    static var menuChain: NumberChain { decode("number-chain-menu") }
+
+    /// A chain from JSON text with edits (for tests that need a variant of a fixture).
+    static func chain(_ name: String, _ edit: (inout [String: Any]) -> Void) -> NumberChain {
+        var json = try! JSONSerialization.jsonObject(with: data(name)) as! [String: Any]
+        edit(&json)
+
+        return try! FSVoipJSON.decoder().decode(NumberChain.self, from: JSONSerialization.data(withJSONObject: json))
+    }
+}
+
+/// The JSON body a request sends, as a dictionary.
+func jsonBody<Value: Encodable>(_ value: Value) throws -> [String: Any] {
+    try JSONSerialization.jsonObject(with: FSVoipJSON.encoder().encode(value)) as! [String: Any]
+}
+
+/// The body of a chain step the draft returned as an existential.
+func jsonBody(_ step: any NumberChainStepRequest) throws -> [String: Any] {
+    func open<Step: NumberChainStepRequest>(_ value: Step) throws -> [String: Any] {
+        try JSONSerialization.jsonObject(with: FSVoipJSON.encoder().encode(value)) as! [String: Any]
+    }
+
+    return try open(step)
 }
 
 /// Scripted `/pbx/*`: every call is recorded, errors can be queued per method, and the responses can change between reads.
@@ -38,6 +63,9 @@ final class FakePbxService: PbxServicing, @unchecked Sendable {
     private(set) var ringGroupPatches: [(id: String, patch: PbxRingGroupPatch)] = []
     private(set) var created: [PbxRingGroupCreate] = []
     private(set) var routingPatches: [(id: String, patch: PbxRoutingPatch)] = []
+    /// Every chain step that was sent: the step name and the JSON body as the server would receive it.
+    private(set) var chainSteps: [(numberId: String, step: ChainStep, body: [String: Any])] = []
+    private(set) var recordingPatches: [(numberId: String, body: [String: Any])] = []
 
     /// Errors thrown by the next calls of a method, in order (`"updateDevice"`, `"overview"`, ...).
     var failures: [String: [Error]] = [:]
@@ -45,6 +73,14 @@ final class FakePbxService: PbxServicing, @unchecked Sendable {
     var devicesResult: PbxDevicesResponse = PbxFixtures.decode("pbx-devices")
     var ringGroupsResult: PbxRingGroupsResponse = PbxFixtures.decode("pbx-ring-groups")
     var hoursResult: PbxHoursResponse = PbxFixtures.decode("pbx-hours")
+    var numbersResult: PbxNumbersPage = PbxFixtures.decode("numbers-page")
+    /// The chains by number id (the simple and the advanced fixture).
+    var chainResults: [String: NumberChain] = [
+        PbxFixtures.simpleChain.id: PbxFixtures.simpleChain,
+        PbxFixtures.advancedChain.id: PbxFixtures.advancedChain,
+    ]
+    /// What a step or recording answers (default: the chain as it is).
+    var chainAnswer: ((String) -> NumberChain)?
     /// Runs before a read returns (to change what the next read says, e.g. a sync that finishes).
     var onRead: ((String) -> Void)?
 
@@ -119,6 +155,44 @@ final class FakePbxService: PbxServicing, @unchecked Sendable {
     func setNumberRouting(for account: StoredAccount, numberId: String, patch: PbxRoutingPatch) async throws {
         try enter("setNumberRouting")
         routingPatches.append((numberId, patch))
+    }
+
+    func numbers(for account: StoredAccount) async throws -> PbxNumbersPage {
+        try enter("numbers")
+        onRead?("numbers")
+
+        return numbersResult
+    }
+
+    func numberChain(for account: StoredAccount, numberId: String) async throws -> NumberChain {
+        try enter("chain")
+        onRead?("chain")
+
+        guard let chain = chainResults[numberId] else {
+            throw APIError.notFound
+        }
+
+        return chain
+    }
+
+    func saveChainStep<Step: NumberChainStepRequest>(for account: StoredAccount, numberId: String, step: Step) async throws -> NumberChain {
+        let body = try jsonBody(step)
+        lock.lock()
+        chainSteps.append((numberId, step.step, body))
+        lock.unlock()
+        try enter("saveChainStep")
+
+        return chainAnswer?(numberId) ?? chainResults[numberId]!
+    }
+
+    func setNumberRecording(for account: StoredAccount, numberId: String, patch: NumberRecordingPatch) async throws -> NumberChain {
+        let body = try jsonBody(patch)
+        lock.lock()
+        recordingPatches.append((numberId, body))
+        lock.unlock()
+        try enter("setNumberRecording")
+
+        return chainAnswer?(numberId) ?? chainResults[numberId]!
     }
 }
 

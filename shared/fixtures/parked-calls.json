@@ -1,0 +1,44 @@
+{
+  "available": true,
+  "calls": [
+    {
+      "id": "Zm9vYmFyLWZpeHR1cmUtcGFya2VkLWNhbGwtcmVmZXJlbmNlLTAwMQ",
+      "slot": 1,
+      "retrieveNumber": "*5901",
+      "callerNumber": "0701234567",
+      "callerName": "Bakkerij Smit",
+      "parkedAt": "2026-10-09T08:15:30.000Z",
+      "expiresAt": "2026-10-09T08:20:30.000Z",
+      "parkedBy": {
+        "deviceId": "3f0c2b1e-8a4d-4d6f-9b7a-1c2d3e4f5a6b",
+        "name": "Jan (balie)"
+      },
+      "mine": true
+    },
+    {
+      "id": "Zm9vYmFyLWZpeHR1cmUtcGFya2VkLWNhbGwtcmVmZXJlbmNlLTAwMg",
+      "slot": 2,
+      "retrieveNumber": "*5902",
+      "callerNumber": null,
+      "callerName": null,
+      "parkedAt": "2026-10-09T08:16:02.000Z",
+      "expiresAt": "2026-10-09T08:21:02.000Z",
+      "parkedBy": {
+        "deviceId": null,
+        "name": "Receptie"
+      },
+      "mine": false
+    },
+    {
+      "id": "Zm9vYmFyLWZpeHR1cmUtcGFya2VkLWNhbGwtcmVmZXJlbmNlLTAwMw",
+      "slot": 3,
+      "retrieveNumber": null,
+      "callerNumber": "0612345678",
+      "callerName": null,
+      "parkedAt": null,
+      "expiresAt": null,
+      "parkedBy": null,
+      "mine": false
+    }
+  ]
+}

@@ -34,10 +34,64 @@ public enum APIError: Error, Equatable, Sendable {
     case resync
     /// 400 `invalid_request` with a `code` (and the `field` that is wrong), e.g. `invalid_phone`.
     case invalid(code: String, field: String?)
+    /// 409 `stale` of a chain step or the recording, with the fresh chain: keep what the user typed and show the new state.
+    case staleChain(NumberChain)
+    /// 409 `advanced`: the flow behind the number is more than the chain can show; only the name can be changed.
+    case advanced
+    /// 400 `invalid_request` with `code: "greeting_required"`: a welcome message needs a sound.
+    case greetingRequired
+    /// `cost_not_accepted` (422 on a recording): switching it on costs money; show `cost` and repeat the request with `costAccepted: true`.
+    case costNotAccepted(cost: RecordingCost?)
+    /// 400 `invalid_audio`: not a supported audio file (WAV, MP3 or M4A).
+    case invalidAudio
+    /// 413 `too_large`: the sound file is above the limit.
+    case tooLarge
+    /// 409 `too_many`: the PBX has the maximum number of sounds.
+    case tooMany
+    /// 404 `call_not_found`: no running call of this extension has that Call-ID.
+    case callNotFound
+    /// 409 `no_free_slot`: every park slot is taken.
+    case noFreeSlot
+    /// 409 `park_unavailable`: the PBX cannot park right now.
+    case parkUnavailable
+    /// 503 `park_uncertain`: the PBX failed and the call MAY be parked. Never park again: refresh the parked list.
+    case parkUncertain
 }
 
 public protocol HTTPTransport: Sendable {
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse)
+
+    /// Sends `request` with `body` as its body and reports the fraction sent (0...1) while it goes. The default sends the body in one
+    /// piece without progress (a test transport needs nothing more); `URLSessionTransport` reports the real progress.
+    func upload(_ request: URLRequest, body: Data, progress: (@Sendable (Double) -> Void)?) async throws -> (Data, HTTPURLResponse)
+}
+
+extension HTTPTransport {
+    public func upload(_ request: URLRequest, body: Data, progress: (@Sendable (Double) -> Void)?) async throws -> (Data, HTTPURLResponse) {
+        var request = request
+        request.httpBody = body
+        let result = try await send(request)
+        progress?(1)
+
+        return result
+    }
+}
+
+/// Forwards `didSendBodyData` of one upload task to a closure.
+private final class UploadProgressDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    private let handler: @Sendable (Double) -> Void
+
+    init(_ handler: @escaping @Sendable (Double) -> Void) {
+        self.handler = handler
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
+        guard totalBytesExpectedToSend > 0 else {
+            return
+        }
+
+        handler(min(1, max(0, Double(totalBytesSent) / Double(totalBytesExpectedToSend))))
+    }
 }
 
 /// `URLSession` without a cache, cookies or credentials storage: this API is stateless and `no-store`.
@@ -60,6 +114,17 @@ public struct URLSessionTransport: HTTPTransport {
 
     public func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         let (data, response) = try await session.data(for: request)
+
+        guard let http = response as? HTTPURLResponse else {
+            throw APIError.transport("Not an HTTP response")
+        }
+
+        return (data, http)
+    }
+
+    public func upload(_ request: URLRequest, body: Data, progress: (@Sendable (Double) -> Void)?) async throws -> (Data, HTTPURLResponse) {
+        let delegate = progress.map { UploadProgressDelegate($0) }
+        let (data, response) = try await session.upload(for: request, from: body, delegate: delegate)
 
         guard let http = response as? HTTPURLResponse else {
             throw APIError.transport("Not an HTTP response")
@@ -158,6 +223,33 @@ public struct FSVoipAPIClient: Sendable {
         authenticated: Bool,
         acceptNotModified: Bool
     ) async throws -> (Data, HTTPURLResponse) {
+        var request = try makeRequest(method, path, query: query, headers: headers, authenticated: authenticated)
+
+        if let body {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try FSVoipJSON.encoder().encode(body)
+        }
+
+        return try await execute(request, method: method, path: path, acceptNotModified: acceptNotModified) { try await transport.send($0) }
+    }
+
+    /// A `multipart/form-data` (or other raw body) request, with upload progress (0...1). Used for the sounds upload.
+    func sendUpload(
+        _ method: String,
+        _ path: String,
+        body: Data,
+        contentType: String,
+        authenticated: Bool,
+        progress: (@Sendable (Double) -> Void)?
+    ) async throws -> (Data, HTTPURLResponse) {
+        var request = try makeRequest(method, path, query: [], headers: [:], authenticated: authenticated)
+        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 120
+
+        return try await execute(request, method: method, path: path, acceptNotModified: false) { try await transport.upload($0, body: body, progress: progress) }
+    }
+
+    private func makeRequest(_ method: String, _ path: String, query: [URLQueryItem], headers: [String: String], authenticated: Bool) throws -> URLRequest {
         var request = URLRequest(url: url(path, query: query))
         request.httpMethod = method
         request.timeoutInterval = 20
@@ -177,11 +269,16 @@ public struct FSVoipAPIClient: Sendable {
             request.setValue("Bearer \(deviceToken.reveal())", forHTTPHeaderField: "Authorization")
         }
 
-        if let body {
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try FSVoipJSON.encoder().encode(body)
-        }
+        return request
+    }
 
+    private func execute(
+        _ request: URLRequest,
+        method: String,
+        path: String,
+        acceptNotModified: Bool,
+        transport run: (URLRequest) async throws -> (Data, HTTPURLResponse)
+    ) async throws -> (Data, HTTPURLResponse) {
         // Never log bodies, queries or headers: the pair response carries the SIP password and contact queries carry a sync cursor.
         logger.debug("\(method) /\(path.split(separator: "/").prefix(1).joined(separator: "/"))")
 
@@ -189,7 +286,7 @@ public struct FSVoipAPIClient: Sendable {
         let response: HTTPURLResponse
 
         do {
-            (data, response) = try await transport.send(request)
+            (data, response) = try await run(request)
         } catch let error as APIError {
             throw error
         } catch {
@@ -233,10 +330,39 @@ public struct FSVoipAPIClient: Sendable {
         let body = try? JSONDecoder().decode(APIErrorBody.self, from: data)
         let retryAfter = response.value(forHTTPHeaderField: "Retry-After").flatMap { Int($0) }
 
+        // The same error names can come with another status on another route (`cost_not_accepted` is 422 on a recording and 409 on a
+        // new extension), so the ones that need no detail are recognised on the name first.
+        switch body?.error {
+        case "cost_not_accepted":
+            return .costNotAccepted(cost: body?.cost)
+        case "advanced":
+            return .advanced
+        case "park_uncertain":
+            return .parkUncertain
+        case "park_unavailable":
+            return .parkUnavailable
+        case "no_free_slot":
+            return .noFreeSlot
+        case "call_not_found":
+            return .callNotFound
+        case "invalid_audio":
+            return .invalidAudio
+        case "too_large":
+            return .tooLarge
+        case "too_many":
+            return .tooMany
+        default:
+            break
+        }
+
         switch response.statusCode {
         case 400:
             if body?.code == "resync" {
                 return .resync
+            }
+
+            if body?.code == "greeting_required" {
+                return .greetingRequired
             }
 
             if let code = body?.code {
@@ -255,6 +381,10 @@ public struct FSVoipAPIClient: Sendable {
             case "read_only":
                 return .readOnly
             case "stale":
+                if let chain = body?.chain {
+                    return .staleChain(chain)
+                }
+
                 return .stale(version: body?.version)
             case "in_use":
                 return .inUse(places: body?.places ?? [])
