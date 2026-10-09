@@ -62,6 +62,8 @@ public final class FSVoipAppModel: ObservableObject {
     public let phone: PhoneController
     /// The customer's address books, the phone's contacts and the colleagues; answers "who is this number".
     public let contacts: ContactsHub
+    /// The "Centrale" section of admin pairings (`nil` = not offered, e.g. in a build without it).
+    public let pbx: PbxHub?
 
     private let accountStore: AccountStore
     private let service: AccountServicing
@@ -76,6 +78,7 @@ public final class FSVoipAppModel: ObservableObject {
     private var contactsChanges: AnyCancellable?
     private var contactsConfiguration: Task<Void, Never>?
     private var contactsTimer: Task<Void, Never>?
+    private var pbxAccessLost: AnyCancellable?
 
     public init(
         phone: PhoneController,
@@ -88,10 +91,12 @@ public final class FSVoipAppModel: ObservableObject {
         pushTokens: PushTokenReporting? = nil,
         requestNotifications: @escaping () async -> Void = {},
         contacts: ContactsHub? = nil,
+        pbx: PbxHub? = nil,
         logger: FSLogger = FSLogger(category: "app")
     ) {
         self.phone = phone
         self.contacts = contacts ?? ContactsHub()
+        self.pbx = pbx
         self.accountStore = accountStore
         self.service = service
         self.preferences = preferences
@@ -107,6 +112,17 @@ public final class FSVoipAppModel: ObservableObject {
         phone.onCallFinished = { [weak self] call in
             self?.recentsStore.add(call)
             self?.recents = self?.recentsStore.all() ?? []
+        }
+        pbx?.onRevoked = { [weak self] in
+            Task { await self?.refreshAccounts() }
+        }
+        pbxAccessLost = pbx?.$lostAccessFor.compactMap { $0 }.sink { [weak self] accountId in
+            guard let self else { return }
+            self.pbx?.lostAccessFor = nil
+
+            if let account = account(id: accountId) {
+                notice = Notice(message: String(format: L10n.string("pbx.notice.lostAccess"), account.pbxName), isError: true)
+            }
         }
         // Republish the phone's changes so screens that only watch the app model still redraw.
         phoneChanges = phone.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
@@ -165,14 +181,24 @@ public final class FSVoipAppModel: ObservableObject {
         for account in accounts {
             do {
                 switch try await service.refresh(account) {
-                case let .updated(updated, contacts):
+                case let .updated(updated, contacts, me):
                     internalContacts[updated.id] = contacts
                     self.contacts.setInternalContacts(contacts, accountId: updated.id)
+
+                    // The one `GET /me` of this refresh feeds the contacts and the "Centrale" section alike.
+                    if let me {
+                        self.contacts.apply(capabilities: me.capabilities?.contacts ?? ContactCapabilities(), accountId: updated.id)
+                        pbx?.apply(me: me, accountId: updated.id)
+                    }
                 case .revoked:
                     internalContacts[account.id] = nil
                     cleanUp(accountId: account.id)
                     notice = Notice(message: String(format: L10n.string("notice.revoked"), account.displayLabel), isError: true)
                 }
+            } catch APIError.forbidden {
+                // The role that allowed the section is gone: hide it right away.
+                pbx?.accessDenied(accountId: account.id)
+                logger.notice("Refresh of account \(account.id) was refused (403)")
             } catch {
                 // Offline or a server hiccup: keep what we have, try again next time.
                 logger.notice("Refresh of account \(account.id) failed: \(error)")
@@ -500,6 +526,7 @@ public final class FSVoipAppModel: ObservableObject {
     // MARK: Helpers
 
     private func cleanUp(accountId: String) {
+        pbx?.forget(accountId: accountId)
         preferences.removePreferences(for: accountId)
         internalContacts[accountId] = nil
         // Unpairing removes the address book of that account from this phone.

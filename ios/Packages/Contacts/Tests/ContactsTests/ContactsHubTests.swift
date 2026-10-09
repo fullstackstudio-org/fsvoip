@@ -194,6 +194,29 @@ final class ContactsHubTests: XCTestCase {
         XCTAssertTrue(hub.canDelete(entry))
     }
 
+    func testTheRightsFromTheAppsMeAreUsedByASyncRightAfterwardsAndNotAskedAgain() async throws {
+        api.capabilities = Make.capabilities(read: true, write: true, delete: true)
+        api.syncResults = [.success(Make.run([Make.contact("a", "Anna", phones: ["+31611111111"])], serverTime: "s1", full: true))]
+        let hub = await configured()
+
+        // The app did its `GET /me` and passes on what it says: this pairing may not write any more.
+        hub.apply(capabilities: Make.capabilities(read: true, write: false, delete: false), accountId: "acc")
+        await hub.sync(accountId: "acc", force: true)
+        await hub.settle()
+
+        XCTAssertEqual(api.capabilityCalls, 0, "one /me per refresh: the sync does not ask again")
+        let entry = try XCTUnwrap(hub.entries.first)
+        XCTAssertFalse(hub.canWrite(entry))
+        XCTAssertFalse(hub.canDelete(entry))
+
+        // Later (the timer) the sync asks for itself and takes what the server says then.
+        clock.advance(120)
+        api.syncResults = [.success(Make.run([], serverTime: "s2", full: false))]
+        await hub.sync(accountId: "acc", force: true)
+        XCTAssertEqual(api.capabilityCalls, 1)
+        XCTAssertTrue(hub.canWrite(entry))
+    }
+
     // MARK: Lists
 
     func testListsAreDownloadedOnceAndNotAgainWhileTheVersionIsEqual() async throws {

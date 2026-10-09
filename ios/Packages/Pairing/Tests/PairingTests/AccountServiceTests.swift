@@ -51,7 +51,7 @@ final class AccountServiceTests: XCTestCase {
 
         let result = try await service.refresh(account)
 
-        guard case let .updated(updated, contacts) = result else {
+        guard case let .updated(updated, contacts, _) = result else {
             return XCTFail("expected updated")
         }
 

@@ -4,7 +4,9 @@ import Foundation
 
 /// The result of `GET /me` for one account.
 public enum AccountRefreshResult: Equatable, Sendable {
-    case updated(StoredAccount, internalContacts: [InternalContact])
+    /// `me` is the whole answer: the app hands it to everything that reads from `GET /me` (contacts, the "Centrale" section), so one
+    /// refresh is one request. `nil` only for a service that has no such answer (tests, the demo).
+    case updated(StoredAccount, internalContacts: [InternalContact], me: MeResponse? = nil)
     /// 401: the pairing was revoked. The account has been removed from this phone.
     case revoked
 }
@@ -53,7 +55,7 @@ public struct AccountService: AccountServicing {
                 try accounts.save(updated)
             }
 
-            return .updated(updated, internalContacts: me.internalContacts)
+            return .updated(updated, internalContacts: me.internalContacts, me: me)
         } catch APIError.unauthorized {
             logger.notice("Account \(account.id) was revoked by the server")
             try accounts.remove(id: account.id)

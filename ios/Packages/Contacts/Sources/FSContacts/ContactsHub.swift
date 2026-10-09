@@ -87,6 +87,8 @@ public final class ContactsHub: ObservableObject {
     private var failed: Set<String> = []
     private var lastAttempt: [String: Date] = [:]
     private var internalContacts: [String: [InternalContact]] = [:]
+    /// What the app's own `GET /me` said a moment ago (see `apply(capabilities:accountId:)`).
+    private var knownCapabilities: [String: (value: ContactCapabilities, at: Date)] = [:]
     private var deviceEntries: [ContactEntry] = []
     private var index: ContactIndex = .empty
     private var generation = 0
@@ -165,6 +167,7 @@ public final class ContactsHub: ObservableObject {
         failed.remove(accountId)
         lastAttempt[accountId] = nil
         internalContacts[accountId] = nil
+        knownCapabilities[accountId] = nil
         knownAccountIds.removeAll { $0 == accountId }
         refreshStates()
         scheduleRebuild()
@@ -178,6 +181,35 @@ public final class ContactsHub: ObservableObject {
         internalContacts[accountId] = contacts
         scheduleRebuild()
     }
+
+    /// The rights of this pairing from the `GET /me` the app just did for the account. A sync that follows within `capabilitiesFreshness`
+    /// uses them instead of asking `/me` a second time; a later sync (the timer) asks for itself.
+    public func apply(capabilities: ContactCapabilities, accountId: String) {
+        knownCapabilities[accountId] = (capabilities, now())
+
+        // Only when the stored data is already loaded: this must never create an empty book in front of the one on disk.
+        guard data[accountId] != nil else {
+            return
+        }
+
+        update(accountId) {
+            $0.canRead = capabilities.read
+            $0.canWrite = capabilities.write
+            $0.canDelete = capabilities.delete
+        }
+        refreshStates()
+    }
+
+    private func currentCapabilities(accountId: String, api: ContactsAPI) async throws -> ContactCapabilities {
+        if let known = knownCapabilities[accountId], now().timeIntervalSince(known.at) < Self.capabilitiesFreshness {
+            return known.value
+        }
+
+        return try await api.contactCapabilities()
+    }
+
+    /// How long the rights from the app's `/me` count for a sync.
+    static let capabilitiesFreshness: TimeInterval = 30
 
     // MARK: Lookup
 
@@ -243,7 +275,7 @@ public final class ContactsHub: ObservableObject {
         defer { syncingAccountIds.remove(accountId) }
 
         do {
-            let capabilities = try await api.contactCapabilities()
+            let capabilities = try await currentCapabilities(accountId: accountId, api: api)
             update(accountId) {
                 $0.canRead = capabilities.read
                 $0.canWrite = capabilities.write

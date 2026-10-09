@@ -68,6 +68,7 @@ final class FakeContactsAPI: ContactsAPI, @unchecked Sendable {
     var detailResult: Result<ContactDetail, Error>?
     var deleteResult: Result<Int, Error> = .success(1)
 
+    private(set) var capabilityCalls = 0
     private(set) var syncSinces: [String?] = []
     private(set) var snapshotCalls: [(listId: String, cursor: String?, etag: String?)] = []
     private(set) var updates: [(id: String, update: ContactUpdate)] = []
@@ -75,6 +76,8 @@ final class FakeContactsAPI: ContactsAPI, @unchecked Sendable {
     private(set) var deletes: [String] = []
 
     func contactCapabilities() async throws -> ContactCapabilities {
+        lock.withLock { capabilityCalls += 1 }
+
         if let meError { throw meError }
 
         return capabilities

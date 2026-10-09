@@ -5,6 +5,16 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var model: FSVoipAppModel
+    /// Demo mode only (`-FSVoipDemoScreen pbx`): open the first account, and from there the "Centrale" section, without tapping.
+    @State private var opensDemoAccount = Self.demoScreen == "pbx"
+
+    private static var demoScreen: String? {
+        #if DEBUG
+        UserDefaults.standard.string(forKey: "FSVoipDemoScreen")
+        #else
+        nil
+        #endif
+    }
 
     var body: some View {
         List {
@@ -61,6 +71,11 @@ struct SettingsView: View {
             }
         }
         .navigationTitle(L10n.string("tab.settings"))
+        .navigationDestination(isPresented: $opensDemoAccount) {
+            if let first = model.accounts.first {
+                AccountDetailView(model: model, accountId: first.id)
+            }
+        }
     }
 
     static var version: String {

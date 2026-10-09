@@ -2,7 +2,7 @@
 //
 // DEBUG builds only: a demo of the app without a phone system, for the simulator, screenshots and UI checks.
 // Start with the launch argument `-FSVoipDemo YES` (two paired example extensions) or `-FSVoipDemo onboarding`
-// (nothing paired yet). `-FSVoipDemoScreen <dialer|recents|contacts|settings|account|incall|incoming|push|pairing|failed|scanner>`
+// (nothing paired yet). `-FSVoipDemoScreen <dialer|recents|contacts|settings|pbx|account|incall|incoming|push|pairing|failed|scanner>`
 // opens a screen directly. Nothing here talks to a server or a PBX, and nothing is written to the Keychain.
 
 #if DEBUG
@@ -53,7 +53,8 @@ enum DemoMode {
             recentsStore: recents,
             device: { DeviceDescriptor(model: "Simulator", osVersion: nil, appVersion: "demo", installId: "d3m0d3m0d3m0d3m0") },
             requestMicrophone: { true },
-            contacts: ContactsHub(store: InMemoryContactsStore(), api: { _ in demoContacts }, settings: InMemoryContactsSettings(), minimumInterval: 0)
+            contacts: ContactsHub(store: InMemoryContactsStore(), api: { _ in demoContacts }, settings: InMemoryContactsSettings(), minimumInterval: 0),
+            pbx: PbxHub(service: DemoPbxService(adminAccountId: exampleAccounts[0].id), gate: LocalAccessGate(authenticator: DemoLocalAuth()))
         )
 
         open(defaults.string(forKey: "FSVoipDemoScreen"), model: model, engine: engine)
@@ -69,7 +70,8 @@ enum DemoMode {
             model.selectedTab = .recents
         case "contacts":
             model.selectedTab = .contacts
-        case "settings":
+        case "settings", "pbx":
+            // `pbx` also opens the first account and its "Centrale" section (see `SettingsView`).
             model.selectedTab = .settings
         case "scanner":
             model.isScannerPresented = true
@@ -168,7 +170,11 @@ final class DemoAccountService: AccountServicing, @unchecked Sendable {
     }
 
     func refresh(_ account: StoredAccount) async throws -> AccountRefreshResult {
-        .updated(account, internalContacts: [InternalContact(number: "100", name: "Receptie"), InternalContact(number: "103", name: "Werkplaats")])
+        .updated(
+            account,
+            internalContacts: [InternalContact(number: "100", name: "Receptie"), InternalContact(number: "103", name: "Werkplaats")],
+            me: DemoPbxService.meResponse(isAdmin: account.id == DemoMode.exampleAccounts[0].id)
+        )
     }
 
     func rename(_ account: StoredAccount, alias: String?) async throws -> StoredAccount {
