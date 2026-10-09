@@ -70,7 +70,7 @@ struct PbxOverviewView: View {
             }
         }
         .navigationTitle(L10n.string("pbx.title"))
-        .refreshable {
+        .detachedRefreshable {
             await model.refresh(.overview)
             await model.load(.numbers)
         }

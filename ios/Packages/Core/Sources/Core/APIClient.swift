@@ -58,6 +58,23 @@ public enum APIError: Error, Equatable, Sendable {
     case parkUncertain
 }
 
+extension APIError {
+    /// A task cancellation or a cancelled URL request: the caller gave up, the network did not fail.
+    public static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError {
+            return true
+        }
+
+        if let url = error as? URLError, url.code == .cancelled {
+            return true
+        }
+
+        let ns = error as NSError
+
+        return ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled
+    }
+}
+
 public protocol HTTPTransport: Sendable {
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse)
 
@@ -113,13 +130,28 @@ public struct URLSessionTransport: HTTPTransport {
     }
 
     public func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-        let (data, response) = try await session.data(for: request)
+        let (data, response): (Data, URLResponse)
+
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch let error as URLError where Self.retriesOnce(error, method: request.httpMethod) {
+            // A kept-alive connection the network (or Cloudflare) closed while the app was idle fails the first request with
+            // "connection lost" although the internet works. A read can safely go once more over a fresh connection.
+            (data, response) = try await session.data(for: request)
+        }
 
         guard let http = response as? HTTPURLResponse else {
             throw APIError.transport("Not an HTTP response")
         }
 
         return (data, http)
+    }
+
+    /// Only reads (`GET`/`HEAD`), only for a dropped connection: a write is never sent twice.
+    static func retriesOnce(_ error: URLError, method: String?) -> Bool {
+        let method = (method ?? "GET").uppercased()
+
+        return (method == "GET" || method == "HEAD") && error.code == .networkConnectionLost
     }
 
     public func upload(_ request: URLRequest, body: Data, progress: (@Sendable (Double) -> Void)?) async throws -> (Data, HTTPURLResponse) {
@@ -290,6 +322,12 @@ public struct FSVoipAPIClient: Sendable {
         } catch let error as APIError {
             throw error
         } catch {
+            // Cancelled by the caller (a screen that went away, a pull to refresh SwiftUI cancelled): not a network problem, so never
+            // "no connection". Callers ignore a `CancellationError`.
+            if APIError.isCancellation(error) {
+                throw CancellationError()
+            }
+
             throw APIError.transport((error as NSError).localizedDescription)
         }
 

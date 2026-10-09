@@ -59,7 +59,7 @@ struct RingGroupsView: View {
             }
         }
         .toolbar(.hidden, for: .navigationBar)
-        .refreshable { await model.refresh(.ringGroups) }
+        .detachedRefreshable { await model.refresh(.ringGroups) }
         .task { await model.loadIfNeeded(.ringGroups) }
         .navigationDestination(isPresented: $creating) {
             RingGroupEditView(model: model, group: nil)

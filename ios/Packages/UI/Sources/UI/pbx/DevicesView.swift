@@ -42,7 +42,7 @@ struct DevicesView: View {
             }
         }
         .toolbar(.hidden, for: .navigationBar)
-        .refreshable { await model.refresh(.devices) }
+        .detachedRefreshable { await model.refresh(.devices) }
         .task { await model.loadIfNeeded(.devices) }
         .accessibilityIdentifier("pbx-devices")
     }

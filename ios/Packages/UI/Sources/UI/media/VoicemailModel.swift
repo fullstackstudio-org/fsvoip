@@ -354,6 +354,9 @@ final class VoicemailModel: ObservableObject {
     // MARK: Failures
 
     private func handle(_ error: Error) {
+        // Cancelled by the screen or by SwiftUI: not a failure, never "no connection".
+        if APIError.isCancellation(error) { return }
+
         let result = MediaFailure.classify(error)
 
         switch result {

@@ -49,7 +49,7 @@ struct SoundsView: View {
             .padding(.top, Theme.Spacing.s)
         }
         .task { await model.load() }
-        .refreshable { await model.load() }
+        .detachedRefreshable { await model.load() }
         .onDisappear { model.stopPlaying() }
         .sheet(isPresented: $isRecording) {
             SoundRecorderSheet(model: model) { _ in }

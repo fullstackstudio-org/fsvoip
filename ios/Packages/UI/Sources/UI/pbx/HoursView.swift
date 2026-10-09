@@ -60,7 +60,7 @@ struct HoursView: View {
             }
         }
         .navigationTitle(L10n.string("pbx.hours.title"))
-        .refreshable { await model.refresh(.hours) }
+        .detachedRefreshable { await model.refresh(.hours) }
         .task { await model.loadIfNeeded(.hours) }
         .accessibilityIdentifier("pbx-hours")
     }

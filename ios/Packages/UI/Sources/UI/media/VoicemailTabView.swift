@@ -98,7 +98,7 @@ private struct VoicemailContent: View {
                 content
             }
         }
-        .refreshable { await model.reload() }
+        .detachedRefreshable { await model.reload() }
         .task {
             await model.load()
             startDemo()

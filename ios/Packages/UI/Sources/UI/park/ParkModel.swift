@@ -133,7 +133,7 @@ public final class ParkModel: ObservableObject {
 
             return true
         } catch {
-            guard currentAccountId == account.id else { return false }
+            guard currentAccountId == account.id, !APIError.isCancellation(error) else { return false }
 
             let classified = ParkFailure.classify(error)
             failure = classified
@@ -206,6 +206,9 @@ public final class ParkModel: ObservableObject {
 
     /// Does this error of the park POST leave open whether the call was parked? (No answer, or a 5xx from a proxy in between.)
     static func outcomeIsUncertain(_ error: Error) -> Bool {
+        // The request may have left before the task was cancelled.
+        if APIError.isCancellation(error) { return true }
+
         guard let api = error as? APIError else { return false }
 
         switch api {

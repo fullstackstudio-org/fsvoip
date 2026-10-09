@@ -99,7 +99,7 @@ struct HistoryView: View {
         .task(id: account?.id) {
             if let account { await history.load(account) }
         }
-        .refreshable {
+        .detachedRefreshable {
             if let account { await history.load(account) }
         }
     }

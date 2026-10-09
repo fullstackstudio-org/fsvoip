@@ -313,6 +313,10 @@ public final class ContactsHub: ObservableObject {
 
             return .revoked
         } catch {
+            if APIError.isCancellation(error) {
+                return .skipped
+            }
+
             logger.notice("Contacts sync of an account failed: \(error)")
             failed.insert(accountId)
             refreshStates()

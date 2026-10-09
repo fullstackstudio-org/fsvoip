@@ -185,6 +185,9 @@ final class RecordingsModel: ObservableObject {
     }
 
     private func handle(_ error: Error) {
+        // The screen or SwiftUI gave up on the request: nothing went wrong, so nothing to say (never "no connection").
+        if APIError.isCancellation(error) { return }
+
         let result = MediaFailure.classify(error)
 
         switch result {
