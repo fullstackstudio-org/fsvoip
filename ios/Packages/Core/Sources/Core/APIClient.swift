@@ -75,7 +75,7 @@ public struct FSVoipAPIClient: Sendable {
 
     private let baseURL: URL
     private let deviceToken: Secret?
-    private let transport: HTTPTransport
+    let transport: HTTPTransport
     private let userAgent: String
     private let logger: FSLogger
 

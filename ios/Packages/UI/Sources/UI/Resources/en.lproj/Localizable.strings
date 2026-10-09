@@ -429,3 +429,73 @@
 "pbx.closed.limit" = "You can set at most %ld own days.";
 "pbx.closed.error.range" = "Choose a valid period.";
 "pbx.closed.error.tooMany" = "You can close at most %ld own days. There is room for %ld more; open older days again first.";
+
+/* Voicemail and recordings */
+"media.voicemail.title" = "Voicemail";
+"media.recordings.title" = "Recordings";
+"media.section.footer" = "Listen to the messages in your voicemail.";
+"media.section.footer.admin" = "Listen to voicemail and call recordings. Recordings are for admins only.";
+"media.notice.lostAccess" = "Your access to voicemail or recordings of %@ has changed.";
+
+"media.lock.title" = "Locked";
+"media.lock.reason.recordings" = "Open the call recordings";
+"media.lock.reason.voicemail" = "Open your colleagues' voicemail";
+"media.lock.message.recordings" = "Unlock with Face ID, Touch ID or your passcode to listen to recordings.";
+"media.lock.message.voicemail" = "Unlock with Face ID, Touch ID or your passcode to listen to your colleagues' voicemail.";
+"media.lock.noPasscode" = "First set a passcode on this phone (Settings > Face ID & Passcode). Then you can listen to this here.";
+
+"media.voicemail.scope.header" = "Voicemail of";
+"media.voicemail.scope.own" = "My voicemail";
+"media.voicemail.scope.all" = "All voicemail";
+"media.voicemail.scope.footer" = "These are messages of colleagues or shared voicemail. They stay open while you are unlocked.";
+"media.voicemail.shared" = "shared";
+"media.voicemail.anonymous" = "Anonymous";
+"media.voicemail.empty.title" = "No messages";
+"media.voicemail.empty.own" = "There are no messages in your voicemail.";
+"media.voicemail.empty.other" = "There are no messages in this voicemail.";
+"media.voicemail.unavailable.title" = "Voicemail not reachable";
+"media.voicemail.unavailable.message" = "The phone system is not answering right now. Pull the list down to try again.";
+"media.voicemail.footer" = "Messages are kept for 30 days. Swipe left to delete a message.";
+"media.daysLeft.many" = "%ld days left";
+"media.daysLeft.one" = "1 day left";
+"media.daysLeft.today" = "Last day";
+"media.unavailable.row" = "No longer available";
+"media.row.hint" = "Tap to play";
+"media.readOnly.notice" = "The phone system is locked right now. You can listen, but not delete messages.";
+
+"media.delete.action" = "Delete";
+"media.delete.title" = "Delete this message?";
+"media.delete.message" = "The message is removed from the phone system and cannot be restored.";
+"media.delete.confirm" = "Delete message";
+"media.delete.readOnly" = "The phone system is locked right now. You cannot delete messages.";
+
+"media.recordings.month" = "Month";
+"media.recordings.empty.title" = "No recordings";
+"media.recordings.empty.message" = "No calls were recorded this month.";
+"media.recordings.footer" = "Recordings are kept for 90 days.";
+"media.recordings.truncated" = "Only the most recent calls of this month are in the list.";
+"media.direction.inbound" = "Incoming";
+"media.direction.outbound" = "Outgoing";
+"media.direction.internal" = "Internal";
+
+"media.player.play" = "Play";
+"media.player.pause" = "Pause";
+"media.player.back" = "Back 10 seconds";
+"media.player.forward" = "Forward 10 seconds";
+"media.player.speed" = "Playback speed";
+"media.player.route" = "Choose output";
+"media.player.position" = "Progress";
+"media.player.position.value" = "%@ of %@";
+
+"media.error.accessDenied" = "You no longer have access to this.";
+"media.error.revoked" = "This phone is no longer paired.";
+"media.error.gone.recording" = "No longer available. Recordings are kept for 90 days.";
+"media.error.gone.voicemail" = "No longer available. Voicemail is kept for 30 days.";
+"media.error.notFound" = "This message no longer exists.";
+"media.error.rateLimited" = "You have asked for a lot. Try again in a minute.";
+"media.error.rateLimited.seconds" = "You have asked for a lot. Try again in %ld seconds.";
+"media.error.offline" = "No connection. Check your internet and try again.";
+"media.error.unavailable" = "The phone system is not answering right now. Try again shortly.";
+"media.error.readOnly" = "The phone system is locked right now. Nothing can be changed.";
+"media.error.callInProgress" = "Audio does not play during a call. Try again after the call.";
+"media.error.unplayable" = "This audio cannot be played.";

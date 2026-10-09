@@ -55,6 +55,10 @@ struct AccountDetailView: View {
                 PbxAccountSection(hub: pbx, account: account)
             }
 
+            if let media = model.media {
+                MediaAccountSection(hub: media, account: account)
+            }
+
             Section {
                 TextField(account.label, text: $alias)
                     .textInputAutocapitalization(.sentences)

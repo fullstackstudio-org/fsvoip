@@ -429,3 +429,73 @@
 "pbx.closed.limit" = "Je kunt maximaal %ld eigen dagen instellen.";
 "pbx.closed.error.range" = "Kies een geldige periode.";
 "pbx.closed.error.tooMany" = "Je kunt maximaal %ld eigen dagen dicht zetten. Er is nog ruimte voor %ld dagen; zet eerst oude dagen weer open.";
+
+/* Voicemail en opnames */
+"media.voicemail.title" = "Voicemail";
+"media.recordings.title" = "Opnames";
+"media.section.footer" = "Luister de berichten in je voicemail terug.";
+"media.section.footer.admin" = "Luister voicemail en opnames van gesprekken terug. Opnames zijn alleen voor beheerders.";
+"media.notice.lostAccess" = "Je toegang tot voicemail of opnames van %@ is gewijzigd.";
+
+"media.lock.title" = "Vergrendeld";
+"media.lock.reason.recordings" = "Open de opnames van gesprekken";
+"media.lock.reason.voicemail" = "Open de voicemail van collega's";
+"media.lock.message.recordings" = "Ontgrendel met Face ID, Touch ID of je toegangscode om opnames te beluisteren.";
+"media.lock.message.voicemail" = "Ontgrendel met Face ID, Touch ID of je toegangscode om de voicemail van collega's te beluisteren.";
+"media.lock.noPasscode" = "Stel eerst een toegangscode in op deze telefoon (Instellingen > Face ID en toegangscode). Daarna kun je dit hier beluisteren.";
+
+"media.voicemail.scope.header" = "Voicemail van";
+"media.voicemail.scope.own" = "Mijn voicemail";
+"media.voicemail.scope.all" = "Alle voicemail";
+"media.voicemail.scope.footer" = "Dit zijn berichten van collega's of gedeelde voicemail. Ze staan open zolang je ontgrendeld bent.";
+"media.voicemail.shared" = "gedeeld";
+"media.voicemail.anonymous" = "Anoniem";
+"media.voicemail.empty.title" = "Geen berichten";
+"media.voicemail.empty.own" = "Er staan geen berichten in je voicemail.";
+"media.voicemail.empty.other" = "In deze voicemail staan geen berichten.";
+"media.voicemail.unavailable.title" = "Voicemail niet bereikbaar";
+"media.voicemail.unavailable.message" = "De centrale antwoordt nu niet. Trek de lijst omlaag om het opnieuw te proberen.";
+"media.voicemail.footer" = "Berichten worden 30 dagen bewaard. Veeg naar links om een bericht te verwijderen.";
+"media.daysLeft.many" = "Nog %ld dagen";
+"media.daysLeft.one" = "Nog 1 dag";
+"media.daysLeft.today" = "Laatste dag";
+"media.unavailable.row" = "Niet meer beschikbaar";
+"media.row.hint" = "Tik om af te spelen";
+"media.readOnly.notice" = "De centrale staat nu vergrendeld. Je kunt luisteren, maar geen berichten verwijderen.";
+
+"media.delete.action" = "Verwijderen";
+"media.delete.title" = "Dit bericht verwijderen?";
+"media.delete.message" = "Het bericht wordt van de centrale verwijderd en kan niet worden teruggehaald.";
+"media.delete.confirm" = "Bericht verwijderen";
+"media.delete.readOnly" = "De centrale staat nu vergrendeld. Je kunt nu geen berichten verwijderen.";
+
+"media.recordings.month" = "Maand";
+"media.recordings.empty.title" = "Geen opnames";
+"media.recordings.empty.message" = "In deze maand zijn er geen gesprekken opgenomen.";
+"media.recordings.footer" = "Opnames worden 90 dagen bewaard.";
+"media.recordings.truncated" = "Alleen de meest recente gesprekken van deze maand staan in de lijst.";
+"media.direction.inbound" = "Inkomend";
+"media.direction.outbound" = "Uitgaand";
+"media.direction.internal" = "Intern";
+
+"media.player.play" = "Afspelen";
+"media.player.pause" = "Pauzeren";
+"media.player.back" = "10 seconden terug";
+"media.player.forward" = "10 seconden vooruit";
+"media.player.speed" = "Afspeelsnelheid";
+"media.player.route" = "Uitvoer kiezen";
+"media.player.position" = "Voortgang";
+"media.player.position.value" = "%@ van %@";
+
+"media.error.accessDenied" = "Je hebt hier geen toegang meer toe.";
+"media.error.revoked" = "Dit toestel is niet meer gekoppeld.";
+"media.error.gone.recording" = "Niet meer beschikbaar. Opnames worden 90 dagen bewaard.";
+"media.error.gone.voicemail" = "Niet meer beschikbaar. Voicemail wordt 30 dagen bewaard.";
+"media.error.notFound" = "Dit bericht bestaat niet meer.";
+"media.error.rateLimited" = "Je hebt veel opgevraagd. Probeer het over een minuutje opnieuw.";
+"media.error.rateLimited.seconds" = "Je hebt veel opgevraagd. Probeer het over %ld seconden opnieuw.";
+"media.error.offline" = "Geen verbinding. Controleer je internet en probeer het opnieuw.";
+"media.error.unavailable" = "De centrale antwoordt nu niet. Probeer het straks opnieuw.";
+"media.error.readOnly" = "De centrale staat nu vergrendeld. Er kan niets worden gewijzigd.";
+"media.error.callInProgress" = "Tijdens een gesprek speelt het geluid niet af. Probeer het na het gesprek opnieuw.";
+"media.error.unplayable" = "Dit geluid kan niet worden afgespeeld.";

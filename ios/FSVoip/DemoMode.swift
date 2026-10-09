@@ -2,7 +2,7 @@
 //
 // DEBUG builds only: a demo of the app without a phone system, for the simulator, screenshots and UI checks.
 // Start with the launch argument `-FSVoipDemo YES` (two paired example extensions) or `-FSVoipDemo onboarding`
-// (nothing paired yet). `-FSVoipDemoScreen <dialer|recents|contacts|settings|pbx|account|incall|incoming|push|pairing|failed|scanner>`
+// (nothing paired yet). `-FSVoipDemoScreen <dialer|recents|contacts|settings|pbx|voicemail|recordings|account|incall|incoming|push|pairing|failed|scanner>`
 // opens a screen directly. Nothing here talks to a server or a PBX, and nothing is written to the Keychain.
 
 #if DEBUG
@@ -43,6 +43,7 @@ enum DemoMode {
         }
 
         let demoContacts = DemoContactsAPI()
+        let gate = LocalAccessGate(authenticator: DemoLocalAuth())
         let engine = DemoSipEngine()
         let phone = PhoneController(engine: engine, system: ImmediateCallSystem(), audioRouting: MemoryAudioRouting(), preferences: preferences)
         let model = FSVoipAppModel(
@@ -54,7 +55,8 @@ enum DemoMode {
             device: { DeviceDescriptor(model: "Simulator", osVersion: nil, appVersion: "demo", installId: "d3m0d3m0d3m0d3m0") },
             requestMicrophone: { true },
             contacts: ContactsHub(store: InMemoryContactsStore(), api: { _ in demoContacts }, settings: InMemoryContactsSettings(), minimumInterval: 0),
-            pbx: PbxHub(service: DemoPbxService(adminAccountId: exampleAccounts[0].id), gate: LocalAccessGate(authenticator: DemoLocalAuth()))
+            pbx: PbxHub(service: DemoPbxService(adminAccountId: exampleAccounts[0].id), gate: gate),
+            media: MediaHub(service: DemoMediaService(adminAccountId: exampleAccounts[0].id), gate: gate)
         )
 
         open(defaults.string(forKey: "FSVoipDemoScreen"), model: model, engine: engine)
@@ -70,8 +72,8 @@ enum DemoMode {
             model.selectedTab = .recents
         case "contacts":
             model.selectedTab = .contacts
-        case "settings", "pbx":
-            // `pbx` also opens the first account and its "Centrale" section (see `SettingsView`).
+        case "settings", "pbx", "voicemail", "recordings":
+            // `pbx`, `voicemail` and `recordings` also open the first account and that section (see `SettingsView`).
             model.selectedTab = .settings
         case "scanner":
             model.isScannerPresented = true

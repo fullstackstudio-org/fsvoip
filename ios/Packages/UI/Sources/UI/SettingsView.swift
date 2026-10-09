@@ -6,7 +6,7 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var model: FSVoipAppModel
     /// Demo mode only (`-FSVoipDemoScreen pbx`): open the first account, and from there the "Centrale" section, without tapping.
-    @State private var opensDemoAccount = Self.demoScreen == "pbx"
+    @State private var opensDemoAccount = ["pbx", "voicemail", "recordings"].contains(Self.demoScreen ?? "")
 
     private static var demoScreen: String? {
         #if DEBUG

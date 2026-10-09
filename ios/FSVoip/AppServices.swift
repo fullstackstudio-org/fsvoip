@@ -53,6 +53,8 @@ final class AppServices {
         let engine = LinphoneSipEngine(appVersion: version, installId: identity.installId)
         let phone = PhoneController(engine: engine, system: CallKitSystem(), preferences: preferences)
         let api = FSVoipAPIClient(userAgent: "FSVoip/\(version) (iOS)")
+        // One local check (Face ID / passcode, valid for five minutes) for the "Centrale" section and the recordings.
+        let gate = LocalAccessGate(authenticator: SystemLocalAuth())
         let reporter = PushTokenReporter(api: api, accounts: accounts, ledger: UserDefaultsPushTokenLedger(), environment: Self.pushEnvironment)
 
         // Launched in the background by a VoIP push: the accounts stay un-registered until the push wakes the one
@@ -81,7 +83,8 @@ final class AppServices {
             },
             pushTokens: reporter,
             requestNotifications: { await Self.requestNotificationPermission() },
-            pbx: PbxHub(service: LivePbxService(api: api), gate: LocalAccessGate(authenticator: SystemLocalAuth()))
+            pbx: PbxHub(service: LivePbxService(api: api), gate: gate),
+            media: MediaHub(service: LiveMediaService(api: api), gate: gate)
         )
     }
 

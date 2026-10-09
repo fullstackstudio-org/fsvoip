@@ -13,7 +13,7 @@ public struct MediaRequest: Sendable, CustomStringConvertible, CustomDebugString
     private let authorization: Secret
     private let userAgent: String
 
-    init(url: URL, deviceToken: Secret, userAgent: String) {
+    public init(url: URL, deviceToken: Secret, userAgent: String) {
         self.url = url
         authorization = Secret("Bearer \(deviceToken.reveal())")
         self.userAgent = userAgent
@@ -22,6 +22,15 @@ public struct MediaRequest: Sendable, CustomStringConvertible, CustomDebugString
     /// The headers every request for this media needs (contains the bearer token).
     public func headers() -> [String: String] {
         ["Authorization": authorization.reveal(), "User-Agent": userAgent]
+    }
+
+    /// The key `AVURLAsset` reads the extra HTTP headers from (`AVURLAssetHTTPHeaderFieldsKey`). Core cannot import AVFoundation,
+    /// so the string is spelled out here; a test in the UI package checks it against the constant of the SDK.
+    public static let assetHeaderFieldsKey = "AVURLAssetHTTPHeaderFieldsKey"
+
+    /// The `options` for `AVURLAsset(url:options:)`: the bearer token goes in the HEADERS only, never in the URL.
+    public func assetOptions() -> [String: Any] {
+        [Self.assetHeaderFieldsKey: headers()]
     }
 
     /// A ready `URLRequest` (GET, no cache). Add a `Range` header yourself if you need one.
