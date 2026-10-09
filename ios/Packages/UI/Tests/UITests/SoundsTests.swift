@@ -229,6 +229,19 @@ final class SoundsTests: XCTestCase {
         XCTAssertEqual(model.recorder.state, .idle)
     }
 
+    func testANewSoundsModelDoesNotWipeTheRecordingOfAnotherAccount() async throws {
+        hub.apply(me: PbxFixtures.decode("me-response-admin-v2", as: MeResponse.self), accountId: "admin-1")
+        let first = SoundsModel(account: account(), hub: hub, recorderBackend: StubRecorderBackend())
+        await first.recorder.start()
+        first.recorder.stop()
+        let file = try XCTUnwrap(first.recorder.fileURL)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
+
+        _ = SoundsModel(account: account("admin-2"), hub: hub, recorderBackend: StubRecorderBackend())
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: file.path), "purging stale files happens once per process, not per model")
+    }
+
     func testAFailedRecordingUploadKeepsTheRecordingForANewTry() async throws {
         hub.apply(me: PbxFixtures.decode("me-response-admin-v2", as: MeResponse.self), accountId: "admin-1")
         let model = SoundsModel(account: account(), hub: hub, recorderBackend: StubRecorderBackend())

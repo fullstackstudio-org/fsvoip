@@ -32,7 +32,7 @@ struct OnHoldTab: View {
     }
 }
 
-private struct OnHoldContent: View {
+struct OnHoldContent: View {
     @ObservedObject var app: FSVoipAppModel
     @ObservedObject var park: ParkModel
     let account: StoredAccount
@@ -40,6 +40,11 @@ private struct OnHoldContent: View {
     @State private var scope: ParkModel.Scope = .all
     @State private var pendingHangUp: ParkedCall?
     @Environment(\.scenePhase) private var scenePhase
+
+    /// The tab view keeps this view alive while another tab is showing: poll only when On hold is the visible tab and the app is active.
+    static func shouldPoll(phase: ScenePhase, selectedTab: FSVoipAppModel.Tab) -> Bool {
+        phase == .active && selectedTab == .onHold
+    }
 
     private var rows: [ParkedCall] {
         park.calls(in: scope)
@@ -52,13 +57,22 @@ private struct OnHoldContent: View {
             content
         }
         .task(id: account.id) {
-            park.startPolling(account)
+            if Self.shouldPoll(phase: scenePhase, selectedTab: app.selectedTab) {
+                park.startPolling(account)
+            }
         }
         .onDisappear { park.stopPolling() }
         .onChange(of: scenePhase) { phase in
-            if phase == .active {
+            if Self.shouldPoll(phase: phase, selectedTab: app.selectedTab) {
                 park.startPolling(account)
                 Task { await park.refresh(account) }
+            } else {
+                park.stopPolling()
+            }
+        }
+        .onChange(of: app.selectedTab) { tab in
+            if Self.shouldPoll(phase: scenePhase, selectedTab: tab) {
+                park.startPolling(account)
             } else {
                 park.stopPolling()
             }
@@ -201,6 +215,9 @@ private struct OnHoldContent: View {
             break
         case .gone:
             app.notice = FSVoipAppModel.Notice(message: L10n.string("onHold.notice.gone"), isError: true)
+        case .dialFailed:
+            // `app.call` has already shown its own, specific notice.
+            break
         case let .failed(failure):
             app.notice = FSVoipAppModel.Notice(message: failure.message, isError: true)
         }

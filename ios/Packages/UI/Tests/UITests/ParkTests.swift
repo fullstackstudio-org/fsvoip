@@ -144,6 +144,53 @@ final class ParkTests: XCTestCase {
         XCTAssertEqual(service.parkRequests, ["c1"], "no second request, ever")
     }
 
+    func testATimeOutOrAGatewayErrorIsUncertainAndNeverParksTheSameCallAgain() async {
+        let errors: [Error] = [APIError.transport("timed out"), APIError.unexpectedStatus(502), APIError.unexpectedStatus(504)]
+
+        for (index, error) in errors.enumerated() {
+            service.parkResult = .failure(error)
+            let callId = "call-\(index)"
+
+            let first = await model.park(callId: callId, account: parkAccount())
+            let second = await model.park(callId: callId, account: parkAccount())
+
+            XCTAssertEqual(first, .failed(.uncertain))
+            XCTAssertEqual(second, .ignored)
+            XCTAssertEqual(service.parkRequests.filter { $0 == callId }.count, 1)
+        }
+
+        XCTAssertGreaterThanOrEqual(service.count("parked"), errors.count, "the list is refreshed each time")
+    }
+
+    func testAClearRefusalIsNotUncertain() async {
+        service.parkResult = .failure(APIError.callNotFound)
+
+        _ = await model.park(callId: "c9", account: parkAccount())
+        service.parkResult = .failure(APIError.callNotFound)
+        let again = await model.park(callId: "c9", account: parkAccount())
+
+        XCTAssertEqual(again, .failed(.callNotFound), "a certain failure may be tried again")
+    }
+
+    func testParkingACallOfAnotherAccountDoesNotSwitchTheTabsList() async {
+        service.items = [parked("p", slot: 1)]
+        await model.refresh(parkAccount("a"))
+        XCTAssertEqual(model.calls.count, 1)
+        let listCalls = service.count("parked")
+
+        service.parkResult = .success(parked("q", slot: 2))
+        _ = await model.park(callId: "other", account: parkAccount("b"))
+
+        XCTAssertEqual(service.count("parked"), listCalls, "no refresh for another account")
+        XCTAssertEqual(model.calls.count, 1, "the list of account a stays")
+    }
+
+    func testPollingOnlyWhileOnHoldIsTheVisibleTabAndTheAppIsActive() {
+        XCTAssertTrue(OnHoldContent.shouldPoll(phase: .active, selectedTab: .onHold))
+        XCTAssertFalse(OnHoldContent.shouldPoll(phase: .active, selectedTab: .dialer))
+        XCTAssertFalse(OnHoldContent.shouldPoll(phase: .background, selectedTab: .onHold))
+    }
+
     // MARK: The list
 
     func testAllAndMineSegments() async {

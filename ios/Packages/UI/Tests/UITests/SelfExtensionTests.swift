@@ -214,7 +214,8 @@ final class SelfExtensionHubTests: XCTestCase {
         XCTAssertEqual(SelfExtensionFailure.classify(APIError.invalid(code: "invalid_request", field: "email")), .invalid)
         XCTAssertEqual(SelfExtensionFailure.classify(APIError.rateLimited(retryAfterSeconds: 120)), .rateLimited(retryAfterSeconds: 120))
         XCTAssertEqual(SelfExtensionFailure.classify(APIError.transport("x")), .offline)
-        XCTAssertEqual(SelfExtensionFailure.classify(APIError.conflict(code: "conflict")), .ownDevice)
+        XCTAssertEqual(SelfExtensionFailure.classify(APIError.conflict(code: "conflict")), .conflict)
+        XCTAssertEqual(SelfExtensionFailure.classify(APIError.conflict(code: "conflict"), forInvite: true), .ownDevice)
         XCTAssertEqual(SelfExtensionFailure.classify(APIError.conflict(code: "read_only")), .readOnly)
     }
 

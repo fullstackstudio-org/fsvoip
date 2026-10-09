@@ -48,6 +48,7 @@ struct SoundRecorderSheet: View {
                 name = SoundsModel.defaultRecordingName()
             }
         }
+        .interactiveDismissDisabled(isBusy)
         .onDisappear { discardIfLeft() }
         .accessibilityIdentifier("sound-recorder")
     }

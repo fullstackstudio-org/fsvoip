@@ -29,6 +29,8 @@ public final class ParkModel: ObservableObject {
         case dialing
         /// The call is not parked any more ("Niet meer geparkeerd").
         case gone
+        /// Dialling refused; the app model already told the user why (do not overwrite that with a generic message).
+        case dialFailed
         case failed(ParkFailure)
     }
 
@@ -179,22 +181,45 @@ public final class ParkModel: ObservableObject {
 
         do {
             let parked = try await service.park(callId: callId, for: account)
-            await refresh(account)
+            await refreshIfShowing(account)
 
             return .parked(slot: parked.slot)
         } catch {
-            let classified = ParkFailure.classify(error)
+            var classified = ParkFailure.classify(error)
+
+            // A time-out, a transport error or a gateway error after the request left: the PBX may have parked the call anyway.
+            if classified != .uncertain, Self.outcomeIsUncertain(error) {
+                classified = .uncertain
+            }
 
             if classified == .uncertain {
                 // Look, never repeat.
                 uncertainCallIds.insert(callId)
-                await refresh(account)
+                await refreshIfShowing(account)
             } else if classified == .revoked {
                 onRevoked?()
             }
 
             return .failed(classified)
         }
+    }
+
+    /// Does this error of the park POST leave open whether the call was parked? (No answer, or a 5xx from a proxy in between.)
+    static func outcomeIsUncertain(_ error: Error) -> Bool {
+        guard let api = error as? APIError else { return false }
+
+        switch api {
+        case .transport, .unavailable: return true
+        case let .unexpectedStatus(status): return status == 502 || status == 504 || status == 500
+        default: return false
+        }
+    }
+
+    /// Refreshes only when the list on screen belongs to `account`: parking a call of another account must not switch the tab's list.
+    private func refreshIfShowing(_ account: StoredAccount) async {
+        guard currentAccountId == nil || currentAccountId == account.id else { return }
+
+        await refresh(account)
     }
 
     // MARK: Picking up
@@ -219,7 +244,7 @@ public final class ParkModel: ObservableObject {
         guard dial(number, account.id) else {
             pendingRetrieve = nil
 
-            return .failed(.other)
+            return .dialFailed
         }
 
         return .dialing

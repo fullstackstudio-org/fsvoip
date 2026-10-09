@@ -193,6 +193,9 @@ private struct InviteLinkCard: View {
     let invitation: InviteModel.Invitation
     let remaining: TimeInterval
 
+    /// The link is a credential: it is not drawn while the app is not active (the app switcher takes its snapshot then).
+    @Environment(\.scenePhase) private var scenePhase
+
     private var link: URL? {
         URL(string: invitation.url.reveal())
     }
@@ -205,7 +208,13 @@ private struct InviteLinkCard: View {
                     .foregroundStyle(Theme.textPrimary)
                     .multilineTextAlignment(.center)
 
-                if let image = QRCodeImage.make(invitation.url.reveal()) {
+                if scenePhase != .active {
+                    Image(systemName: "lock.fill")
+                        .font(.largeTitle)
+                        .foregroundStyle(Theme.textTertiary)
+                        .frame(maxWidth: 240, minHeight: 240)
+                        .accessibilityIdentifier("invite-hidden")
+                } else if let image = QRCodeImage.make(invitation.url.reveal()) {
                     Image(uiImage: image)
                         .interpolation(.none)
                         .resizable()
@@ -222,7 +231,7 @@ private struct InviteLinkCard: View {
                     .foregroundStyle(Theme.textSecondary)
                     .multilineTextAlignment(.center)
 
-                if let link {
+                if scenePhase == .active, let link {
                     ShareLink(item: link, subject: Text(L10n.string("invite.share.subject")), message: Text(String(format: L10n.string("invite.share.message"), invitation.deviceName))) {
                         Label(L10n.string("invite.share"), systemImage: "square.and.arrow.up")
                     }

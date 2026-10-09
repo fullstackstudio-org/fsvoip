@@ -145,7 +145,8 @@ public enum SelfExtensionFailure: Equatable, Sendable {
     case unavailable
     case other
 
-    public static func classify(_ error: Error) -> SelfExtensionFailure {
+    /// `forInvite`: a 409 on the invitation call means "you cannot invite your own extension"; anywhere else it is a generic conflict.
+    public static func classify(_ error: Error, forInvite: Bool = false) -> SelfExtensionFailure {
         guard let api = error as? APIError else {
             return .other
         }
@@ -154,7 +155,10 @@ public enum SelfExtensionFailure: Equatable, Sendable {
         case .forbidden: return .accessDenied
         case .unauthorized: return .revoked
         case .readOnly: return .readOnly
-        case let .conflict(code): return code == "read_only" ? .readOnly : .ownDevice
+        case let .conflict(code):
+            if code == "read_only" { return .readOnly }
+
+            return forInvite ? .ownDevice : .conflict
         case .stale, .staleChain: return .conflict
         case .invalid, .invalidRequest, .blockedDestination, .payloadTooLarge: return .invalid
         case let .rateLimited(seconds): return .rateLimited(retryAfterSeconds: seconds)
@@ -283,7 +287,10 @@ public final class SelfExtensionHub: ObservableObject {
                 return .stale(states[account.id] ?? fresh)
             }
         } catch {
-            return .failed(SelfExtensionFailure.classify(error))
+            let failure = SelfExtensionFailure.classify(error)
+            if failure == .revoked { onRevoked?() }
+
+            return .failed(failure)
         }
     }
 
@@ -307,7 +314,7 @@ public final class SelfExtensionHub: ObservableObject {
         do {
             return .created(try await invites.invite(deviceId: deviceId, for: account))
         } catch {
-            let failure = SelfExtensionFailure.classify(error)
+            let failure = SelfExtensionFailure.classify(error, forInvite: true)
             if failure == .revoked { onRevoked?() }
 
             return .failed(failure)

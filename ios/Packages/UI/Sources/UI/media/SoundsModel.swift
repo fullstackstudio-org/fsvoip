@@ -46,6 +46,9 @@ final class SoundsModel: ObservableObject {
     private var observers: Set<AnyCancellable> = []
     private var loadGeneration = 0
     static let localPreviewId = "local-recording"
+    /// Leftovers of an earlier run (a crash while recording) are removed ONCE per process, before the first recorder exists. Doing it in
+    /// every init would delete the recording another account's model is still holding.
+    private static let purgeStaleRecordingsOnce: Void = AudioRecorderSession.purgeStaleFiles()
 
     init(account: StoredAccount, hub: MediaHub, recorderBackend: RecorderBackend? = nil) {
         self.account = account
@@ -56,7 +59,7 @@ final class SoundsModel: ObservableObject {
 
         let flag = { [weak hub] in hub?.isCallActive ?? false }
         recorder = AudioRecorderSession(backend: recorderBackend ?? AVRecorderBackend(), isCallActive: flag)
-        AudioRecorderSession.purgeStaleFiles()
+        _ = Self.purgeStaleRecordingsOnce
 
         player.$duration
             .sink { [weak self] value in self?.noteDuration(value) }
@@ -195,7 +198,12 @@ final class SoundsModel: ObservableObject {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
 
-        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        // An unreadable size is not "0 bytes": refuse instead of reading a file of unknown size.
+        guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize else {
+            show(.other)
+
+            return nil
+        }
 
         guard size <= SoundUpload.maxBytes else {
             show(.tooLarge)
