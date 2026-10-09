@@ -14,17 +14,18 @@ struct PbxOverviewView: View {
                 summary(overview)
 
                 if overview.numbers.isEmpty {
-                    if let flow = overview.entryFlow {
-                        Section {
-                            FlowView(node: flow)
-                                .padding(.vertical, 6)
-                        } header: {
-                            Text(L10n.string("pbx.overview.entry"))
-                        }
+                    Section {
+                        Text(L10n.string("numbers.empty.message"))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                     }
                 } else {
-                    ForEach(overview.numbers) { number in
-                        numberSection(number)
+                    Section {
+                        ForEach(overview.numbers) { number in
+                            numberRow(number)
+                        }
+                    } header: {
+                        Text(L10n.string("numbers.title"))
                     }
                 }
 
@@ -69,8 +70,14 @@ struct PbxOverviewView: View {
             }
         }
         .navigationTitle(L10n.string("pbx.title"))
-        .refreshable { await model.refresh(.overview) }
-        .task { await model.loadIfNeeded(.overview) }
+        .refreshable {
+            await model.refresh(.overview)
+            await model.load(.numbers)
+        }
+        .task {
+            await model.loadIfNeeded(.overview)
+            await model.loadIfNeeded(.numbers)
+        }
         .onDisappear { model.stopPolling() }
         .accessibilityIdentifier("pbx-overview")
     }
@@ -119,34 +126,36 @@ struct PbxOverviewView: View {
         return "\(overview.deviceCount)"
     }
 
-    private func numberSection(_ number: PbxNumber) -> some View {
-        Section {
-            if let flow = number.flow {
-                FlowView(node: flow)
-                    .padding(.vertical, 6)
-            } else {
-                Text(L10n.string("pbx.flow.none"))
-                    .foregroundStyle(.secondary)
-            }
+    /// A number in short: its name or number, how it is set up, and whether it is still being applied. The chain opens on a tap.
+    private func numberRow(_ number: PbxNumber) -> some View {
+        let entry = model.numbers?.numbers.first { $0.id == number.id }
+        let name = entry?.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let title = name.isEmpty ? PbxVocabulary.formatNumber(number.number) : name
 
-            NavigationLink {
-                NumberRoutingView(model: model, number: number)
-            } label: {
-                Label(L10n.string("pbx.routing.change"), systemImage: "arrow.triangle.branch")
-            }
-            .accessibilityIdentifier("pbx-routing-link")
-        } header: {
-            HStack {
-                Text(PbxVocabulary.formatNumber(number.number))
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                    .textCase(nil)
-                Spacer()
-                PbxSyncBadge(sync: number.sync)
-                    .textCase(nil)
+        return NavigationLink {
+            NumberView(model: model, numberId: number.id, placeholderTitle: title)
+        } label: {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.body.weight(.semibold))
+
+                if !name.isEmpty {
+                    Text(PbxVocabulary.formatNumber(number.number))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let entry {
+                    Text(NumberSummary.listLine(entry))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else {
+                    PbxSyncBadge(sync: number.sync)
+                }
             }
             .accessibilityElement(children: .combine)
         }
+        .accessibilityIdentifier("pbx-number-link")
     }
 
     private func row(_ title: String, symbol: String, detail: String?) -> some View {

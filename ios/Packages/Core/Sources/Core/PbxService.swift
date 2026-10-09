@@ -16,6 +16,14 @@ public protocol PbxServicing: Sendable {
     func hours(for account: StoredAccount) async throws -> PbxHoursResponse
     func updateHours(for account: StoredAccount, id: String, patch: PbxHoursPatch) async throws
     func setNumberRouting(for account: StoredAccount, numberId: String, patch: PbxRoutingPatch) async throws
+    /// `GET /pbx/numbers`: every number with a one-line summary of its chain.
+    func numbers(for account: StoredAccount) async throws -> PbxNumbersPage
+    /// `GET /pbx/numbers/{id}/chain`.
+    func numberChain(for account: StoredAccount, numberId: String) async throws -> NumberChain
+    /// `PUT /pbx/numbers/{id}/chain/{step}`: answered with the fresh chain. `APIError.staleChain` carries the fresh chain too.
+    func saveChainStep<Step: NumberChainStepRequest>(for account: StoredAccount, numberId: String, step: Step) async throws -> NumberChain
+    /// `PATCH /pbx/numbers/{id}/recording`: answered with the fresh chain.
+    func setNumberRecording(for account: StoredAccount, numberId: String, patch: NumberRecordingPatch) async throws -> NumberChain
 }
 
 public struct LivePbxService: PbxServicing {
@@ -63,5 +71,21 @@ public struct LivePbxService: PbxServicing {
 
     public func setNumberRouting(for account: StoredAccount, numberId: String, patch: PbxRoutingPatch) async throws {
         try await client(account).setPbxNumberRouting(numberId: numberId, patch: patch)
+    }
+
+    public func numbers(for account: StoredAccount) async throws -> PbxNumbersPage {
+        try await client(account).pbxNumbers()
+    }
+
+    public func numberChain(for account: StoredAccount, numberId: String) async throws -> NumberChain {
+        try await client(account).numberChain(numberId: numberId)
+    }
+
+    public func saveChainStep<Step: NumberChainStepRequest>(for account: StoredAccount, numberId: String, step: Step) async throws -> NumberChain {
+        try await client(account).saveChainStep(numberId: numberId, step)
+    }
+
+    public func setNumberRecording(for account: StoredAccount, numberId: String, patch: NumberRecordingPatch) async throws -> NumberChain {
+        try await client(account).setNumberRecording(numberId: numberId, patch)
     }
 }

@@ -21,6 +21,9 @@ final class DemoPbxService: PbxServicing, @unchecked Sendable {
     private var devicesValue: PbxDevicesResponse
     private var ringGroupsValue: PbxRingGroupsResponse
     private var hoursValue: PbxHoursResponse
+    /// The chains as JSON objects (a step edits them like the server would, then they are decoded again).
+    private var chainObjects: [String: [String: Any]]
+    private var numbersObject: [String: Any]
     private let adminId: String
     private var pendingUntil: Date?
 
@@ -30,6 +33,12 @@ final class DemoPbxService: PbxServicing, @unchecked Sendable {
         devicesValue = Self.decode(Self.devicesJSON)
         ringGroupsValue = Self.decode(Self.ringGroupsJSON)
         hoursValue = Self.decode(Self.hoursJSON)
+        chainObjects = [:]
+        for json in [Self.simpleChainJSON, Self.advancedChainJSON] {
+            let object = try! JSONSerialization.jsonObject(with: Data(json.utf8)) as! [String: Any]
+            chainObjects[object["id"] as! String] = object
+        }
+        numbersObject = try! JSONSerialization.jsonObject(with: Data(Self.numbersJSON.utf8)) as! [String: Any]
         // What the fixtures show as "being updated" settles after a few seconds, so the demo shows the polling.
         pendingUntil = Date().addingTimeInterval(6)
     }
@@ -152,9 +161,137 @@ final class DemoPbxService: PbxServicing, @unchecked Sendable {
         }
     }
 
+    // MARK: Numbers as chains
+
+    func numbers(for account: StoredAccount) async throws -> PbxNumbersPage {
+        try read { try Self.decodeObject(numbersObject) }
+    }
+
+    func numberChain(for account: StoredAccount, numberId: String) async throws -> NumberChain {
+        try read {
+            guard let object = chainObjects[numberId] else { throw APIError.notFound }
+            return try Self.decodeObject(object)
+        }
+    }
+
+    func saveChainStep<Step: NumberChainStepRequest>(for account: StoredAccount, numberId: String, step: Step) async throws -> NumberChain {
+        let body = try JSONSerialization.jsonObject(with: FSVoipJSON.encoder().encode(step)) as! [String: Any]
+
+        return try write {
+            guard var chain = chainObjects[numberId] else { throw APIError.notFound }
+            if let expected = body["numberVersion"] as? Int, expected != chain["version"] as? Int {
+                throw APIError.staleChain(try Self.decodeObject(chain))
+            }
+            guard chain["mode"] as? String == "simple" || step.step == .name else { throw APIError.advanced }
+
+            Self.apply(step.step, body: body, to: &chain)
+            return try commit(chain, numberId: numberId)
+        }
+    }
+
+    func setNumberRecording(for account: StoredAccount, numberId: String, patch: NumberRecordingPatch) async throws -> NumberChain {
+        let body = try JSONSerialization.jsonObject(with: FSVoipJSON.encoder().encode(patch)) as! [String: Any]
+
+        return try write {
+            guard var chain = chainObjects[numberId] else { throw APIError.notFound }
+            var recording = chain["recording"] as? [String: Any] ?? [:]
+            let enabled = body["enabled"] as? Bool ?? false
+
+            if enabled, recording["billingActive"] as? Bool != true, body["costAccepted"] as? Bool != true {
+                throw APIError.costNotAccepted(cost: RecordingCost(priceE4: 20000, vatIncluded: false))
+            }
+
+            recording["enabled"] = enabled
+            if enabled { recording["billingActive"] = true }
+            if let sound = body["announcementSoundId"] { recording["announcementSoundId"] = sound }
+            chain["recording"] = recording
+            return try commit(chain, numberId: numberId)
+        }
+    }
+
+    private func commit(_ chain: [String: Any], numberId: String) throws -> NumberChain {
+        var chain = chain
+        chain["version"] = (chain["version"] as? Int ?? 1) + 1
+        chain["sync"] = "pending"
+        chainObjects[numberId] = chain
+
+        if var entries = numbersObject["numbers"] as? [[String: Any]], let index = entries.firstIndex(where: { $0["id"] as? String == numberId }) {
+            var entry = entries[index]
+            entry["name"] = chain["name"] ?? NSNull()
+            entry["version"] = chain["version"]
+            entry["sync"] = "pending"
+            let forwarding = (chain["forwarding"] as? [String: Any])?["kind"] as? String ?? "advanced"
+            entry["summary"] = [
+                "hours": chain["hours"] is NSNull || chain["hours"] == nil ? "Uit" : "Openingstijden",
+                "welcome": !(chain["welcome"] is NSNull || chain["welcome"] == nil),
+                "forwarding": forwarding,
+                "recording": (chain["recording"] as? [String: Any])?["enabled"] as? Bool ?? false,
+            ] as [String: Any]
+            entries[index] = entry
+            numbersObject["numbers"] = entries
+        }
+
+        return try Self.decodeObject(chain)
+    }
+
+    /// What the server does with a step, roughly: enough for the demo to show the result.
+    private static func apply(_ step: ChainStep, body: [String: Any], to chain: inout [String: Any]) {
+        func merge(_ fields: [String], into object: inout [String: Any]) {
+            for field in fields where body[field] != nil { object[field] = body[field] }
+            object["version"] = (object["version"] as? Int ?? 0) + 1
+        }
+
+        switch step {
+        case .name:
+            chain["name"] = body["name"] ?? NSNull()
+        case .welcome:
+            if body["enabled"] as? Bool == true {
+                var welcome = chain["welcome"] as? [String: Any] ?? ["menuId": UUID().uuidString.lowercased(), "version": 0, "sharedWith": []]
+                merge(["soundId"], into: &welcome)
+                chain["welcome"] = welcome
+            } else {
+                chain["welcome"] = NSNull()
+            }
+        case .hours, .closed:
+            if step == .hours, body["enabled"] as? Bool == false {
+                chain["hours"] = NSNull()
+                return
+            }
+            var hours = chain["hours"] as? [String: Any] ?? [
+                "id": UUID().uuidString.lowercased(), "version": 0, "week": [], "sharedWith": [],
+                "holidays": ["national": true, "rules": [], "dates": []], "closed": ["mode": "hangup"], "holiday": NSNull(),
+            ]
+            if let holidays = body["holidays"] as? [String: Any] {
+                var current = hours["holidays"] as? [String: Any] ?? [:]
+                for (key, value) in holidays { current[key] = value }
+                hours["holidays"] = current
+            }
+            merge(["week", "closed", "holiday"], into: &hours)
+            chain["hours"] = hours
+        case .forwarding:
+            let kind = body["kind"] as? String ?? "standard"
+            var forwarding = chain["forwarding"] as? [String: Any] ?? [:]
+            if forwarding["kind"] as? String != kind {
+                forwarding = kind == "standard"
+                    ? ["kind": "standard", "groupId": UUID().uuidString.lowercased(), "version": 0, "strategy": "all", "members": [], "unanswered": ["mode": "hangup"], "sharedWith": []]
+                    : ["kind": "menu", "menuId": UUID().uuidString.lowercased(), "version": 0, "greetingSoundId": NSNull(), "repeats": 1, "timeoutSeconds": 5, "defaultKey": NSNull(), "noChoice": ["mode": "hangup"], "keys": [], "sharedWith": []]
+            }
+            merge(["strategy", "members", "unanswered", "greetingSoundId", "repeats", "timeoutSeconds", "defaultKey", "noChoice", "keys"], into: &forwarding)
+            if var keys = forwarding["keys"] as? [[String: Any]] {
+                for index in keys.indices where keys[index]["editable"] == nil { keys[index]["editable"] = true }
+                forwarding["keys"] = keys
+            }
+            chain["forwarding"] = forwarding
+        }
+    }
+
+    private static func decodeObject<T: Decodable>(_ object: [String: Any]) throws -> T {
+        try FSVoipJSON.decoder().decode(T.self, from: JSONSerialization.data(withJSONObject: object))
+    }
+
     // MARK: Plumbing
 
-    private func read<T>(_ value: () -> T) -> T {
+    private func read<T>(_ value: () throws -> T) rethrows -> T {
         lock.lock()
         defer { lock.unlock() }
 
@@ -162,7 +299,7 @@ final class DemoPbxService: PbxServicing, @unchecked Sendable {
             settle()
         }
 
-        return value()
+        return try value()
     }
 
     @discardableResult
@@ -182,6 +319,11 @@ final class DemoPbxService: PbxServicing, @unchecked Sendable {
         for index in ringGroupsValue.ringGroups.indices { ringGroupsValue.ringGroups[index].sync = .ok }
         for index in hoursValue.hours.indices { hoursValue.hours[index].sync = .ok }
         for index in overviewValue.numbers.indices { overviewValue.numbers[index].sync = .ok }
+        for id in chainObjects.keys { chainObjects[id]?["sync"] = "ok" }
+        if var entries = numbersObject["numbers"] as? [[String: Any]] {
+            for index in entries.indices { entries[index]["sync"] = "ok" }
+            numbersObject["numbers"] = entries
+        }
     }
 
     private static func apply(_ change: Change<PbxTarget>, to target: inout PbxTarget?) {
@@ -836,6 +978,258 @@ final class DemoPbxService: PbxServicing, @unchecked Sendable {
   {
    "rule": "boxing_day",
    "label": "Tweede kerstdag"
+  }
+ ]
+}
+"""#
+    private static let simpleChainJSON = #"""
+{
+  "id": "d4e5f6a7-b8c9-4d0e-a1f2-b3c4d5e6f7a8",
+  "number": "0850607848",
+  "name": "Hoofdnummer",
+  "version": 4,
+  "mode": "simple",
+  "sync": "ok",
+  "hours": {
+    "id": "c3b2a1f0-e9d8-4c7b-a6f5-e4d3c2b1a0f9",
+    "version": 6,
+    "week": [
+      {
+        "day": 1,
+        "from": "09:00",
+        "to": "17:00"
+      },
+      {
+        "day": 2,
+        "from": "09:00",
+        "to": "17:00"
+      },
+      {
+        "day": 3,
+        "from": "09:00",
+        "to": "17:00"
+      },
+      {
+        "day": 4,
+        "from": "09:00",
+        "to": "17:00"
+      },
+      {
+        "day": 5,
+        "from": "09:00",
+        "to": "17:00"
+      }
+    ],
+    "holidays": {
+      "national": true,
+      "rules": [
+        "new_year",
+        "easter_sunday",
+        "easter_monday",
+        "kings_day",
+        "ascension_day",
+        "whit_sunday",
+        "whit_monday",
+        "christmas_day",
+        "boxing_day"
+      ],
+      "dates": [
+        {
+          "name": "Bouwvak",
+          "date": "2026-08-03"
+        }
+      ]
+    },
+    "closed": {
+      "mode": "voicemail",
+      "boxId": "2f4a6c8e-1b3d-4f5a-8c7e-9a0b1c2d3e4f",
+      "ofDevice": false
+    },
+    "holiday": null,
+    "sharedWith": []
+  },
+  "welcome": {
+    "menuId": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+    "version": 3,
+    "soundId": "a1b2c3d4-1111-4a2b-8c3d-4e5f6a7b8c9d",
+    "sharedWith": []
+  },
+  "forwarding": {
+    "kind": "standard",
+    "groupId": "9e8d7c6b-5a49-4382-b1a0-f9e8d7c6b5a4",
+    "version": 3,
+    "strategy": "all",
+    "members": [
+      {
+        "deviceId": "5c0a8e1f-2d7b-4a39-8f46-0b1c2d3e4f50",
+        "delaySeconds": 0,
+        "timeoutSeconds": 25
+      },
+      {
+        "deviceId": "1b2c3d4e-0a1b-4c2d-8e3f-5a6b7c8d9e01",
+        "delaySeconds": 0,
+        "timeoutSeconds": 25
+      },
+      {
+        "deviceId": "7a1d9c3e-5b2f-4e8a-9c01-6d3e8f2a4b57",
+        "delaySeconds": 5,
+        "timeoutSeconds": 20
+      }
+    ],
+    "unanswered": {
+      "mode": "voicemail",
+      "boxId": "2f4a6c8e-1b3d-4f5a-8c7e-9a0b1c2d3e4f",
+      "ofDevice": false
+    },
+    "sharedWith": [
+      "Servicenummer"
+    ]
+  },
+  "advanced": null,
+  "recording": {
+    "enabled": false,
+    "announcementSoundId": null,
+    "billingActive": false,
+    "available": true,
+    "cost": {
+      "priceE4": 20000,
+      "vatIncluded": false
+    }
+  },
+  "options": {
+    "devices": [
+      {
+        "id": "5c0a8e1f-2d7b-4a39-8f46-0b1c2d3e4f50",
+        "name": "Receptie",
+        "extension": "100"
+      },
+      {
+        "id": "1b2c3d4e-0a1b-4c2d-8e3f-5a6b7c8d9e01",
+        "name": "Pieter Jansen",
+        "extension": "101"
+      },
+      {
+        "id": "7a1d9c3e-5b2f-4e8a-9c01-6d3e8f2a4b57",
+        "name": "Jan de Vries",
+        "extension": "102"
+      }
+    ],
+    "sounds": [
+      {
+        "id": "a1b2c3d4-1111-4a2b-8c3d-4e5f6a7b8c9d",
+        "name": "Welkom"
+      },
+      {
+        "id": "a1b2c3d4-2222-4a2b-8c3d-4e5f6a7b8c9d",
+        "name": "Buiten kantoortijd"
+      }
+    ],
+    "groups": [
+      {
+        "id": "9e8d7c6b-5a49-4382-b1a0-f9e8d7c6b5a4",
+        "name": "Iedereen"
+      }
+    ]
+  }
+}
+"""#
+
+    private static let advancedChainJSON = #"""
+{
+  "id": "e5f6a7b8-c9d0-4e1f-b2a3-c4d5e6f7a8b9",
+  "number": "0850607849",
+  "name": "Support",
+  "version": 2,
+  "mode": "advanced",
+  "sync": "ok",
+  "hours": null,
+  "welcome": null,
+  "forwarding": null,
+  "advanced": {
+    "summary": [
+      "Openingstijden: Kantoortijden",
+      "Wachtrij: Support (3 medewerkers)",
+      "Keuzemenu met een submenu"
+    ]
+  },
+  "recording": {
+    "enabled": true,
+    "announcementSoundId": null,
+    "billingActive": true,
+    "available": true,
+    "cost": {
+      "priceE4": 20000,
+      "vatIncluded": false
+    }
+  },
+  "options": {
+    "devices": [
+      {
+        "id": "5c0a8e1f-2d7b-4a39-8f46-0b1c2d3e4f50",
+        "name": "Receptie",
+        "extension": "100"
+      },
+      {
+        "id": "1b2c3d4e-0a1b-4c2d-8e3f-5a6b7c8d9e01",
+        "name": "Pieter Jansen",
+        "extension": "101"
+      },
+      {
+        "id": "7a1d9c3e-5b2f-4e8a-9c01-6d3e8f2a4b57",
+        "name": "Jan de Vries",
+        "extension": "102"
+      }
+    ],
+    "sounds": [
+      {
+        "id": "a1b2c3d4-1111-4a2b-8c3d-4e5f6a7b8c9d",
+        "name": "Welkom"
+      },
+      {
+        "id": "a1b2c3d4-2222-4a2b-8c3d-4e5f6a7b8c9d",
+        "name": "Buiten kantoortijd"
+      }
+    ],
+    "groups": [
+      {
+        "id": "9e8d7c6b-5a49-4382-b1a0-f9e8d7c6b5a4",
+        "name": "Iedereen"
+      }
+    ]
+  }
+}
+"""#
+
+    private static let numbersJSON = #"""
+{
+ "numbers": [
+  {
+   "id": "d4e5f6a7-b8c9-4d0e-a1f2-b3c4d5e6f7a8",
+   "number": "0850607848",
+   "name": "Hoofdnummer",
+   "mode": "simple",
+   "summary": {
+    "hours": "ma-vr 9:00-17:00",
+    "welcome": true,
+    "forwarding": "standard",
+    "recording": false
+   },
+   "sync": "ok",
+   "version": 4
+  },
+  {
+   "id": "e5f6a7b8-c9d0-4e1f-b2a3-c4d5e6f7a8b9",
+   "number": "0850607849",
+   "name": "Support",
+   "mode": "advanced",
+   "summary": {
+    "hours": "Uit",
+    "welcome": false,
+    "forwarding": "advanced",
+    "recording": true
+   },
+   "sync": "ok",
+   "version": 2
   }
  ]
 }

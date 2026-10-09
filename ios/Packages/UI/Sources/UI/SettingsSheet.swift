@@ -169,7 +169,7 @@ struct SettingsSheet: View {
         SettingsGroup(title: L10n.string("settings.admin")) {
             ForEach(outline.admin, id: \.self) { item in
                 switch item {
-                case .numbers: link(.centrale(.overview), symbol: "number", title: L10n.string("settings.admin.numbers"))
+                case .numbers: link(.centrale(.numbers), symbol: "number", title: L10n.string("settings.admin.numbers"))
                 case .devices: link(.centrale(.devices), symbol: "phone.fill", title: L10n.string("pbx.devices.title"))
                 case .ringGroups: link(.centrale(.ringGroups), symbol: "person.3.fill", title: L10n.string("pbx.ringGroups.title"))
                 case .sounds: link(.sounds, symbol: "speaker.wave.2", title: L10n.string("settings.admin.sounds"))
@@ -193,7 +193,7 @@ struct SettingsSheet: View {
             if let account { LinkPage(model: model, account: account, back: pop, close: close) }
         case .centrale(let part):
             if let hub = model.pbx, let account {
-                PbxSectionView(hub: hub, account: account, part: part)
+                PbxSectionView(hub: hub, account: account, part: part, close: close)
             }
         case .sounds:
             ComingSoonPage(title: L10n.string("settings.admin.sounds"), symbol: "speaker.wave.2", back: pop, close: close)
