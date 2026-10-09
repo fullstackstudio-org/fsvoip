@@ -125,6 +125,16 @@ final class ContactsHubTests: XCTestCase {
         XCTAssertEqual(api.syncSinces.last ?? nil, "s9", "the new run's server time is the next since")
     }
 
+    func testACancelledRunIsNotAFailure() async throws {
+        api.syncResults = [.failure(CancellationError())]
+        let hub = await configured()
+
+        let outcome = await hub.sync(accountId: "acc")
+
+        XCTAssertEqual(outcome, .skipped)
+        XCTAssertEqual(hub.state(for: "acc")?.lastSyncFailed, false, "a cancelled pull to refresh is not 'no connection'")
+    }
+
     func testAFailedRunKeepsTheOldSinceAndTheOldContacts() async throws {
         api.syncResults = [
             .success(Make.run([Make.contact("a", "Anna", phones: ["+31611111111"])], serverTime: "s1", full: true)),

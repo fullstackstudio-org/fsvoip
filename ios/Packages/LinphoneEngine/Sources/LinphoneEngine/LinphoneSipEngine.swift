@@ -374,6 +374,17 @@ public final class LinphoneSipEngine: SipEngine {
         }
     }
 
+    /// The SIP Call-ID of the dialog, read live from the call log. 🚨 Not `id.rawValue`: `track` fixes the engine id when the call object is
+    /// first seen, and for an outgoing call `inviteAddressWithParams` can return before the INVITE (and its Call-ID) exists, so the engine id
+    /// is then a random UUID the PBX never heard of (TestFlight: parking an outgoing call always gave `call_not_found`).
+    public func sipCallID(of id: CallID) -> String? {
+        guard let call = callsByID[id] else {
+            return nil
+        }
+
+        return Self.nonEmpty(call.callLog?.callId)
+    }
+
     // MARK: Audio session hooks (called by LinphoneAudio)
 
     fileprivate func configureAudioSession() {

@@ -7,6 +7,40 @@ import SipEngine
 import XCTest
 @testable import UI
 
+/// An engine whose ids are NOT the SIP Call-ID (like liblinphone for an outgoing call whose INVITE left after the id was fixed).
+private final class SipIDEngine: SipEngine {
+    weak var delegate: SipEngineDelegate?
+
+    private final class Audio: SipAudioControl {
+        func configure() {}
+        func activate(_ active: Bool) {}
+    }
+
+    let audio: SipAudioControl = Audio()
+    var sipCallIDs: [CallID: String] = [:]
+
+    func start() throws {}
+    func stop() {}
+    func enterBackground() {}
+    func enterForeground() {}
+    func refreshRegistrations() {}
+    func register(_ account: SipAccountConfig) throws {}
+    func unregister(_ account: SipAccountID) {}
+    func registrationState(of account: SipAccountID) -> RegistrationState { .registered }
+    func setRegistrationEnabled(_ enabled: Bool, for account: SipAccountID) {}
+    func refreshRegistration(of account: SipAccountID) {}
+    func call(number: String, from account: SipAccountID, options: CallOptions) throws -> CallID { CallID("engine-uuid") }
+    func answer(_ call: CallID) throws {}
+    func decline(_ call: CallID, reason: DeclineReason) throws {}
+    func hangup(_ call: CallID) throws {}
+    func setHold(_ call: CallID, onHold: Bool) throws {}
+    func setMuted(_ muted: Bool) {}
+    func sendDTMF(_ digit: DTMFDigit, on call: CallID) throws {}
+    func transfer(_ call: CallID, to number: String) throws {}
+    func calls() -> [CallInfo] { [] }
+    func sipCallID(of call: CallID) -> String? { sipCallIDs[call] }
+}
+
 private final class FakeParkService: ParkServicing, @unchecked Sendable {
     private let lock = NSLock()
     private(set) var log: [String] = []
@@ -381,14 +415,14 @@ final class ParkTests: XCTestCase {
 
     // MARK: Capability
 
-    private func appModel(me: MeResponse) async throws -> FSVoipAppModel {
+    private func appModel(me: MeResponse, engine: SipEngine = NullSipEngine()) async throws -> FSVoipAppModel {
         let store = AccountStore(secrets: InMemorySecretStore())
         try store.save(parkAccount())
         let accounts = ParkMeAccounts()
         accounts.me = me
         let preferences = InMemoryPreferencesStore()
         let model = FSVoipAppModel(
-            phone: PhoneController(engine: NullSipEngine(), system: ImmediateCallSystem(), audioRouting: MemoryAudioRouting(), preferences: preferences, endedLinger: 0),
+            phone: PhoneController(engine: engine, system: ImmediateCallSystem(), audioRouting: MemoryAudioRouting(), preferences: preferences, endedLinger: 0),
             accountStore: store,
             service: accounts,
             preferences: preferences,
@@ -400,6 +434,26 @@ final class ParkTests: XCTestCase {
         await model.refreshAccounts()
 
         return model
+    }
+
+    func testParkingSendsTheLiveSipCallIdNotTheEngineId() async throws {
+        let engine = SipIDEngine()
+        engine.sipCallIDs[CallID("engine-uuid")] = "HSzuSitbTA"
+        let model = try await appModel(me: meResponse(park: true, role: "user"), engine: engine)
+        service.parkResult = .success(parked("p", slot: 2, mine: true))
+
+        await model.parkCall(CallSession(id: UUID(), engineCallID: CallID("engine-uuid"), direction: .outgoing, accountId: "a", accountLabel: "Jan", remoteNumber: "101", remoteName: nil, phase: .active, createdAt: Date()))
+
+        XCTAssertEqual(service.parkRequests, ["HSzuSitbTA"], "the PBX only knows the Call-ID of the dialog")
+    }
+
+    func testWithoutAKnownSipCallIdNothingIsSent() async throws {
+        let model = try await appModel(me: meResponse(park: true, role: "user"), engine: SipIDEngine())
+
+        await model.parkCall(CallSession(id: UUID(), engineCallID: CallID("engine-uuid"), direction: .outgoing, accountId: "a", accountLabel: "Jan", remoteNumber: "101", remoteName: nil, phase: .active, createdAt: Date()))
+
+        XCTAssertTrue(service.parkRequests.isEmpty)
+        XCTAssertEqual(model.notice?.isError, true)
     }
 
     func testWithoutTheCapabilityThereIsNoParkButton() async throws {

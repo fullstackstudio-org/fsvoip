@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import CallController
 import Core
+import FSContacts
 import Foundation
 import LinphoneEngine
 import Pairing
@@ -63,6 +64,22 @@ final class AppServices {
             phone.enterBackground()
         }
 
+        // The address books, the lists and the phone's own contacts. 🚨 Without this the app model falls back to an empty in-memory hub
+        // that never syncs and pretends the phone's contacts were refused (TestFlight: "0 contacten · nog niet opgehaald", and no
+        // Contacts permission prompt at all).
+        let contacts = ContactsHub(
+            store: ContactsFileStore(),
+            api: { accountId in
+                guard let account = try? accounts.account(id: accountId) else {
+                    return nil
+                }
+
+                return api.authenticated(with: account.deviceToken)
+            },
+            device: SystemDeviceContacts(),
+            settings: UserDefaultsContactsSettings()
+        )
+
         pushTokens = reporter
         voipPush = VoipPushRegistry()
         model = FSVoipAppModel(
@@ -83,6 +100,7 @@ final class AppServices {
             },
             pushTokens: reporter,
             requestNotifications: { await Self.requestNotificationPermission() },
+            contacts: contacts,
             pbx: PbxHub(service: LivePbxService(api: api), gate: gate),
             media: MediaHub(service: LiveMediaService(api: api), gate: gate),
             availability: AvailabilityHub(service: LiveAvailabilityService(api: api)),

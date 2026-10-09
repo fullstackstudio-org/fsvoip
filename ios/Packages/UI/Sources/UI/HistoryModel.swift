@@ -225,6 +225,8 @@ final class HistoryModel: ObservableObject {
             let page = try await media.service.calls(for: account, month: month)
             pages[account.id, default: []].append(page)
         } catch {
+            guard !APIError.isCancellation(error) else { return }
+
             banner = MediaBanner(text: MediaFailure.classify(error).message(for: .recording), isError: true)
         }
     }
@@ -272,6 +274,8 @@ final class HistoryModel: ObservableObject {
                 try await service.download(request, for: account)
             }
         } catch {
+            guard !APIError.isCancellation(error) else { return }
+
             banner = MediaBanner(text: MediaFailure.classify(error).message(for: .recording), isError: true)
         }
     }

@@ -421,7 +421,8 @@ public final class FSVoipAppModel: ObservableObject {
             return
         }
 
-        guard let callId = session.engineCallID?.rawValue, !callId.isEmpty else {
+        // The live SIP Call-ID, never the engine's own id (for an outgoing call that can be a UUID the PBX does not know).
+        guard let callId = phone.sipCallID(for: session), !callId.isEmpty else {
             notice = Notice(message: ParkFailure.callNotFound.message, isError: true)
 
             return

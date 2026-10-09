@@ -345,6 +345,9 @@ final class SoundsModel: ObservableObject {
     }
 
     private func handle(_ error: Error, whileLoading: Bool) {
+        // Cancelled by the screen or by SwiftUI: not a failure, never "no connection".
+        if APIError.isCancellation(error) { return }
+
         let result = SoundFailure.classify(error)
 
         switch result {

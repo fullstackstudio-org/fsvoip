@@ -56,7 +56,7 @@ struct NumberView: View {
             }
         }
         .toolbar(.hidden, for: .navigationBar)
-        .refreshable { await model.loadChain(numberId) }
+        .detachedRefreshable { await model.loadChain(numberId) }
         .task { await model.loadChainIfNeeded(numberId) }
         .sheet(item: $editing) { step in
             if let chain {

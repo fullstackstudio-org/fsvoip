@@ -38,7 +38,7 @@ struct RecordingsView: View {
             }
         }
         .motionAnimation(.easeOut(duration: 0.22), value: model.nowPlaying)
-        .refreshable { await model.load() }
+        .detachedRefreshable { await model.load() }
         .task {
             await model.load()
             startDemo()

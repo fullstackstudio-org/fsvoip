@@ -61,9 +61,18 @@ public protocol SipEngine: AnyObject {
     func sendDTMF(_ digit: DTMFDigit, on call: CallID) throws
     func transfer(_ call: CallID, to number: String) throws
     func calls() -> [CallInfo]
+
+    /// The SIP `Call-ID` of this call's dialog as the PBX sees it, read from the stack NOW (not cached at call creation: for an outgoing
+    /// call the stack may only know it once the INVITE left). `nil` when the stack has none (yet). The default returns the engine id itself,
+    /// for engines whose ids already are the SIP Call-ID (fakes, the null engine).
+    func sipCallID(of call: CallID) -> String?
 }
 
 extension SipEngine {
+    public func sipCallID(of call: CallID) -> String? {
+        call.rawValue.isEmpty ? nil : call.rawValue
+    }
+
     /// An outgoing call without options.
     public func call(number: String, from account: SipAccountID) throws -> CallID {
         try call(number: number, from: account, options: .none)

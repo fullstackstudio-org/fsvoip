@@ -47,7 +47,7 @@ struct NumbersListView: View {
             }
         }
         .toolbar(.hidden, for: .navigationBar)
-        .refreshable { await model.refresh(.numbers) }
+        .detachedRefreshable { await model.refresh(.numbers) }
         .task { await model.loadIfNeeded(.numbers) }
         .onDisappear { model.stopPolling() }
         .accessibilityIdentifier("numbers-list")

@@ -190,7 +190,7 @@ struct OnHoldContent: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .refreshable { await park.refresh(account) }
+            .detachedRefreshable { await park.refresh(account) }
         }
     }
 
@@ -203,7 +203,7 @@ struct OnHoldContent: View {
                 built
                     .frame(minHeight: geometry.size.height)
             }
-            .refreshable { await park.refresh(account) }
+            .detachedRefreshable { await park.refresh(account) }
         }
     }
 

@@ -58,7 +58,7 @@ struct ContactsView: View {
         .background(Theme.background.ignoresSafeArea())
         .navigationTitle(L10n.string("contacts.title"))
         .overlay(alignment: .bottomTrailing) { addButton }
-        .refreshable { await model.syncContacts(force: true) }
+        .detachedRefreshable { await model.syncContacts(force: true) }
         .sheet(isPresented: $showsSources) {
             ContactSourcesView(model: model)
         }

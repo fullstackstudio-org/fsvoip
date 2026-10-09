@@ -305,6 +305,9 @@ final class PbxSectionModel: ObservableObject {
     }
 
     private func handleLoadError(_ error: Error) {
+        // Cancelled by the screen or by SwiftUI: not a failure, never "no connection".
+        if APIError.isCancellation(error) { return }
+
         let failure = PbxFailure.classify(error)
 
         switch failure {
