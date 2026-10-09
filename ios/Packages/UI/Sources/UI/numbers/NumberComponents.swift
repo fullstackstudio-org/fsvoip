@@ -228,58 +228,28 @@ enum ChainWords {
     }
 }
 
-// MARK: - Choosing a sound (stub until the audio picker of Task 10)
+// MARK: - Choosing a sound
 
-/// A row "label ... chosen sound >" that opens the list of sounds of the centrale. TASK 10 SEAM: the audio picker (listen,
-/// record, upload) replaces `ChainSoundList`; the binding (`soundId`) and the row stay.
+/// A row "label ... chosen sound >" that opens the audio picker (listen, choose, record, add a file).
 struct ChainSoundRow: View {
     let title: String
     @Binding var soundId: String?
     let options: ChainOptions
     var allowsNone = false
 
+    @Environment(\.soundsModel) private var soundsModel
+
+    private var chosenName: String {
+        soundsModel?.name(of: soundId) ?? ChainWords.soundName(soundId, options) ?? L10n.string("numbers.sound.none")
+    }
+
     var body: some View {
         NavigationLink {
-            ChainSoundList(title: title, soundId: $soundId, options: options, allowsNone: allowsNone)
+            AudioPicker(title: title, soundId: $soundId, options: options, allowsNone: allowsNone)
         } label: {
-            SettingsRow(symbol: "waveform", title: title, value: ChainWords.soundName(soundId, options) ?? L10n.string("numbers.sound.none"))
+            SettingsRow(symbol: "waveform", title: title, value: chosenName)
         }
         .buttonStyle(RowButtonStyle())
         .accessibilityIdentifier("chain-sound-row")
-    }
-}
-
-/// The sounds of the centrale to choose from. No listening and no recording yet: that is the audio picker of Task 10.
-struct ChainSoundList: View {
-    let title: String
-    @Binding var soundId: String?
-    let options: ChainOptions
-    var allowsNone = false
-
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        ChainSubPage(title: title) {
-            if options.sounds.isEmpty {
-                EmptyState(symbol: "waveform", title: L10n.string("numbers.sound.empty.title"), message: L10n.string("numbers.sound.empty.message"))
-                    .accessibilityIdentifier("chain-sound-empty")
-            } else {
-                SettingsGroup(footer: L10n.string("numbers.sound.footer")) {
-                    if allowsNone {
-                        ChoiceRow(title: L10n.string("numbers.sound.none"), isSelected: soundId == nil) {
-                            soundId = nil
-                            dismiss()
-                        }
-                    }
-
-                    ForEach(options.sounds) { sound in
-                        ChoiceRow(title: sound.name, isSelected: soundId == sound.id) {
-                            soundId = sound.id
-                            dismiss()
-                        }
-                    }
-                }
-            }
-        }
     }
 }

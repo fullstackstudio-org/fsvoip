@@ -41,6 +41,7 @@ struct SettingsSheet: View {
                     destination(page)
                 }
         }
+        .environment(\.soundsModel, account.flatMap { model.media?.soundsModel(for: $0) })
         .tint(Theme.accentText)
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
@@ -198,7 +199,22 @@ struct SettingsSheet: View {
                 PbxSectionView(hub: hub, account: account, part: part, close: close)
             }
         case .sounds:
-            ComingSoonPage(title: L10n.string("settings.admin.sounds"), symbol: "speaker.wave.2", back: pop, close: close)
+            if let hub = model.media, let account {
+                MediaGateView(
+                    hub: hub,
+                    account: account,
+                    title: L10n.string("settings.admin.sounds"),
+                    reason: L10n.string("sounds.lock.reason"),
+                    message: L10n.string("sounds.lock.message"),
+                    requirement: .sounds
+                ) {
+                    if let sounds = hub.soundsModel(for: account) {
+                        PageScaffold(title: L10n.string("settings.admin.sounds"), back: pop, close: close) {
+                            SoundsView(model: sounds)
+                        }
+                    }
+                }
+            }
         case .invite:
             ComingSoonPage(title: L10n.string("settings.admin.invite"), symbol: "person.badge.plus", back: pop, close: close)
         case .recordings:

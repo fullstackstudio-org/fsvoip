@@ -35,13 +35,18 @@ public final class MediaHub: ObservableObject {
     public var nameLookup: (String) -> String? = { _ in nil }
 
     let service: MediaServicing
+    let soundService: SoundServicing
     private let cache: MediaCache
+    /// Who may manage sounds, from `GET /me` (admin + `capabilities.sounds == manage`). Fail closed.
+    @Published public private(set) var soundsAllowed: Set<String> = []
+    private var soundsModels: [String: SoundsModel] = [:]
     private let callFlag = CallActivityFlag()
 
-    public init(service: MediaServicing, gate: LocalAccessGate, cache: MediaCache = MediaCache(), backend: AudioBackend? = nil) {
+    public init(service: MediaServicing, gate: LocalAccessGate, cache: MediaCache = MediaCache(), backend: AudioBackend? = nil, soundService: SoundServicing = LiveSoundService()) {
         let flag = callFlag
         let backend = backend ?? AVPlayerBackend()
         self.service = service
+        self.soundService = soundService
         self.gate = gate
         self.cache = cache
         backend.isCallActive = { flag.active }
@@ -68,6 +73,8 @@ public final class MediaHub: ObservableObject {
 
     /// The answer of `GET /me`.
     public func apply(me: MeResponse, accountId: String) {
+        applySounds(me: me, accountId: accountId)
+
         // Without `capabilities` (an older server) nothing is offered: fail closed.
         guard let capabilities = me.capabilities else {
             set(nil, for: accountId)
@@ -98,7 +105,54 @@ public final class MediaHub: ObservableObject {
     /// `GET /me` said 403: this pairing has no rights any more.
     public func accessDenied(accountId: String) {
         set(nil, for: accountId)
+        setSoundsAllowed(false, accountId: accountId)
     }
+
+    // MARK: Sounds
+
+    private func applySounds(me: MeResponse, accountId: String) {
+        setSoundsAllowed(me.effectiveRole == .admin && me.capabilities?.sounds == .manage, accountId: accountId)
+    }
+
+    private func setSoundsAllowed(_ allowed: Bool, accountId: String) {
+        if allowed {
+            soundsAllowed.insert(accountId)
+
+            return
+        }
+
+        guard soundsAllowed.remove(accountId) != nil else { return }
+
+        soundsModels[accountId]?.stopAll()
+        soundsModels[accountId] = nil
+    }
+
+    /// A sounds call said 403: this pairing may not manage sounds (any more).
+    func soundsDenied(accountId: String) {
+        setSoundsAllowed(false, accountId: accountId)
+    }
+
+    public func canManageSounds(_ accountId: String) -> Bool {
+        soundsAllowed.contains(accountId)
+    }
+
+    /// The model of the sounds of this account (made on first use, dropped when the right goes). `nil` for anyone who may not
+    /// manage sounds: a plain user never gets one.
+    func soundsModel(for account: StoredAccount) -> SoundsModel? {
+        guard soundsAllowed.contains(account.id) else { return nil }
+
+        if let existing = soundsModels[account.id] {
+            return existing
+        }
+
+        let model = SoundsModel(account: account, hub: self)
+        soundsModels[account.id] = model
+
+        return model
+    }
+
+    /// A call is going on (the microphone and the audio session belong to it).
+    var isCallActive: Bool { callFlag.active }
 
     /// One part got a 403 (the role changed in between): take just that part away.
     func partDenied(_ part: MediaPart, accountId: String) {
@@ -140,6 +194,10 @@ public final class MediaHub: ObservableObject {
 
         if isActive {
             player.callActivityChanged()
+
+            for model in soundsModels.values {
+                model.callStarted()
+            }
         }
     }
 
@@ -159,6 +217,7 @@ public final class MediaHub: ObservableObject {
     /// The account is gone from this phone.
     public func forget(accountId: String) {
         access[accountId] = nil
+        setSoundsAllowed(false, accountId: accountId)
         player.stop()
         cache.clear()
     }

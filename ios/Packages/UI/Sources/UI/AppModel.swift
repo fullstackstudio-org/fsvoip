@@ -43,6 +43,8 @@ public final class FSVoipAppModel: ObservableObject {
         /// The "Centrale" section of the first admin account (demo screens and links).
         case centrale
         case recordings
+        /// "Geluiden" of the first admin account (demo screens).
+        case sounds
         case appearance
     }
 

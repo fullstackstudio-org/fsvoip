@@ -513,6 +513,11 @@ public struct OkResponse: Codable, Equatable, Sendable {
 public struct APIErrorPlace: Codable, Equatable, Sendable {
     public var kind: String
     public var name: String
+
+    public init(kind: String, name: String) {
+        self.kind = kind
+        self.name = name
+    }
 }
 
 /// Error body of every non-2xx answer. Everything but `error` is optional: which fields are present depends on the code.

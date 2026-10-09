@@ -61,6 +61,7 @@ struct SettingsOutline: Equatable {
         case .root: return []
         case .centrale: return [.centrale(.overview)]
         case .recordings: return [.recordings]
+        case .sounds: return [.sounds]
         case .appearance: return [.appearance]
         }
     }

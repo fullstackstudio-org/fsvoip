@@ -2,7 +2,7 @@
 //
 // DEBUG builds only: a demo of the app without a phone system, for the simulator, screenshots and UI checks.
 // Start with the launch argument `-FSVoipDemo YES` (two paired example extensions) or `-FSVoipDemo onboarding`
-// (nothing paired yet). `-FSVoipDemoScreen <dialer|onhold|recents|voicemail|contacts|settings|pbx|recordings|appearance|incall|incoming|push|pairing|failed|scanner>`
+// (nothing paired yet). `-FSVoipDemoScreen <dialer|onhold|recents|voicemail|contacts|settings|pbx|recordings|sounds|appearance|incall|incoming|push|pairing|failed|scanner>`
 // opens a screen directly. `-FSVoipDemoContactsScreen <detail|edit|new|sources|phone|filter>` goes one step further inside the Contacts tab.
 // Nothing here talks to a server or a PBX, and nothing is written to the Keychain.
 
@@ -57,7 +57,7 @@ enum DemoMode {
             requestMicrophone: { true },
             contacts: ContactsHub(store: InMemoryContactsStore(), api: { _ in demoContacts }, settings: InMemoryContactsSettings(), minimumInterval: 0),
             pbx: PbxHub(service: DemoPbxService(adminAccountId: exampleAccounts[0].id), gate: gate),
-            media: MediaHub(service: DemoMediaService(adminAccountId: exampleAccounts[0].id), gate: gate),
+            media: MediaHub(service: DemoMediaService(adminAccountId: exampleAccounts[0].id), gate: gate, soundService: DemoSoundService()),
             availability: AvailabilityHub(service: DemoAvailabilityService()),
             outboundNumbers: DemoOutboundNumbersService()
         )
@@ -85,6 +85,8 @@ enum DemoMode {
             model.openSettings(.centrale)
         case "recordings":
             model.openSettings(.recordings)
+        case "sounds":
+            model.openSettings(.sounds)
         case "appearance":
             model.openSettings(.appearance)
         case "scanner":

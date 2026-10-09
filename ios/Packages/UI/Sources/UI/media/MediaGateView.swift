@@ -11,7 +11,21 @@ struct MediaGateView<Content: View>: View {
     let title: String
     let reason: String
     let message: String
+    /// What the account needs to open this screen: the rights it was shown for (recordings, or managing sounds).
+    var requirement = Requirement.recordings
     @ViewBuilder let content: () -> Content
+
+    enum Requirement {
+        case recordings
+        case sounds
+    }
+
+    private func isAllowed() -> Bool {
+        switch requirement {
+        case .recordings: return hub.hasRecordings(account.id)
+        case .sounds: return hub.canManageSounds(account.id)
+        }
+    }
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
@@ -51,13 +65,13 @@ struct MediaGateView<Content: View>: View {
                 Task { await unlock() }
             }
         }
-        .onChange(of: hub.hasRecordings(account.id)) { available in
+        .onChange(of: isAllowed()) { available in
             if !available { dismiss() }
         }
     }
 
     private func unlock() async {
-        guard hub.hasRecordings(account.id) else { return }
+        guard isAllowed() else { return }
 
         switch await hub.gate.ensureUnlocked(reason: reason) {
         case .unlocked:
