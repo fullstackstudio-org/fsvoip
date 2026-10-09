@@ -213,6 +213,16 @@ public final class PhoneController: ObservableObject {
         sessions.last
     }
 
+    /// The SIP `Call-ID` of a running call, as the PBX knows it (for parking). Read from the engine each time; `nil` before the SIP side
+    /// of the call exists.
+    public func sipCallID(for session: CallSession) -> String? {
+        guard let engineID = self.session(session.id)?.engineCallID ?? session.engineCallID else {
+            return nil
+        }
+
+        return engine.sipCallID(of: engineID)
+    }
+
     /// Start an outgoing call through the system call UI.
     /// `options` (the number to call out with) belong to this outgoing call only.
     public func startCall(number rawNumber: String, accountId: String, options: CallOptions = .none) throws {

@@ -99,6 +99,16 @@ final class PhoneControllerTests: XCTestCase {
         XCTAssertEqual(finished.first?.direction, .outgoing)
     }
 
+    func testTheSipCallIdIsReadLiveFromTheEngine() throws {
+        registered("a")
+        try phone.startCall(number: "101", accountId: "a")
+        let session = try XCTUnwrap(phone.activeSession)
+
+        // The engine id was fixed before the INVITE existed; the dialog's Call-ID is known only later.
+        engine.sipCallIDs[CallID("out-1")] = "HSzuSitbTA"
+        XCTAssertEqual(phone.sipCallID(for: session), "HSzuSitbTA")
+    }
+
     func testTheChosenNumberTravelsWithTheOutgoingCallOnly() throws {
         registered("a")
 

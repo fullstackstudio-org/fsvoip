@@ -76,6 +76,10 @@ final class FakeSipEngine: SipEngine {
     func transfer(_ call: CallID, to number: String) throws {}
     func calls() -> [CallInfo] { [] }
 
+    /// The live SIP Call-IDs; without an entry the engine id itself.
+    var sipCallIDs: [CallID: String] = [:]
+    func sipCallID(of call: CallID) -> String? { sipCallIDs[call] ?? call.rawValue }
+
     // MARK: Driving events
 
     func emitRegistration(_ state: RegistrationState, _ account: String) {
