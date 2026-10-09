@@ -57,6 +57,7 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: nl.fullstackstudio.fsvoip
             CFBundleURLSchemes: [fsvoip]
+        NSContactsUsageDescription: FSVoip leest de contacten van deze telefoon om bij een gesprek de naam te tonen en om nummers te kiezen. Ze blijven op je telefoon.
         NSCameraUsageDescription: FSVoip gebruikt de camera om de QR-code te scannen waarmee je dit toestel koppelt.
         ITSAppUsesNonExemptEncryption: false
         NSMicrophoneUsageDescription: FSVoip gebruikt de microfoon zodat de ander je kan horen tijdens een gesprek.
@@ -101,6 +102,7 @@ targets:
       - package: CallController
       - package: Pairing
       - package: Contacts
+        product: FSContacts
       - package: UI
 
 schemes:

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import Core
 import XCTest
-@testable import Contacts
+@testable import FSContacts
 
 final class ContactsTests: XCTestCase {
     func testInternalContactsProviderMatchesByExtension() async throws {

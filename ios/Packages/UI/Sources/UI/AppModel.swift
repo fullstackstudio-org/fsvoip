@@ -2,6 +2,7 @@
 import CallController
 import Combine
 import Core
+import FSContacts
 import Foundation
 import Pairing
 import SipEngine
@@ -29,6 +30,7 @@ public final class FSVoipAppModel: ObservableObject {
     public enum Tab: Hashable {
         case dialer
         case recents
+        case contacts
         case settings
     }
 
@@ -58,6 +60,8 @@ public final class FSVoipAppModel: ObservableObject {
     @Published public private(set) var settingsRevision = 0
 
     public let phone: PhoneController
+    /// The customer's address books, the phone's contacts and the colleagues; answers "who is this number".
+    public let contacts: ContactsHub
 
     private let accountStore: AccountStore
     private let service: AccountServicing
@@ -69,6 +73,9 @@ public final class FSVoipAppModel: ObservableObject {
     private let requestNotifications: () async -> Void
     private let logger: FSLogger
     private var phoneChanges: AnyCancellable?
+    private var contactsChanges: AnyCancellable?
+    private var contactsConfiguration: Task<Void, Never>?
+    private var contactsTimer: Task<Void, Never>?
 
     public init(
         phone: PhoneController,
@@ -80,9 +87,11 @@ public final class FSVoipAppModel: ObservableObject {
         requestMicrophone: @escaping () async -> Bool = { await MicrophonePermission.request() },
         pushTokens: PushTokenReporting? = nil,
         requestNotifications: @escaping () async -> Void = {},
+        contacts: ContactsHub? = nil,
         logger: FSLogger = FSLogger(category: "app")
     ) {
         self.phone = phone
+        self.contacts = contacts ?? ContactsHub()
         self.accountStore = accountStore
         self.service = service
         self.preferences = preferences
@@ -101,6 +110,11 @@ public final class FSVoipAppModel: ObservableObject {
         }
         // Republish the phone's changes so screens that only watch the app model still redraw.
         phoneChanges = phone.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        contactsChanges = self.contacts.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        // A 401 on the contacts means the pairing is gone: `GET /me` removes the account here (and with it its contacts).
+        self.contacts.onUnauthorized = { [weak self] _ in
+            Task { await self?.refreshAccounts() }
+        }
 
         reloadAccounts()
         recents = recentsStore.all()
@@ -117,6 +131,25 @@ public final class FSVoipAppModel: ObservableObject {
         }
 
         phone.sync(accounts: accounts)
+        configureContacts()
+    }
+
+    /// Tell the contacts which accounts exist. Runs one after the other, and a sync waits for it.
+    private func configureContacts() {
+        let ids = accounts.map(\.id)
+        let previous = contactsConfiguration
+        let hub = contacts
+
+        contactsConfiguration = Task {
+            await previous?.value
+            await hub.configure(accountIds: ids)
+        }
+    }
+
+    /// Sync the address books of all accounts. `force`: also when one was synced a moment ago (after a refresh push, on pull to refresh).
+    public func syncContacts(force: Bool = false) async {
+        await contactsConfiguration?.value
+        await contacts.syncAll(force: force)
     }
 
     public func account(id: String) -> StoredAccount? {
@@ -134,6 +167,7 @@ public final class FSVoipAppModel: ObservableObject {
                 switch try await service.refresh(account) {
                 case let .updated(updated, contacts):
                     internalContacts[updated.id] = contacts
+                    self.contacts.setInternalContacts(contacts, accountId: updated.id)
                 case .revoked:
                     internalContacts[account.id] = nil
                     cleanUp(accountId: account.id)
@@ -250,8 +284,12 @@ public final class FSVoipAppModel: ObservableObject {
         recents = []
     }
 
-    /// Name of an internal contact (the other extensions of the same PBX) for a number.
+    /// The name for a number: the customer's address book, then the phone's contacts, then the colleagues of the PBX.
     public func name(forNumber number: String) -> String? {
+        if let name = contacts.name(forNumber: number) {
+            return name
+        }
+
         for contacts in internalContacts.values {
             if let match = contacts.first(where: { $0.number == number }) {
                 return match.name
@@ -268,11 +306,33 @@ public final class FSVoipAppModel: ObservableObject {
         Task {
             await refreshAccounts()
             await reportPushTokens()
+            await syncContacts()
+            await contacts.refreshDeviceContacts()
         }
+        startContactsTimer()
     }
 
     public func didEnterBackground() {
         phone.enterBackground()
+        // No polling in the background: the address book is read again when the app comes to the front.
+        contactsTimer?.cancel()
+        contactsTimer = nil
+    }
+
+    /// While the app is in front, look for changes every few minutes.
+    private func startContactsTimer() {
+        contactsTimer?.cancel()
+        contactsTimer = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 300 * 1_000_000_000)
+
+                guard !Task.isCancelled else {
+                    return
+                }
+
+                await self?.syncContacts()
+            }
+        }
     }
 
     // MARK: Push
@@ -311,7 +371,11 @@ public final class FSVoipAppModel: ObservableObject {
         case let .revoked(revoked):
             removeRevoked(accountId: revoked.accountId)
         case .refresh:
-            Task { await refreshAccounts() }
+            // The portal changed something about this pairing (a role, a name, the address book): read it all again.
+            Task {
+                await refreshAccounts()
+                await syncContacts(force: true)
+            }
         case .ring:
             logger.notice("A ring message arrived as a regular notification: ignored")
         }
@@ -438,6 +502,8 @@ public final class FSVoipAppModel: ObservableObject {
     private func cleanUp(accountId: String) {
         preferences.removePreferences(for: accountId)
         internalContacts[accountId] = nil
+        // Unpairing removes the address book of that account from this phone.
+        contacts.forget(accountId: accountId)
         settingsRevision += 1
     }
 

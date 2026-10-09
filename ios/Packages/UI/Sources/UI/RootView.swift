@@ -89,6 +89,12 @@ struct MainTabView: View {
             .tag(FSVoipAppModel.Tab.recents)
 
             NavigationStack {
+                ContactsView(model: model)
+            }
+            .tabItem { Label(L10n.string("tab.contacts"), systemImage: "person.2.fill") }
+            .tag(FSVoipAppModel.Tab.contacts)
+
+            NavigationStack {
                 SettingsView(model: model)
             }
             .tabItem { Label(L10n.string("tab.settings"), systemImage: "gearshape.fill") }

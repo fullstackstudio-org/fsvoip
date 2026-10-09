@@ -2,13 +2,14 @@
 //
 // DEBUG builds only: a demo of the app without a phone system, for the simulator, screenshots and UI checks.
 // Start with the launch argument `-FSVoipDemo YES` (two paired example extensions) or `-FSVoipDemo onboarding`
-// (nothing paired yet). `-FSVoipDemoScreen <dialer|recents|settings|account|incall|incoming|push|pairing|failed|scanner>`
+// (nothing paired yet). `-FSVoipDemoScreen <dialer|recents|contacts|settings|account|incall|incoming|push|pairing|failed|scanner>`
 // opens a screen directly. Nothing here talks to a server or a PBX, and nothing is written to the Keychain.
 
 #if DEBUG
 import CallController
 import Core
 import Foundation
+import FSContacts
 import Pairing
 import SipEngine
 import UI
@@ -41,6 +42,7 @@ enum DemoMode {
             }
         }
 
+        let demoContacts = DemoContactsAPI()
         let engine = DemoSipEngine()
         let phone = PhoneController(engine: engine, system: ImmediateCallSystem(), audioRouting: MemoryAudioRouting(), preferences: preferences)
         let model = FSVoipAppModel(
@@ -50,7 +52,8 @@ enum DemoMode {
             preferences: preferences,
             recentsStore: recents,
             device: { DeviceDescriptor(model: "Simulator", osVersion: nil, appVersion: "demo", installId: "d3m0d3m0d3m0d3m0") },
-            requestMicrophone: { true }
+            requestMicrophone: { true },
+            contacts: ContactsHub(store: InMemoryContactsStore(), api: { _ in demoContacts }, settings: InMemoryContactsSettings(), minimumInterval: 0)
         )
 
         open(defaults.string(forKey: "FSVoipDemoScreen"), model: model, engine: engine)
@@ -64,6 +67,8 @@ enum DemoMode {
         switch screen {
         case "recents":
             model.selectedTab = .recents
+        case "contacts":
+            model.selectedTab = .contacts
         case "settings":
             model.selectedTab = .settings
         case "scanner":
@@ -278,6 +283,184 @@ final class DemoSipEngine: SipEngine {
         info.state = state
         live[id] = state.isEnded ? nil : info
         delegate?.sipEngine(self, callChanged: info)
+    }
+}
+
+/// A small address book in memory, for the demo: reads, adds, changes and deletes like the real one.
+final class DemoContactsAPI: ContactsAPI, @unchecked Sendable {
+    private let lock = NSLock()
+    private var contacts: [StoredContact]
+    private var notes: [String: String] = [:]
+    private var lists: [(id: String, name: String, members: Set<String>)]
+    private var clock = 0
+
+    init() {
+        func person(_ id: String, _ name: String, _ company: String?, _ numbers: [String], email: String? = nil) -> StoredContact {
+            StoredContact(
+                id: id,
+                name: name,
+                firstName: company == name ? nil : name.split(separator: " ").first.map(String.init),
+                lastName: company == name ? nil : name.split(separator: " ").dropFirst().joined(separator: " "),
+                company: company,
+                email: email,
+                phones: numbers.enumerated().map { StoredContactPhone(number: $0.element, label: $0.offset == 0 ? "mobile" : "work", isPrimary: $0.offset == 0) },
+                updatedAt: "2026-10-09T09:00:00.000Z"
+            )
+        }
+
+        contacts = [
+            person("c01", "Bakkerij Smit", "Bakkerij Smit", ["+31701234567"], email: "info@bakkerijsmit.nl"),
+            person("c02", "Pieter de Groot", "De Groot Installatie", ["+31612345678", "+31201234567"], email: "pieter@degroot-installatie.nl"),
+            person("c03", "Anja Bakker", "Gemeente Voorbeeld", ["+31623456789"]),
+            person("c04", "Henk van Dijk", nil, ["+31634567890"]),
+            person("c05", "Mireille Jansen", "Jansen Advies", ["+31645678901", "+31302345678"], email: "m.jansen@jansenadvies.nl"),
+            person("c06", "Karim El Amrani", nil, ["+31656789012"]),
+            person("c07", "Sanne Visser", "Visser & Zonen", ["+31667890123"]),
+            person("c08", "Willem Mulder", nil, ["+31678901234"]),
+            person("c09", "Loodgietersbedrijf De Waal", "Loodgietersbedrijf De Waal", ["+31107654321"]),
+            person("c10", "Inge Smeets", "Tandartspraktijk Smeets", ["+31689012345"]),
+            person("c11", "Ahmed Yilmaz", nil, ["+31690123456"]),
+            person("c12", "Tom Brouwer", "Brouwer Transport", ["+31611223344"]),
+            person("c13", "Femke de Vries", nil, ["+31622334455"]),
+            person("c14", "Joost Kramer", "Kramer Groenvoorziening", ["+31633445566"]),
+        ]
+        notes["c02"] = "Heeft de cv-ketel in het magazijn vervangen. Bellen na 16:00 lukt het best."
+        lists = [
+            ("l-klanten", "Klanten", ["c01", "c05", "c07", "c10"]),
+            ("l-leveranciers", "Leveranciers", ["c02", "c09", "c12", "c14"]),
+        ]
+    }
+
+    func contactCapabilities() async throws -> ContactCapabilities {
+        try Self.decode(ContactCapabilities.self, ["read": true, "write": true, "delete": true])
+    }
+
+    func syncAddressBook(since: String?) async throws -> ContactsSyncResult {
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        return try lock.withLock {
+            let page = since == nil ? contacts : []
+
+            return ContactsSyncResult(contacts: try page.map(contact), deleted: [], serverTime: "2026-10-09T10:00:00.000Z", isFull: since == nil)
+        }
+    }
+
+    func contact(id: String) async throws -> ContactDetail {
+        try lock.withLock { try detail(id) }
+    }
+
+    func createContact(_ request: ContactCreate) async throws -> ContactDetail {
+        try lock.withLock {
+            let body = try Self.object(request)
+            let id = "c\(100 + contacts.count)"
+            contacts.append(try stored(id: id, from: body))
+            notes[id] = body["notes"] as? String
+            setMembership(id, body["listIds"] as? [String] ?? [])
+
+            return try detail(id)
+        }
+    }
+
+    func updateContact(id: String, _ update: ContactUpdate) async throws -> ContactUpdateResponse {
+        try lock.withLock {
+            guard let position = contacts.firstIndex(where: { $0.id == id }) else { throw APIError.notFound }
+            guard contacts[position].updatedAt == update.expectedUpdatedAt else { throw APIError.stale(version: nil) }
+
+            let body = try Self.object(update)
+            contacts[position] = try stored(id: id, from: body)
+            notes[id] = body["notes"] as? String
+
+            if let ids = body["listIds"] as? [String] { setMembership(id, ids) }
+
+            var object = Self.json(contacts[position])
+            object["notes"] = notes[id]
+            object["listIds"] = lists.filter { $0.members.contains(id) }.map(\.id)
+
+            return try Self.decode(ContactUpdateResponse.self, ["contact": object, "changed": true])
+        }
+    }
+
+    func deleteContact(id: String) async throws -> Int {
+        lock.withLock {
+            contacts.removeAll { $0.id == id }
+
+            return 1
+        }
+    }
+
+    func contactLists() async throws -> [ContactListInfo] {
+        try lock.withLock {
+            try lists.map { try Self.decode(ContactListInfo.self, ["id": $0.id, "name": $0.name, "version": 1, "contactCount": $0.members.count]) }
+        }
+    }
+
+    func contactListSnapshot(listId: String, cursor: String?, etag: String?) async throws -> ContactListSnapshotOutcome {
+        try lock.withLock {
+            guard let list = lists.first(where: { $0.id == listId }) else { throw APIError.notFound }
+
+            let snapshot = try Self.decode(ContactListSnapshot.self, [
+                "list": ["id": list.id, "name": list.name, "version": 1],
+                "contacts": list.members.sorted().map { ["id": $0, "name": "", "phones": [[String: Any]]()] },
+            ])
+
+            return .snapshot(snapshot, etag: "\"1\"")
+        }
+    }
+
+    // MARK: Helpers (called with the lock held)
+
+    private func setMembership(_ id: String, _ listIds: [String]) {
+        for position in lists.indices {
+            if listIds.contains(lists[position].id) { lists[position].members.insert(id) } else { lists[position].members.remove(id) }
+        }
+    }
+
+    private func stored(id: String, from body: [String: Any]) throws -> StoredContact {
+        clock += 1
+        let phones = (body["phones"] as? [[String: Any]] ?? []).map { StoredContactPhone(number: $0["number"] as? String ?? "", label: $0["label"] as? String ?? "other", isPrimary: $0["isPrimary"] as? Bool ?? false) }
+
+        return StoredContact(
+            id: id,
+            name: body["name"] as? String ?? "",
+            firstName: body["firstName"] as? String,
+            lastName: body["lastName"] as? String,
+            company: body["company"] as? String,
+            email: body["email"] as? String,
+            phones: phones,
+            updatedAt: "2026-10-09T10:\(String(format: "%02d", clock)):00.000Z"
+        )
+    }
+
+    private func contact(_ stored: StoredContact) throws -> Contact {
+        try Self.decode(Contact.self, Self.json(stored))
+    }
+
+    private func detail(_ id: String) throws -> ContactDetail {
+        guard let stored = contacts.first(where: { $0.id == id }) else { throw APIError.notFound }
+
+        var object = Self.json(stored)
+        object["notes"] = notes[id]
+        object["listIds"] = lists.filter { $0.members.contains(id) }.map(\.id)
+
+        return try Self.decode(ContactDetail.self, object)
+    }
+
+    private static func json(_ stored: StoredContact) -> [String: Any] {
+        var object: [String: Any] = ["id": stored.id, "name": stored.name, "phones": stored.phones.map { ["number": $0.number, "label": $0.label, "isPrimary": $0.isPrimary] }, "tags": stored.tags, "updatedAt": stored.updatedAt]
+        if let value = stored.firstName { object["firstName"] = value }
+        if let value = stored.lastName { object["lastName"] = value }
+        if let value = stored.company { object["company"] = value }
+        if let value = stored.email { object["email"] = value }
+
+        return object
+    }
+
+    private static func object<T: Encodable>(_ value: T) throws -> [String: Any] {
+        (try JSONSerialization.jsonObject(with: FSVoipJSON.encoder().encode(value)) as? [String: Any]) ?? [:]
+    }
+
+    private static func decode<T: Decodable>(_ type: T.Type, _ object: [String: Any]) throws -> T {
+        try FSVoipJSON.decoder().decode(type, from: JSONSerialization.data(withJSONObject: object))
     }
 }
 #endif

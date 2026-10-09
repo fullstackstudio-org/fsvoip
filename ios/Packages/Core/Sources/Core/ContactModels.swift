@@ -140,6 +140,13 @@ public struct ContactsSyncResult: Equatable, Sendable {
     public var serverTime: String
     /// `true` = there was no `since`: this is the complete set; drop locally what is not in `contacts`.
     public var isFull: Bool
+
+    public init(contacts: [Contact], deleted: [String], serverTime: String, isFull: Bool) {
+        self.contacts = contacts
+        self.deleted = deleted
+        self.serverTime = serverTime
+        self.isFull = isFull
+    }
 }
 
 public struct ContactSingleResponse: Decodable, Equatable, Sendable {

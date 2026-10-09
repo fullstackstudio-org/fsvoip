@@ -30,7 +30,7 @@ struct RecentsView: View {
                             let accountId = model.account(id: call.accountId) != nil ? call.accountId : nil
                             model.call(call.number, from: accountId)
                         } label: {
-                            RecentRow(call: call, showsLine: model.accounts.count > 1)
+                            RecentRow(call: call, name: model.name(forNumber: call.number) ?? call.name, showsLine: model.accounts.count > 1)
                         }
                         .disabled(call.number.isEmpty)
                     }
@@ -52,6 +52,8 @@ struct RecentsView: View {
 
 struct RecentRow: View {
     let call: RecentCall
+    /// The name now known for this number (the address book may have learned it since the call), otherwise the one stored with the call.
+    let name: String?
     let showsLine: Bool
 
     private var isMissed: Bool {
@@ -67,7 +69,7 @@ struct RecentRow: View {
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(call.name ?? (call.number.isEmpty ? L10n.string("call.anonymous") : call.number))
+                Text(name ?? (call.number.isEmpty ? L10n.string("call.anonymous") : call.number))
                     .font(.body.weight(.medium))
                     .foregroundStyle(isMissed ? Brand.hangUp : Color.primary)
                     .lineLimit(1)
@@ -95,7 +97,7 @@ struct RecentRow: View {
     private var subtitle: String {
         var parts: [String] = []
 
-        if call.name != nil, !call.number.isEmpty {
+        if name != nil, !call.number.isEmpty {
             parts.append(call.number)
         }
 
