@@ -134,6 +134,12 @@ const mapping: Record<string, string> = {
     "push-refresh.json": push("refresh"),
     "apns-voip-body.json": push("apnsVoipBody"),
     "apns-alert-body.json": push("apnsAlertBody"),
+    "apns-notice-body.json": push("apnsNoticeBody"),
+    "push-notice.json": push("notice"),
+    "contact-lookup.json": api("ContactLookup"),
+    "contact-lookup-unknown.json": api("ContactLookup"),
+    "contact-timeline.json": api("ContactTimelinePage"),
+    "contact-timeline-last.json": api("ContactTimelinePage"),
     "fcm-message.json": push("fcmMessage"),
 };
 
@@ -246,6 +252,9 @@ const negatives: [string, string, unknown][] = [
     ["SoundRenameRequest rejects an unknown field", api("SoundRenameRequest"), { name: "x", durationSeconds: 3 }],
     ["ParkRequest rejects an unknown field (the extension comes from the pairing)", api("ParkRequest"), { callId: "abc@192.0.2.1", extension: "102" }],
     ["ParkRequest rejects a Call-ID with whitespace", api("ParkRequest"), { callId: "abc def" }],
+    ["notice rejects an extra field (a notice carries no data)", push("notice"), { ...JSON.parse(readFileSync(join(fixturesDir, "push-notice.json"), "utf8")), orderId: "x" }],
+    ["notice needs an href", push("notice"), { v: 1, type: "notice", accountId: "3f0c2b1e-8a4d-4d6f-9b7a-1c2d3e4f5a6b", title: "x", body: "y" }],
+    ["ContactLookup needs the counters", api("ContactLookup"), { contact: null, ambiguous: false, doNotContact: false, timeline: [] }],
     ["revoked rejects a wrong version", push("revoked"), { v: 2, type: "revoked", accountId: "3f0c2b1e-8a4d-4d6f-9b7a-1c2d3e4f5a6b", accountLabel: "x" }],
 ];
 

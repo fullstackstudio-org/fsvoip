@@ -1,0 +1,53 @@
+{
+  "contact": {
+    "id": "6f7a8b9c-0d1e-4f2a-8b3c-4d5e6f7a8b9c",
+    "name": "Bakkerij Smit",
+    "firstName": null,
+    "lastName": null,
+    "company": "Bakkerij Smit",
+    "email": "info@bakkerijsmit.nl",
+    "phones": [
+      {
+        "number": "+31701234567",
+        "label": "work",
+        "isPrimary": true
+      }
+    ],
+    "tags": [
+      "klant"
+    ],
+    "updatedAt": "2026-10-07T09:30:12.345Z"
+  },
+  "ambiguous": false,
+  "doNotContact": false,
+  "counters": {
+    "openRequests": 1,
+    "openOrders": 2
+  },
+  "timeline": [
+    {
+      "id": "e1",
+      "kind": "order",
+      "title": "Bestelling geplaatst",
+      "summary": "3 producten, € 84,50",
+      "occurredAt": "2026-10-09T14:02:11.000Z",
+      "ref": "W-1042"
+    },
+    {
+      "id": "e2",
+      "kind": "ticket",
+      "title": "Verzoek ontvangen",
+      "summary": "Vraag over de levertijd",
+      "occurredAt": "2026-10-08T09:15:00.000Z",
+      "ref": "#12"
+    },
+    {
+      "id": "e3",
+      "kind": "call",
+      "title": "Gesprek",
+      "summary": null,
+      "occurredAt": "2026-10-05T11:40:00.000Z",
+      "ref": null
+    }
+  ]
+}

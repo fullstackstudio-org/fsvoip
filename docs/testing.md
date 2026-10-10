@@ -57,6 +57,34 @@ Pair as **Beheerder** (portal, role switch). Face ID is asked for Centrale, Numm
 3. Reduce Motion on: sheets and player bars appear without sliding; the recorder dot does not pulse.
 4. Light and dark: grey help text stays readable.
 
+## 6. Klantkaart bij een inkomend gesprek (build 9)
+
+Needs the FSS server with `GET /contacts/lookup` and `/contacts/{id}/timeline`, and a contact in the customer's contacts (portal → Contacten) with a
+mobile number you can call from, ideally a customer with an open order or request on the website.
+
+1. **Known caller, app closed.** Call extension 102 from that number. The lock screen shows the name from the PBX or the phone at once; within about a
+   second it changes to the name of the contact (CallKit update). Answer: the call screen shows a line "Klant in website: 2 open bestellingen, 1 open verzoek"
+   (only what the server counted; a customer without open items says just "Klant in website").
+2. **Unknown caller / ambiguous number** (two contacts with the same number): no line, the call behaves exactly as before.
+3. **Slow or no network:** switch the phone to flight mode right before the call arrives (or block the API host). The call still rings and can be answered;
+   no line appears and nothing is delayed.
+4. **A name of the phone's own contacts wins** over the contact's name on the lock screen; the line still shows in the app.
+5. **Contact screen:** Contacten → the contact → "Activiteit" lists the timeline (newest first); "Meer laden" gets older lines; offline shows
+   "Activiteit ophalen mislukt" and a tap tries again.
+6. A colleague (internal number) and an anonymous caller are never looked up.
+
+## 7. Melding openen (build 9)
+
+Needs notification permission (asked after the first pairing) and a notice from FSS (a new request, order or missed call for a portal user).
+
+1. App in the background: the notice shows as a normal notification (title and one sentence, no names or amounts). Tap it: the app opens on the screen of
+   the link: missed call or voicemail → Geschiedenis / Voicemail, contacts → Contacten.
+2. A request, order or appointment has no screen in the app: tapping opens the home screen (the dialler). Same for a link the app does not know.
+3. App open: the notice still shows as a banner; tapping it navigates.
+4. Settings sheet open when you tap: the sheet closes and the tab shows.
+5. A notice for an account that is no longer on the phone opens nothing.
+6. Notifications switched off in iOS Settings: nothing shows and nothing breaks; calls still ring (those are VoIP pushes).
+
 ## Not yet verified on the house PBX
 
-Caller choice on the callee's display, parking and ring-back, the recording announcement, the welcome message and the menu keys, opening hours on a second number, the invite flow end to end, and the push wake-up with the app closed after the server update. Anonymous calling is not part of this build.
+Caller choice on the callee's display, parking and ring-back, the recording announcement, the welcome message and the menu keys, opening hours on a second number, the invite flow end to end, and the push wake-up with the app closed after the server update. Anonymous calling is not part of this build. Also not verified on a device: sections 6 and 7 above (the CallKit name update, the one-second window on a real network, and a real `notice` push through APNs).

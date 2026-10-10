@@ -271,6 +271,77 @@ final class AppModelTests: XCTestCase {
         XCTAssertNil(model.notice)
     }
 
+    // MARK: Notices from the portal (tap → screen)
+
+    private func noticePayload(href: String, account: String = "3f0c2b1e-8a4d-4d6f-9b7a-1c2d3e4f5a6b") -> [AnyHashable: Any] {
+        ["aps": ["alert": ["title": "Nieuwe bestelling", "body": "Er is een nieuwe bestelling."], "sound": "default"],
+         "fsvoip": ["v": 1, "type": "notice", "accountId": account, "title": "Nieuwe bestelling", "body": "Er is een nieuwe bestelling.", "href": href]]
+    }
+
+    func testTappingANoticeOpensTheScreenItsLinkMapsTo() throws {
+        try store.save(account("3f0c2b1e-8a4d-4d6f-9b7a-1c2d3e4f5a6b"))
+        let model = makeModel()
+        model.isSettingsPresented = true
+
+        model.openNotification(payload: noticePayload(href: "https://fullstackstudio.nl/portal/voip/99999999-8888-4777-8666-555555555555/voicemail"))
+        XCTAssertEqual(model.selectedTab, .voicemail)
+        XCTAssertFalse(model.isSettingsPresented, "a sheet closes so the screen is visible")
+
+        model.openNotification(payload: noticePayload(href: "https://fullstackstudio.nl/portal/voip/99999999-8888-4777-8666-555555555555/calls"))
+        XCTAssertEqual(model.selectedTab, .recents)
+
+        model.openNotification(payload: noticePayload(href: "https://fullstackstudio.nl/portal/contacts"))
+        XCTAssertEqual(model.selectedTab, .contacts)
+    }
+
+    func testAnUnknownPathOrTicketOpensTheHomeScreen() throws {
+        try store.save(account("3f0c2b1e-8a4d-4d6f-9b7a-1c2d3e4f5a6b"))
+        let model = makeModel()
+        model.selectedTab = .contacts
+
+        model.openNotification(payload: noticePayload(href: "https://fullstackstudio.nl/portal/content/11111111-2222-4333-8444-555555555555/tickets/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"))
+        XCTAssertEqual(model.selectedTab, .dialer)
+
+        model.selectedTab = .recents
+        model.openNotification(payload: noticePayload(href: "https://elsewhere.example/whatever"))
+        XCTAssertEqual(model.selectedTab, .dialer)
+    }
+
+    func testANoticeForAnAccountNotOnThisPhoneOpensNothing() throws {
+        try store.save(account("keep"))
+        let model = makeModel()
+        model.selectedTab = .contacts
+
+        model.openNotification(payload: noticePayload(href: "https://fullstackstudio.nl/portal/voip/x/calls", account: "gone"))
+
+        XCTAssertEqual(model.selectedTab, .contacts)
+    }
+
+    func testReceivingANoticeOpensNothingAndOnlyNoticesShowABannerInTheForeground() throws {
+        try store.save(account("3f0c2b1e-8a4d-4d6f-9b7a-1c2d3e4f5a6b"))
+        let model = makeModel()
+        model.selectedTab = .contacts
+        let notice = noticePayload(href: "https://fullstackstudio.nl/portal/voip/x/voicemail")
+
+        model.handleNotification(payload: notice)
+        XCTAssertEqual(model.selectedTab, .contacts, "only a tap navigates")
+        XCTAssertNil(model.notice)
+
+        XCTAssertTrue(model.showsBannerInForeground(payload: notice))
+        XCTAssertFalse(model.showsBannerInForeground(payload: ["fsvoip": ["v": 1, "type": "refresh", "accountId": "a"]]))
+        XCTAssertFalse(model.showsBannerInForeground(payload: ["aps": ["alert": "x"]]))
+    }
+
+    func testTappingAnUnpairedPushStillHandlesItAsBefore() throws {
+        try store.save(account("keep"))
+        try store.save(account("3f0c2b1e-8a4d-4d6f-9b7a-1c2d3e4f5a6b"))
+        let model = makeModel()
+
+        model.openNotification(payload: ["fsvoip": ["v": 1, "type": "revoked", "accountId": "3f0c2b1e-8a4d-4d6f-9b7a-1c2d3e4f5a6b", "accountLabel": "x"]])
+
+        XCTAssertEqual(model.accounts.map(\.id), ["keep"])
+    }
+
     func testARevokedAnswerToThePushTokenRefreshesTheAccounts() async throws {
         try store.save(account("gone"))
         service.refreshRevokes = ["gone"]

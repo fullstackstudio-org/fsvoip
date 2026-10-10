@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+import struct Core.CallerContext
 import Foundation
 import SipEngine
 
@@ -53,6 +54,8 @@ public struct CallSession: Identifiable, Equatable, Sendable {
     public var connectedAt: Date?
     /// `callRef` of the push that announced this call (= the `X-FSS-Call` header of its INVITE).
     public var fssCallRef: String?
+    /// What the website of the customer says about the caller (incoming calls only); `nil` = unknown or not asked / not answered in time.
+    public var callerContext: CallerContext?
     /// The number of the PBX this OUTGOING call goes out with, when the user chose one ("via 085 060 7848"). Never set on an incoming call.
     public var viaNumber: String?
     /// What the engine gets with this outgoing call.

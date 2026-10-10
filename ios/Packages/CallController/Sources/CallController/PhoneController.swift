@@ -34,6 +34,11 @@ public final class PhoneController: ObservableObject {
     public var lookupName: @MainActor (String) -> String? = { _ in nil }
     /// Text for an anonymous caller (localised by the app).
     public var anonymousCallerText = "Onbekend"
+    /// The customer card: who is this caller according to the website of the customer (name, open orders and requests). Asked for an
+    /// INCOMING call after it was reported to the system; it never delays the call (`callerLookupTimeout`), and `nil` = nothing to add.
+    public var lookupCaller: (@Sendable (_ number: String, _ account: StoredAccount) async -> CallerContext?)?
+    /// How long an incoming call waits for `lookupCaller`.
+    public var callerLookupTimeout: TimeInterval = CallerLookupTimeout.incomingCall
 
     let engine: SipEngine
     let system: CallSystem
@@ -57,6 +62,8 @@ public final class PhoneController: ObservableObject {
     var awakeAccounts: Set<String> = []
     /// Cancels the "no INVITE came" timer of a call reported from a push.
     var inviteTimers: [UUID: @MainActor () -> Void] = [:]
+    /// The running customer-card lookups, by call.
+    var callerLookups: [UUID: Task<Void, Never>] = [:]
     /// Calls (by `callRef`) that already ended here, and how a late INVITE for them is rejected.
     var closedCallRefs: [String: (at: Date, reject: DeclineReason)] = [:]
 
@@ -381,6 +388,8 @@ public final class PhoneController: ObservableObject {
             try? self.engine.decline(call.id)
             self.finish(uuid, reason: .declined, tellSystem: false)
         }
+
+        startCallerLookup(uuid)
     }
 
     fileprivate func engineCallChanged(_ info: CallInfo) {
@@ -437,6 +446,7 @@ public final class PhoneController: ObservableObject {
         session.phase = .ended(reason)
         sessions.removeAll { $0.id == uuid }
         inviteTimers.removeValue(forKey: uuid)?()
+        callerLookups.removeValue(forKey: uuid)?.cancel()
 
         if let ref = session.fssCallRef {
             // A late INVITE (or a repeated push) for this call must not ring again.

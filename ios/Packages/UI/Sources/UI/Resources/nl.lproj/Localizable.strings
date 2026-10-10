@@ -911,3 +911,15 @@
 "pbx.followMe.moveUp" = "Naar boven";
 "pbx.followMe.moveDown" = "Naar beneden";
 "pbx.followMe.remove" = "Stap verwijderen";
+
+"callcard.prefix" = "Klant in website: %@";
+"callcard.known" = "Klant in website";
+"callcard.orders.one" = "%d open bestelling";
+"callcard.orders.other" = "%d open bestellingen";
+"callcard.requests.one" = "%d open verzoek";
+"callcard.requests.other" = "%d open verzoeken";
+"timeline.title" = "Activiteit";
+"timeline.loading" = "Activiteit ophalen…";
+"timeline.empty" = "Nog geen activiteit.";
+"timeline.more" = "Meer laden";
+"timeline.error" = "Activiteit ophalen mislukt. Tik om opnieuw te proberen.";

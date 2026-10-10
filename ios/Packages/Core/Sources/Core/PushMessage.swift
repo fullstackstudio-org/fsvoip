@@ -64,10 +64,28 @@ public struct RefreshPush: Codable, Equatable, Sendable {
     }
 }
 
+/// A message from the customer portal (a new order, a missed call, ...). A regular notification, never a VoIP push, and it carries
+/// no personal data or secret: a short title, one sentence and the portal link to open. The app only reads the PATH of `href`
+/// (`NoticeRoute`), it never opens the link.
+public struct NoticePush: Codable, Equatable, Sendable {
+    public var accountId: String
+    public var title: String
+    public var body: String
+    public var href: String
+
+    public init(accountId: String, title: String, body: String, href: String) {
+        self.accountId = accountId
+        self.title = title
+        self.body = body
+        self.href = href
+    }
+}
+
 public enum PushMessage: Equatable, Sendable {
     case ring(RingPush)
     case revoked(RevokedPush)
     case refresh(RefreshPush)
+    case notice(NoticePush)
 }
 
 public enum PushMessageError: Error, Equatable, Sendable {
@@ -98,6 +116,8 @@ extension PushMessage: Decodable {
             self = .revoked(try RevokedPush(from: decoder))
         case "refresh":
             self = .refresh(try RefreshPush(from: decoder))
+        case "notice":
+            self = .notice(try NoticePush(from: decoder))
         default:
             throw PushMessageError.unknownType(type)
         }

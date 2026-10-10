@@ -1287,6 +1287,73 @@ paths:
           $ref: "#/components/responses/RateLimited"
         "503":
           $ref: "#/components/responses/Unavailable"
+  /contacts/lookup:
+    get:
+      tags: [contacts]
+      operationId: lookupContactByNumber
+      summary: Who is calling? The contact of this customer with that number, with context.
+      description: |
+        The customer card of an incoming call (rate limit 120/min per device). Only the contacts of the customer of this device are
+        searched. Unknown, suppressed (privacy) and ambiguous (several contacts on one number) are all `200` with `contact: null`
+        (`ambiguous: true` only for the last). `counters` count what is open on the website of the customer; `timeline` holds the last
+        10 lines (a title and an optional summary, never event data). The app waits at most one second for this answer on an incoming
+        call and shows nothing when it is not in time.
+      security:
+        - deviceToken: []
+      parameters:
+        - name: number
+          in: query
+          required: true
+          schema:
+            type: string
+            maxLength: 40
+      responses:
+        "200":
+          description: The lookup.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactLookup"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /contacts/{id}/timeline:
+    get:
+      tags: [contacts]
+      operationId: getContactTimeline
+      summary: The timeline of one contact of this customer, newest first.
+      security:
+        - deviceToken: []
+      parameters:
+        - $ref: "#/components/parameters/ObjectId"
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: A page.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactTimelinePage"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /contacts/{id}:
     get:
       tags: [contacts]
@@ -2227,6 +2294,61 @@ components:
               items:
                 type: string
                 format: uuid
+    ContactTimelineItem:
+      type: object
+      required: [id, kind, title, summary, occurredAt, ref]
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          description: "The kind of line (order, ticket, call, ...). The app only uses it to pick an icon; unknown kinds are fine."
+        title:
+          type: string
+        summary:
+          type: ["string", "null"]
+        occurredAt:
+          type: string
+          description: Opaque timestamp (ISO 8601).
+        ref:
+          type: ["string", "null"]
+          description: A human number such as an order number.
+    ContactTimelinePage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContactTimelineItem"
+        nextCursor:
+          type: ["string", "null"]
+    ContactLookup:
+      type: object
+      required: [contact, ambiguous, doNotContact, counters, timeline]
+      properties:
+        contact:
+          oneOf:
+            - $ref: "#/components/schemas/ContactItem"
+            - type: "null"
+        ambiguous:
+          type: boolean
+        doNotContact:
+          type: boolean
+        counters:
+          type: object
+          required: [openRequests, openOrders]
+          properties:
+            openRequests:
+              type: integer
+              minimum: 0
+            openOrders:
+              type: integer
+              minimum: 0
+        timeline:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContactTimelineItem"
     ContactsPage:
       type: object
       required: [contacts, deleted, nextCursor, serverTime]

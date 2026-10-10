@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0 (build 9) — klantkaart en meldingen
+
+### Nieuw (NL)
+
+- **Klantkaart bij een inkomend gesprek.** Belt iemand die bij je klant als contact bekend is, dan toont het belscherm de naam en een regel als "Klant in website: 2 open bestellingen, 1 open verzoek". Het vergrendelscherm krijgt de naam binnen ongeveer een seconde. Een trage of mislukte opzoeking houdt het gesprek nooit op.
+- **Activiteit bij een contact.** Het contactscherm toont de tijdlijn van het contact (bestellingen, verzoeken, gesprekken), met "Meer laden".
+- **Meldingen uit het portaal** openen het juiste scherm: gemiste gesprekken en voicemail, contacten. Iets zonder eigen scherm in de app (verzoeken, bestellingen) opent het toetsenbord.
+
 ## 0.2.0 (build 7) — TestFlight-feedback
 
 ### Nieuw (NL)

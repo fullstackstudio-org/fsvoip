@@ -1,0 +1,13 @@
+{
+  "items": [
+    {
+      "id": "e3",
+      "kind": "call",
+      "title": "Gesprek",
+      "summary": null,
+      "occurredAt": "2026-10-05T11:40:00.000Z",
+      "ref": null
+    }
+  ],
+  "nextCursor": null
+}

@@ -102,6 +102,8 @@ public final class FSVoipAppModel: ObservableObject {
     public let selfExtension: SelfExtensionHub
     /// "Uitbellen via": the number the next call goes out with.
     public let outbound: OutboundChoiceModel
+    /// The customer card: caller lookup for incoming calls and the timeline of a contact. `nil` = not offered (demo mode, tests).
+    public let customerCards: CustomerCardServicing?
     /// Calls of the PBX (the team history) per account, for "Geschiedenis".
     let history: HistoryModel
 
@@ -143,9 +145,11 @@ public final class FSVoipAppModel: ObservableObject {
         selfExtension: SelfExtensionHub? = nil,
         park: ParkServicing? = nil,
         outboundNumbers: OutboundNumbersServicing? = nil,
+        customerCards: CustomerCardServicing? = nil,
         logger: FSLogger = FSLogger(category: "app")
     ) {
         self.phone = phone
+        self.customerCards = customerCards
         self.contacts = contacts ?? ContactsHub()
         self.pbx = pbx
         self.media = media
@@ -170,6 +174,17 @@ public final class FSVoipAppModel: ObservableObject {
         history.nameLookup = { [weak self] number in self?.name(forNumber: number) }
         phone.anonymousCallerText = L10n.string("call.anonymous")
         phone.lookupName = { [weak self] number in self?.name(forNumber: number) }
+
+        if let customerCards {
+            // Best effort and capped at one second by the phone: a failed or slow lookup never touches the call.
+            phone.lookupCaller = { number, account in
+                guard let lookup = try? await customerCards.lookup(number: number, for: account) else {
+                    return nil
+                }
+
+                return CallerContext(lookup)
+            }
+        }
         phone.onCallFinished = { [weak self] call in
             self?.recentsStore.add(call)
             self?.recents = self?.recentsStore.all() ?? []
@@ -593,6 +608,47 @@ public final class FSVoipAppModel: ObservableObject {
             }
         case .ring:
             logger.notice("A ring message arrived as a regular notification: ignored")
+        case .notice:
+            // Showing it is the system's job (banner); opening the right screen happens when it is tapped (`openNotification`).
+            break
+        }
+    }
+
+    /// Does this regular push show a banner while the app is in the foreground? Notices from the portal do; "unpaired" and "refresh"
+    /// are handled silently.
+    public func showsBannerInForeground(payload: [AnyHashable: Any]) -> Bool {
+        if case .notice? = try? PushMessage.decode(apnsDictionary: payload) {
+            return true
+        }
+
+        return false
+    }
+
+    /// The user tapped a notification. A notice opens the screen its `href` maps to; anything else is handled as a normal push.
+    public func openNotification(payload: [AnyHashable: Any]) {
+        guard case let .notice(notice)? = try? PushMessage.decode(apnsDictionary: payload) else {
+            handleNotification(payload: payload)
+            return
+        }
+
+        // A notice for an account that is no longer on this phone opens nothing.
+        guard account(id: notice.accountId) != nil else {
+            logger.notice("Notice for an account that is not on this phone: ignored")
+            return
+        }
+
+        open(NoticeRoute.destination(forHref: notice.href))
+    }
+
+    /// Show the screen for a notice destination: any sheet closes, the tab opens. `.home` is the dialler.
+    public func open(_ destination: NoticeDestination) {
+        isSettingsPresented = false
+
+        switch destination {
+        case .home: selectedTab = .dialer
+        case .recents: selectedTab = .recents
+        case .voicemail: selectedTab = .voicemail
+        case .contacts: selectedTab = .contacts
         }
     }
 

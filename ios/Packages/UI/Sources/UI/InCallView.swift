@@ -98,6 +98,16 @@ struct InCallView: View {
                     .foregroundStyle(.white.opacity(0.6))
             }
 
+            if let line = CallerLine.text(session.callerContext) {
+                Text(line)
+                    .font(.footnote.weight(.semibold))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.white.opacity(0.08), in: Capsule())
+                    .accessibilityIdentifier("call-customer-card")
+            }
+
             status
                 .font(.body.monospacedDigit())
                 .foregroundStyle(.white.opacity(0.7))

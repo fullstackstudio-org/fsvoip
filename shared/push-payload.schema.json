@@ -7,11 +7,23 @@
     "ring": {
       "type": "object",
       "description": "Incoming call. On iOS this is a PushKit (VoIP) push and the app MUST report a CallKit call immediately in the PushKit callback. The matching SIP INVITE carries the header `X-FSS-Call: <callRef>`. If no INVITE arrives before `expiresAt` the app ends the call as unanswered.",
-      "required": ["v", "type", "callRef", "from", "accountId", "accountLabel", "expiresAt"],
+      "required": [
+        "v",
+        "type",
+        "callRef",
+        "from",
+        "accountId",
+        "accountLabel",
+        "expiresAt"
+      ],
       "additionalProperties": false,
       "properties": {
-        "v": { "const": 1 },
-        "type": { "const": "ring" },
+        "v": {
+          "const": 1
+        },
+        "type": {
+          "const": "ring"
+        },
         "callRef": {
           "type": "string",
           "description": "FreeSWITCH call UUID, equal to the `X-FSS-Call` SIP header of the INVITE.",
@@ -19,101 +31,298 @@
         },
         "from": {
           "type": "object",
-          "required": ["number", "name"],
+          "required": [
+            "number",
+            "name"
+          ],
           "additionalProperties": false,
           "properties": {
-            "number": { "type": ["string", "null"], "description": "Caller number as the PBX knows it; null = anonymous." },
-            "name": { "type": ["string", "null"], "description": "Caller name from the PBX caller id; null = unknown." }
+            "number": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Caller number as the PBX knows it; null = anonymous."
+            },
+            "name": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Caller name from the PBX caller id; null = unknown."
+            }
           }
         },
-        "accountId": { "type": "string", "format": "uuid", "description": "`account.id` from the pair response (the app pairing)." },
-        "accountLabel": { "type": "string", "description": "The label of the dialled account, for display on the call screen." },
-        "expiresAt": { "type": "string", "format": "date-time", "description": "Around 12 seconds after the push was created." }
+        "accountId": {
+          "type": "string",
+          "format": "uuid",
+          "description": "`account.id` from the pair response (the app pairing)."
+        },
+        "accountLabel": {
+          "type": "string",
+          "description": "The label of the dialled account, for display on the call screen."
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Around 12 seconds after the push was created."
+        }
       }
     },
     "revoked": {
       "type": "object",
       "description": "The pairing was revoked server side (portal, admin, MCP, or another phone took over). Sent as a regular alert push (iOS: to the alert token), NEVER as a VoIP push. The app removes the account.",
-      "required": ["v", "type", "accountId", "accountLabel"],
+      "required": [
+        "v",
+        "type",
+        "accountId",
+        "accountLabel"
+      ],
       "additionalProperties": false,
       "properties": {
-        "v": { "const": 1 },
-        "type": { "const": "revoked" },
-        "accountId": { "type": "string", "format": "uuid" },
-        "accountLabel": { "type": "string" }
+        "v": {
+          "const": 1
+        },
+        "type": {
+          "const": "revoked"
+        },
+        "accountId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "accountLabel": {
+          "type": "string"
+        }
       }
     },
     "refresh": {
       "type": "object",
       "description": "Labels or contact lists changed; the app re-reads `GET /me`. Regular push, never a VoIP push.",
-      "required": ["v", "type", "accountId"],
+      "required": [
+        "v",
+        "type",
+        "accountId"
+      ],
       "additionalProperties": false,
       "properties": {
-        "v": { "const": 1 },
-        "type": { "const": "refresh" },
-        "accountId": { "type": "string", "format": "uuid" }
+        "v": {
+          "const": 1
+        },
+        "type": {
+          "const": "refresh"
+        },
+        "accountId": {
+          "type": "string",
+          "format": "uuid"
+        }
       }
     },
     "message": {
       "oneOf": [
-        { "$ref": "#/$defs/ring" },
-        { "$ref": "#/$defs/revoked" },
-        { "$ref": "#/$defs/refresh" }
+        {
+          "$ref": "#/$defs/ring"
+        },
+        {
+          "$ref": "#/$defs/revoked"
+        },
+        {
+          "$ref": "#/$defs/refresh"
+        },
+        {
+          "$ref": "#/$defs/notice"
+        }
       ]
     },
     "apnsVoipBody": {
       "description": "APNs payload of a VoIP push (`apns-push-type: voip`, topic `nl.fullstackstudio.fsvoip.voip`, `apns-expiration: 0`). No `aps.alert`.",
       "type": "object",
-      "required": ["aps", "fsvoip"],
+      "required": [
+        "aps",
+        "fsvoip"
+      ],
       "additionalProperties": false,
       "properties": {
-        "aps": { "type": "object", "maxProperties": 0 },
-        "fsvoip": { "$ref": "#/$defs/ring" }
+        "aps": {
+          "type": "object",
+          "maxProperties": 0
+        },
+        "fsvoip": {
+          "$ref": "#/$defs/ring"
+        }
       }
     },
     "apnsAlertBody": {
       "description": "APNs payload of a regular notification (`apns-push-type: alert`, topic `nl.fullstackstudio.fsvoip`).",
       "type": "object",
-      "required": ["aps", "fsvoip"],
+      "required": [
+        "aps",
+        "fsvoip"
+      ],
       "additionalProperties": false,
       "properties": {
         "aps": {
           "type": "object",
-          "required": ["alert", "content-available"],
+          "required": [
+            "alert",
+            "content-available"
+          ],
           "additionalProperties": false,
           "properties": {
             "alert": {
               "type": "object",
-              "required": ["title", "body"],
+              "required": [
+                "title",
+                "body"
+              ],
               "additionalProperties": false,
-              "properties": { "title": { "type": "string" }, "body": { "type": "string" } }
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "body": {
+                  "type": "string"
+                }
+              }
             },
-            "content-available": { "const": 1 }
+            "content-available": {
+              "const": 1
+            }
           }
         },
-        "fsvoip": { "oneOf": [{ "$ref": "#/$defs/revoked" }, { "$ref": "#/$defs/refresh" }] }
+        "fsvoip": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/revoked"
+            },
+            {
+              "$ref": "#/$defs/refresh"
+            }
+          ]
+        }
       }
     },
     "fcmMessage": {
       "description": "FCM HTTP v1 request body. The `fsvoip` object travels as a JSON string in `data.fsvoip`.",
       "type": "object",
-      "required": ["message"],
+      "required": [
+        "message"
+      ],
       "properties": {
         "message": {
           "type": "object",
-          "required": ["token", "data", "android"],
+          "required": [
+            "token",
+            "data",
+            "android"
+          ],
           "properties": {
-            "token": { "type": "string" },
+            "token": {
+              "type": "string"
+            },
             "data": {
               "type": "object",
-              "required": ["fsvoip"],
-              "properties": { "fsvoip": { "type": "string", "description": "JSON text of a `message`." } }
+              "required": [
+                "fsvoip"
+              ],
+              "properties": {
+                "fsvoip": {
+                  "type": "string",
+                  "description": "JSON text of a `message`."
+                }
+              }
             },
             "android": {
               "type": "object",
-              "properties": { "priority": { "const": "HIGH" }, "ttl": { "type": "string" } }
+              "properties": {
+                "priority": {
+                  "const": "HIGH"
+                },
+                "ttl": {
+                  "type": "string"
+                }
+              }
             }
           }
+        }
+      }
+    },
+    "notice": {
+      "type": "object",
+      "description": "A message from the customer portal (a new order, a missed call, ...). A regular notification (iOS: to the alert token, never a VoIP push; Android: a data message). Contains no personal data and no secret. `href` is an absolute portal link; the app reads only its PATH to open a screen (calls, voicemail, contacts) and falls back to the home screen. It never opens the link itself.",
+      "required": [
+        "v",
+        "type",
+        "accountId",
+        "title",
+        "body",
+        "href"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "type": {
+          "const": "notice"
+        },
+        "accountId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 240
+        },
+        "href": {
+          "type": "string",
+          "maxLength": 500
+        }
+      }
+    },
+    "apnsNoticeBody": {
+      "description": "APNs payload of a notice (`apns-push-type: alert`, topic `nl.fullstackstudio.fsvoip`). A visible notification with sound; no `content-available`.",
+      "type": "object",
+      "required": [
+        "aps",
+        "fsvoip"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "aps": {
+          "type": "object",
+          "required": [
+            "alert",
+            "sound"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "alert": {
+              "type": "object",
+              "required": [
+                "title",
+                "body"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "body": {
+                  "type": "string"
+                }
+              }
+            },
+            "sound": {
+              "type": "string"
+            }
+          }
+        },
+        "fsvoip": {
+          "$ref": "#/$defs/notice"
         }
       }
     }

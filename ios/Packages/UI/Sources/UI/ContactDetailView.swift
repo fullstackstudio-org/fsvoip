@@ -62,6 +62,8 @@ struct ContactDetailView: View {
 
                 recentCalls(entry)
 
+                timeline(entry)
+
                 if let notes = detail?.notes, !notes.isEmpty {
                     SettingsGroup(title: L10n.string("contacts.detail.notes")) {
                         SettingsRow(title: notes, showsChevron: false)
@@ -271,6 +273,19 @@ struct ContactDetailView: View {
         .settingsRowChrome()
         .accessibilityElement(children: .combine)
         .accessibilityLabel(String(format: L10n.string("contacts.call.number"), phone.label.title, phone.number))
+    }
+
+    // MARK: Timeline
+
+    /// The timeline of a contact of the customer's address book (not a phone or colleague entry), from the first account that has it.
+    @ViewBuilder
+    private func timeline(_ entry: ContactEntry) -> some View {
+        if entry.source == .customer, let contactId = entry.contactId, let service = model.customerCards,
+           let accountId = hub.writeAccountId(for: entry) ?? entry.accountIds.first, let account = model.account(id: accountId)
+        {
+            ContactTimelineSection(service: service, account: account, contactId: contactId)
+                .id("\(accountId):\(contactId)")
+        }
     }
 
     // MARK: Recent calls

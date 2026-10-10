@@ -911,3 +911,15 @@
 "pbx.followMe.moveUp" = "Move up";
 "pbx.followMe.moveDown" = "Move down";
 "pbx.followMe.remove" = "Remove step";
+
+"callcard.prefix" = "Customer on website: %@";
+"callcard.known" = "Customer on website";
+"callcard.orders.one" = "%d open order";
+"callcard.orders.other" = "%d open orders";
+"callcard.requests.one" = "%d open request";
+"callcard.requests.other" = "%d open requests";
+"timeline.title" = "Activity";
+"timeline.loading" = "Loading activity…";
+"timeline.empty" = "No activity yet.";
+"timeline.more" = "Load more";
+"timeline.error" = "Could not load activity. Tap to try again.";
