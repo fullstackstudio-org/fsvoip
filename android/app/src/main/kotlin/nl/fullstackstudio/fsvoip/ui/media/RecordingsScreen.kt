@@ -112,7 +112,7 @@ fun MediaGate(hub: MediaHub, reason: GateReason, message: String, isAllowed: () 
         }
     }
 
-    LaunchedEffect(Unit) { unlock() }
+    var wasAllowed by remember { mutableStateOf(false) }
 
     // Coming back after five idle minutes: ask again before showing anything, and stop what was playing.
     androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
@@ -123,7 +123,17 @@ fun MediaGate(hub: MediaHub, reason: GateReason, message: String, isAllowed: () 
         }
     }
 
-    LaunchedEffect(access) { if (!isAllowed()) onLost() }
+    // The rights arrive with `GET /me`: open the check once they are there, close when they go away again.
+    LaunchedEffect(access) {
+        if (isAllowed()) {
+            if (!wasAllowed) {
+                wasAllowed = true
+                unlock()
+            }
+        } else if (wasAllowed) {
+            onLost()
+        }
+    }
 
     when (lock) {
         GateLock.OPEN -> content()
