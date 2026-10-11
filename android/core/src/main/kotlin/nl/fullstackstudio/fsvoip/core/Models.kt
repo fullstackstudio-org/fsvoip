@@ -174,7 +174,25 @@ data class MeResponse(
     val contacts: ContactsInfo,
     val push: PushStatus,
     @Serializable(with = InstantSerializer::class) val serverTime: Instant,
-)
+    /** What this pairing may do (set in the portal). `null` = a server from before roles existed: treat as `user`. */
+    val role: AppRole? = null,
+    /** What the app may show for that role. Informational: the server enforces every route. */
+    val capabilities: AppCapabilities? = null,
+    /** State of the PBX. `null` = an older server. */
+    val pbx: PbxStatus? = null,
+) {
+    /** Fail closed: anything but a role the server explicitly says is `admin` counts as `user`. */
+    val effectiveRole: AppRole get() = if (role == AppRole.ADMIN) AppRole.ADMIN else AppRole.USER
+
+    /** Show the "Centrale" section? Needs the admin role AND the capability (the server decides, `pbxManage`). */
+    val canManagePbx: Boolean get() = effectiveRole == AppRole.ADMIN && (capabilities?.pbxManage ?: true)
+
+    /** Show "Mijn toestel" (`/me/extension`)? Only when the server says so. */
+    val canEditOwnExtension: Boolean get() = capabilities?.selfExtension ?: false
+
+    /** Show the park button and the "On hold" tab? */
+    val canPark: Boolean get() = capabilities?.park ?: false
+}
 
 /** `PATCH /me`. The key is always sent; `null` clears the alias. */
 data class MePatchRequest(val labelOverride: String?) {
@@ -226,4 +244,20 @@ data class ApiErrorBody(
     val error: String,
     val message: String? = null,
     val retryable: Boolean? = null,
+    /** Detail of `invalid_request` (`invalid_phone`, `resync`, `greeting_required`) and `conflict` (`limit_reached`). */
+    val code: String? = null,
+    /** The offending request field of an `invalid_request`, or the extension field a `user` may not change (403). */
+    val field: String? = null,
+    /** `forbidden`: the role that is needed (`admin`). */
+    @SerialName("required") val requiredRole: String? = null,
+    /** `stale`: the current version of the object. */
+    val version: Int? = null,
+    /** `in_use`: where it is still used. */
+    val places: List<ApiErrorPlace>? = null,
+    /** `blocked_destination`: the external numbers a block list stops. */
+    val blocked: List<String>? = null,
+    /** `cost_not_accepted`: the price to accept (raw, decoded with the recording-cost model). */
+    val cost: kotlinx.serialization.json.JsonElement? = null,
+    /** `stale` of a chain step: the fresh chain (raw, decoded with the number-chain model). */
+    val chain: kotlinx.serialization.json.JsonElement? = null,
 )

@@ -39,7 +39,7 @@ class ApiClientTest {
         assertEquals("https://example.test/api/voip-app/v1/pair", request.url)
         assertNull(request.headers["Authorization"])
         assertEquals("FSVoip/1.0 (Android)", request.headers["User-Agent"])
-        assertEquals("application/json", request.headers["Content-Type"])
+        assertEquals("application/json", request.contentType)
         assertEquals("102", result.sip.username)
         // Nothing secret in the log.
         assertFalse(sink.messages.any { it.contains("fixture-not-a-real-password") || it.contains("fss_vpair_aaa") })

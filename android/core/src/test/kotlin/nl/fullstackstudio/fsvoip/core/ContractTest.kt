@@ -39,7 +39,9 @@ class ContractTest {
         tests.fcmMessage()
         tests.apnsBodies()
 
-        assertEquals(Fixtures.all(), tests.covered)
+        // Feature contracts (calls, pbx, contacts, ...) register themselves in ContractRegistry.
+        val others = ContractRegistry.features.flatMap { it() }.toSet()
+        assertEquals(Fixtures.all(), tests.covered + others)
     }
 
     @Test
