@@ -10,6 +10,12 @@ import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 import nl.fullstackstudio.fsvoip.call.CallService
 import nl.fullstackstudio.fsvoip.callcontroller.AndroidMain
+import nl.fullstackstudio.fsvoip.callcontroller.ImmediateCallSystem
+import nl.fullstackstudio.fsvoip.callcontroller.MemoryAudioRouting
+import nl.fullstackstudio.fsvoip.demo.DemoConfig
+import nl.fullstackstudio.fsvoip.demo.DemoMode
+import nl.fullstackstudio.fsvoip.demo.DemoSipEngine
+import nl.fullstackstudio.fsvoip.demo.DemoTransport
 import nl.fullstackstudio.fsvoip.callcontroller.PhoneController
 import nl.fullstackstudio.fsvoip.callcontroller.TelecomCallSystem
 import nl.fullstackstudio.fsvoip.contacts.CompositeNameLookup
@@ -21,7 +27,11 @@ import nl.fullstackstudio.fsvoip.core.FsLogger
 import nl.fullstackstudio.fsvoip.core.FsVoipApiClient
 import nl.fullstackstudio.fsvoip.core.InstallIdentity
 import nl.fullstackstudio.fsvoip.core.InstallIdentity.Companion.toHex
+import nl.fullstackstudio.fsvoip.core.InMemoryKeyValueStore
+import nl.fullstackstudio.fsvoip.core.InMemorySecretStore
 import nl.fullstackstudio.fsvoip.core.KeyValuePreferencesStore
+import nl.fullstackstudio.fsvoip.core.KeyValueStore
+import nl.fullstackstudio.fsvoip.core.SecretStore
 import nl.fullstackstudio.fsvoip.core.KeystoreSecretStore
 import nl.fullstackstudio.fsvoip.core.OkHttpTransport
 import nl.fullstackstudio.fsvoip.core.RecentCallsStore
@@ -45,7 +55,9 @@ class AppServices private constructor(context: Context) {
     private val scope = MainScope()
 
     val identity: InstallIdentity
-    val telecom: TelecomCallSystem
+    val telecom: TelecomCallSystem?
+    val demo: DemoConfig?
+    val demoEngine: DemoSipEngine?
     val phone: PhoneController
     val model: AppModel
     val pushTokens: PushTokenReporter
@@ -56,8 +68,11 @@ class AppServices private constructor(context: Context) {
         private set
 
     init {
-        val secrets = KeystoreSecretStore(SharedPreferencesStore(appContext.getSharedPreferences("fsvoip.secrets", Context.MODE_PRIVATE)))
-        val plain = SharedPreferencesStore(appContext.getSharedPreferences("fsvoip.settings", Context.MODE_PRIVATE))
+        demo = DemoConfig.load(appContext)
+
+        // Demo mode (debug builds, see DemoConfig): everything in memory, a fake API and a fake SIP engine.
+        val secrets: SecretStore = if (demo != null) InMemorySecretStore() else KeystoreSecretStore(SharedPreferencesStore(appContext.getSharedPreferences("fsvoip.secrets", Context.MODE_PRIVATE)))
+        val plain: KeyValueStore = if (demo != null) InMemoryKeyValueStore() else SharedPreferencesStore(appContext.getSharedPreferences("fsvoip.settings", Context.MODE_PRIVATE))
 
         identity = try {
             InstallIdentity.load(secrets)
@@ -69,15 +84,33 @@ class AppServices private constructor(context: Context) {
 
         val version = BuildConfig.VERSION_NAME
         val accounts = AccountStore(secrets)
+        val recentsStore = RecentCallsStore(plain)
         val preferences = KeyValuePreferencesStore(plain)
-        val api = FsVoipApiClient(baseUrl = BuildConfig.API_BASE_URL, transport = OkHttpTransport(), userAgent = "FSVoip/$version (Android)")
+        val api = FsVoipApiClient(
+            baseUrl = BuildConfig.API_BASE_URL,
+            transport = if (demo != null) DemoTransport({ DemoMode.handlers }) else OkHttpTransport(),
+            userAgent = "FSVoip/$version (Android)",
+        )
 
-        val engine = LinphoneSipEngine(appContext, appVersion = version, installId = identity.installId)
-        telecom = TelecomCallSystem(appContext, label = appContext.getString(R.string.app_name))
+        val engine: nl.fullstackstudio.fsvoip.sipengine.SipEngine
+        if (demo != null) {
+            demoEngine = DemoSipEngine()
+            engine = demoEngine
+            telecom = null
+            if (demo.withAccounts) {
+                DemoMode.exampleAccounts.forEach { accounts.save(it) }
+                DemoMode.exampleRecents().forEach { recentsStore.add(it) }
+            }
+        } else {
+            demoEngine = null
+            engine = LinphoneSipEngine(appContext, appVersion = version, installId = identity.installId)
+            telecom = TelecomCallSystem(appContext, label = appContext.getString(R.string.app_name))
+        }
+
         phone = PhoneController(
             engine = engine,
-            system = telecom,
-            audioRouting = telecom,
+            system = telecom ?: ImmediateCallSystem(),
+            audioRouting = telecom ?: MemoryAudioRouting(),
             preferences = preferences,
             scheduler = AndroidMain.scheduler,
             mainExecutor = AndroidMain.executor,
@@ -96,7 +129,7 @@ class AppServices private constructor(context: Context) {
             accountStore = accounts,
             service = AccountService(api, accounts),
             preferences = preferences,
-            recentsStore = RecentCallsStore(plain),
+            recentsStore = recentsStore,
             device = {
                 DeviceDescriptor(
                     model = Build.MODEL,
@@ -120,12 +153,12 @@ class AppServices private constructor(context: Context) {
             CompositeNameLookup { sources }.name(number)
         }
 
-        telecom.onSilenceRinger = { CallService.silence(appContext) }
+        telecom?.onSilenceRinger = { CallService.silence(appContext) }
 
         // A call on the screen keeps the process alive and the microphone usable in the background.
         scope.launch {
             phone.sessions.collect { sessions ->
-                if (sessions.isNotEmpty()) CallService.ensureRunning(appContext)
+                if (sessions.isNotEmpty() && demo == null) CallService.ensureRunning(appContext)
             }
         }
 
@@ -134,7 +167,7 @@ class AppServices private constructor(context: Context) {
             override fun onStop(owner: LifecycleOwner) = model.didEnterBackground()
         })
 
-        PushSupport.fetchToken(appContext) { token -> pushTokenChanged(token) }
+        if (demo == null) PushSupport.fetchToken(appContext) { token -> pushTokenChanged(token) }
     }
 
     /** A new (or the first) FCM token: tell the server, per account. */

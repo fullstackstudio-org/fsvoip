@@ -50,7 +50,12 @@ android {
         }
     }
 
+    // Debug builds can get an application id suffix (`-Pfsvoip.appIdSuffix=.dev2`) so several checkouts can live on one
+    // emulator side by side.
     buildTypes {
+        debug {
+            (findProperty("fsvoip.appIdSuffix") as String?)?.let { applicationIdSuffix = it }
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true

@@ -48,6 +48,15 @@ class MainActivity : ComponentActivity(), PermissionRequester {
         }
 
         handle(intent)
+
+        // Demo mode (debug builds): open the screen the demo config asks for, once per process.
+        services.demo?.let { demo ->
+            val engine = services.demoEngine
+            if (engine != null && !demoScreenOpened) {
+                demoScreenOpened = true
+                nl.fullstackstudio.fsvoip.demo.DemoMode.openScreen(demo.screen, services.model, engine)
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -100,6 +109,8 @@ class MainActivity : ComponentActivity(), PermissionRequester {
     }
 
     companion object {
+        private var demoScreenOpened = false
+
         const val ACTION_ANSWER = "nl.fullstackstudio.fsvoip.ANSWER"
         const val ACTION_SHOW_CALL = "nl.fullstackstudio.fsvoip.SHOW_CALL"
         const val EXTRA_CALL_UUID = "nl.fullstackstudio.fsvoip.CALL_UUID"
