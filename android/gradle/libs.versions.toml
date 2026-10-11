@@ -16,6 +16,9 @@ zxingCore = "3.5.4"
 zxingEmbedded = "4.3.0"
 junit = "4.13.2"
 okhttp = "4.12.0"
+biometric = "1.1.0"
+# BiometricPrompt needs a FragmentActivity; biometric 1.1.0 pulls in an old fragment, so pin a current one next to it.
+fragment = "1.8.9"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -38,6 +41,8 @@ firebase-messaging = { group = "com.google.firebase", name = "firebase-messaging
 linphone = { group = "org.linphone.no-video", name = "linphone-sdk-android", version.ref = "linphone" }
 zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxingCore" }
 zxing-embedded = { group = "com.journeyapps", name = "zxing-android-embedded", version.ref = "zxingEmbedded" }
+androidx-fragment = { group = "androidx.fragment", name = "fragment", version.ref = "fragment" }
+androidx-biometric = { group = "androidx.biometric", name = "biometric", version.ref = "biometric" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 

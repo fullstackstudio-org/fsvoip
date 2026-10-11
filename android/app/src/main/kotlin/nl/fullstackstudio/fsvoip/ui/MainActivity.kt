@@ -6,10 +6,11 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.lifecycleScope
 import java.util.UUID
 import kotlinx.coroutines.CompletableDeferred
@@ -18,7 +19,8 @@ import kotlinx.coroutines.launch
 import nl.fullstackstudio.fsvoip.AppServices
 import nl.fullstackstudio.fsvoip.PermissionRequester
 
-class MainActivity : ComponentActivity(), PermissionRequester {
+// A FragmentActivity (still a ComponentActivity) because `BiometricPrompt` needs one.
+class MainActivity : FragmentActivity(), PermissionRequester {
     private val services by lazy { AppServices.get(this) }
     private var pendingPermission: CompletableDeferred<Boolean>? = null
 
@@ -32,10 +34,22 @@ class MainActivity : ComponentActivity(), PermissionRequester {
         super.onCreate(savedInstanceState)
 
         services.model.permissions = this
+        LocalAuthHost.activity = this
+        nl.fullstackstudio.fsvoip.ui.settings.Appearance.load(this)
 
         setContent {
             FsVoipTheme {
                 RootScreen(services.model)
+            }
+        }
+
+        // The system bars follow the chosen appearance (light/dark), not only the system setting.
+        lifecycleScope.launch {
+            nl.fullstackstudio.fsvoip.ui.settings.Appearance.current.collect { preference ->
+                val systemDark = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+                val transparent = android.graphics.Color.TRANSPARENT
+                val style = if (preference.resolveDark(systemDark)) SystemBarStyle.dark(transparent) else SystemBarStyle.light(transparent, transparent)
+                enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
             }
         }
 
@@ -66,6 +80,7 @@ class MainActivity : ComponentActivity(), PermissionRequester {
 
     override fun onDestroy() {
         if (services.model.permissions === this) services.model.permissions = null
+        if (LocalAuthHost.activity === this) LocalAuthHost.activity = null
         super.onDestroy()
     }
 

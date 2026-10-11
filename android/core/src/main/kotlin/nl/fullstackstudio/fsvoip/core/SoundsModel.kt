@@ -27,6 +27,8 @@ interface SoundPlayer {
         val positionMs: Int = 0,
         /** Read from the audio itself; null until known. */
         val durationMs: Int? = null,
+        /** Why [Status.FAILED] (the audio could not be fetched); null = the audio itself cannot be played. */
+        val failure: SoundFailure? = null,
     )
 
     val state: StateFlow<PlayerState>
@@ -201,7 +203,19 @@ class SoundsModel(
     }
 
     private suspend fun download(id: String): File {
-        val bytes = service.audio(id)
+        val bytes = try {
+            service.audio(id)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            when (SoundFailure.classify(error)) {
+                SoundFailure.AccessDenied -> hooks.onAccessDenied()
+                SoundFailure.Revoked -> hooks.onRevoked()
+                else -> Unit
+            }
+
+            throw error
+        }
 
         return withContext(kotlinx.coroutines.Dispatchers.IO) {
             cacheDirectory.mkdirs()

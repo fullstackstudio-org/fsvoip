@@ -21,9 +21,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -31,6 +34,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import nl.fullstackstudio.fsvoip.AppModel
 import nl.fullstackstudio.fsvoip.R
+import nl.fullstackstudio.fsvoip.core.AvailabilityDot
+import nl.fullstackstudio.fsvoip.ui.settings.settingsHubs
 import nl.fullstackstudio.fsvoip.sipengine.RegistrationState
 
 /**
@@ -42,20 +47,42 @@ fun ShellActions(model: AppModel) {
     val accounts by model.accounts.collectAsStateWithLifecycle()
     val registrations by model.phone.registrations.collectAsStateWithLifecycle()
     model.settingsRevision.collectAsStateWithLifecycle().value
+    val availability by model.settingsHubs(LocalContext.current).availability.states.collectAsStateWithLifecycle()
     val account = model.defaultOutgoingAccountId?.let { model.account(it) } ?: accounts.firstOrNull()
     val state = account?.let { registrations[it.id] } ?: RegistrationState.Unregistered
-    val dot = when (state) {
-        RegistrationState.Registered -> Brand.lime
-        RegistrationState.Registering -> Brand.amber
-        else -> Color(0xFFC7C7CC)
+    val kind = AvailabilityDot.kind(
+        registered = state == RegistrationState.Registered,
+        connecting = state == RegistrationState.Registering,
+        doNotDisturb = account?.let { availability[it.id]?.doNotDisturb } ?: false,
+    )
+    val dot = when (kind) {
+        AvailabilityDot.Kind.AVAILABLE -> Brand.lime
+        AvailabilityDot.Kind.DO_NOT_DISTURB -> Brand.hangUp
+        AvailabilityDot.Kind.CONNECTING -> Brand.amber
+        AvailabilityDot.Kind.OFFLINE -> Color(0xFFC7C7CC)
     }
+    val dotLabel = stringResource(
+        when (kind) {
+            AvailabilityDot.Kind.AVAILABLE -> R.string.snd_settings_dot_available
+            AvailabilityDot.Kind.DO_NOT_DISTURB -> R.string.snd_settings_dot_dnd
+            AvailabilityDot.Kind.CONNECTING -> R.string.snd_settings_dot_connecting
+            AvailabilityDot.Kind.OFFLINE -> R.string.snd_settings_dot_offline
+        },
+    )
+    val avatarLabel = stringResource(R.string.snd_settings_avatar_label, account?.extensionName ?: "")
 
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
         IconButton(onClick = { model.openSettings() }, modifier = Modifier.testTag("settings-gear")) {
             Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.tab_settings))
         }
-        Box(Modifier.size(48.dp).clickable { model.openSettings() }.testTag("settings-avatar"), contentAlignment = Alignment.Center) {
-            InitialsAvatar(account?.extensionName, 30, dot)
+        Box(
+            Modifier.size(48.dp).clickable { model.openSettings() }.semantics(mergeDescendants = true) {
+                contentDescription = avatarLabel
+                stateDescription = dotLabel
+            }.testTag("settings-avatar"),
+            contentAlignment = Alignment.Center,
+        ) {
+            InitialsAvatar(account?.extensionName, 30, dot, Modifier.clearAndSetSemantics {})
         }
     }
 }
