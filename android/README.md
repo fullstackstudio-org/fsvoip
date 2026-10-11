@@ -1,9 +1,21 @@
 # FSVoip for Android
 
-Native Android app (Kotlin, Jetpack Compose), feature-equal to the iOS app: pairing by QR code or link, several
-extensions in one app, registration over TLS, outgoing and incoming calls, and incoming calls also with the app closed
-(FCM data message, self-managed Telecom call, full-screen notification). Licensed AGPL-3.0-or-later like the rest of
-the repository (see `../LICENSE`, `../NOTICE`).
+Native Android app (Kotlin, Jetpack Compose), feature-equal to the iOS app (build 1.0 (10), `docs/changelog.md`): pairing by
+QR code or link, several extensions in one app, registration over TLS, outgoing and incoming calls, and incoming calls also
+with the app closed (FCM data message, self-managed Telecom call, full-screen notification). On top of that, like iOS and as
+far as the server's `capabilities` allow:
+
+- **Recent** with the team history (colleagues' calls, who answered), **Voicemail** (own box, administrators all boxes), call
+  **recordings** (administrators) with a player, **Contacts** (sync with the portal address book, search, edit, delete, phone
+  contacts, activity timeline), **In de wacht** (park and pick up), **Bellen via** another number of the PBX (`X-FSS-From`),
+  the **customer card** at an incoming call and notifications from the portal that open the right screen.
+- **Settings**: profile, call preferences (do not disturb, forwarding, voicemail), appearance, and for administrators the
+  **Centrale** (overview, extensions, ring groups, opening hours, numbers with their chain: hours, welcome message, forwarding or
+  keypad menu, recording with the cost consent), **Sounds** (upload, record, rename, delete), **Invite a user** (QR + link) and
+  recordings, all behind the screen lock (fingerprint, face or PIN) like the iOS Face ID gate.
+- Role and capabilities come from `GET /me`; the server enforces everything, the app only hides what a role may not do.
+
+Licensed AGPL-3.0-or-later like the rest of the repository (see `../LICENSE`, `../NOTICE`).
 
 ## Build
 
@@ -28,7 +40,7 @@ contains no AMR or OpenH264 library. It needs no secrets and signs nothing.
 ```
 app             composition root, Compose UI, AppModel, call service + notifications, FCM service
  ├─ pairing         pairing link parser, pair flow, account service (refresh / rename / unpair), push-token reporter
- ├─ contacts        name lookup: internal contacts of the PBX, optionally the phone's contacts
+ ├─ contacts        address book: server contacts + sync hub, index, browsing, drafts, the phone's contacts, name lookup
  ├─ callcontroller  PhoneController (registrations + calls, same rules as iOS), Telecom ConnectionService
  ├─ core            API models + client (OkHttp), Keystore secret store, preferences, recents, redacting logger
  ├─ sipengine       SipEngine interface + our own value types, no dependencies
@@ -38,7 +50,13 @@ app             composition root, Compose UI, AppModel, call service + notificat
 `scripts/check-imports.sh` (repository root) enforces the SIP boundary: only `linphoneengine` imports `org.linphone`,
 only the `app` module (composition root) depends on `linphoneengine`, and only `linphoneengine` declares the SDK.
 
-The contract tests in `core` parse every file in `../shared/fixtures` (and fail when a fixture is not used).
+The contract tests in `core` parse every file in `../shared/fixtures` (and fail when a fixture is not used): one test class
+per area (`CallsContractTest`, `PbxContractTest`, `ContactsContractTest`, `CallExpContractTest`, `SoundsContractTest`), registered
+in `ContractRegistry`. A new fixture or API field therefore fails the build until Android handles it.
+
+Feature code lives in `core` (models, API calls as extension functions on `FsVoipApiClient`, state machines) and in `app/ui/<area>`
+(`media`, `contacts`, `park`, `pbx`, `sounds`, `settings`). Feature state is created with `AppModel.feature { ... }`; the screens read
+role and capabilities from `AppModel` (`canManagePbx`, `canPark`, ...).
 
 ## Firebase (push while the app is closed)
 
@@ -75,6 +93,23 @@ signing certificate** (the Play App Signing key when the app is distributed thro
 testing). Get it with `keytool -list -v -keystore <keystore>` or from the Play Console. Until then the link opens the
 pair page in the browser, and `fsvoip://pair?t=...` and the in-app QR scanner work regardless.
 
+## Demo mode (no server, no SIP, nothing leaves the phone)
+
+Debug builds can run against an in-memory fake of the API and a fake SIP engine, with two example accounts (demo-1 is an
+administrator, demo-2 a plain user): the Android twin of the iOS `-FSVoipDemo` argument. Used for screenshots and for looking at
+every screen without a PBX.
+
+```sh
+./gradlew :app:installDebug
+./demo.sh full recents /tmp/recents.png        # mode (full|onboarding), screen, optional screenshot
+FSVOIP_APP_ID=nl.fullstackstudio.fsvoip.dev ./demo.sh full pbx   # an app id suffix: -Pfsvoip.appIdSuffix=.dev
+```
+
+`demo.sh` writes `files/demo-mode` / `files/demo-screen` in the app's private storage (`run-as`) and restarts the app. Screens:
+`recents`, `contacts`, `onhold`, `voicemail`, `settings`, `profile`, `callprefs`, `appearance`, `sounds`, `invite`, `recordings`,
+`pbx`, `devices`, `ringgroups`, `hours`, `numbers`, `incall`, `incoming`, `chooser`, `notice`, `scanner`, `pairing` and more (see
+`demo/DemoMode.kt` and the `demo/*` handlers). The demo code is only active in debug builds.
+
 ## Testing without production
 
 Never pair against production while developing. Point a debug build at a local mock of `/api/voip-app/v1`:
@@ -100,6 +135,21 @@ adb shell "am broadcast -a nl.fullstackstudio.fsvoip.DEBUG_PUSH \
 
 Without a SIP INVITE the call ends as missed after the waiting time, like on iOS.
 
+## What FullStack Studio still has to do for the release
+
+1. **Firebase**: create the project, add the Android app `nl.fullstackstudio.fsvoip`, put `google-services.json` in
+   `android/app/` (git-ignored). Without it the app builds and runs but rings only while it is open.
+2. **FCM on the server**: the service account of that project as `fcm_service_account_json` in the secrets item with tag
+   `voip-app-push` (the server already sends FCM HTTP v1; Android sends `pushKind: "fcm"` with its token).
+3. **Play Console** account, the app listing (the AGPL source link, privacy policy, the data safety form: contacts optional and
+   on the phone, microphone for calls, camera for the QR scanner, no analytics) and the Play App Signing key.
+4. **`assetlinks.json`** on `https://fullstackstudio.nl/.well-known/assetlinks.json` with package `nl.fullstackstudio.fsvoip` and the
+   **SHA-256 of the signing certificate** (Play App Signing key, plus the upload key and the debug key for testing); see below.
+   Until then pairing links open in the browser (the QR scanner and `fsvoip://pair` work regardless).
+5. A **release keystore** (see Release signing) and the first internal-testing build (`./gradlew :app:bundleRelease`).
+6. **A test on real phones against the house PBX** (extension 102, never 100, not 112), see the list below and
+   `../docs/testing.md` (the numbered scenarios apply to Android too).
+
 ## Only testable on a real phone
 
 - FCM delivery while the app is closed or the phone is in Doze (high-priority data message, foreground service start).
@@ -107,6 +157,13 @@ Without a SIP INVITE the call ends as missed after the waiting time, like on iOS
 - Manufacturer battery savers (Samsung, Xiaomi, Huawei, OnePlus) that stop the app; Settings links to the right screen.
 - Telecom behaviour of the manufacturer (car kits, Bluetooth headsets, calls next to a GSM call) and audio routing.
 - Registration and calls against the real PBX (TLS on `sip.powervoip.nl`, SRTP, codecs, the push gate).
+- The system prompt of the local access gate (fingerprint, face, PIN; `BiometricPrompt` with the screen-lock fallback) in front of
+  the Centrale, sounds, invite and recordings; demo mode skips it.
+- Real audio: playing voicemail, recordings and sounds, recording a welcome message with the microphone, the audio route.
+- Park and pick up, "Bellen via" (the `X-FSS-From` header on the INVITE, check the PBX log) and the customer card (name on the
+  lock screen through the Telecom display name) against the real PBX/portal.
+- A notice push from the portal (`type: notice`) opening the right screen, with the app closed.
+- The release build: R8 is on for `release`; only startup was checked on an emulator, run the release build through the scenarios.
 
 ## Privacy and secrets
 

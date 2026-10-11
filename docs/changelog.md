@@ -1,5 +1,13 @@
 # Changelog
 
+## Android 1.0 (1) - feature-equal to iOS 0.2.0 (build 9)
+
+The Android app (`android/`) now has everything iOS has, for the capabilities the server reports: team history, voicemail,
+recordings, contacts with sync and the activity timeline, park ("In de wacht"), caller choice ("Bellen via"), the customer card,
+portal notifications, own extension (profile, call preferences, do not disturb), and for administrators the Centrale, numbers,
+sounds, invite and recordings behind the screen lock. See `android/README.md` (including what is still needed for a release:
+Firebase, FCM key on the server, Play Console, `assetlinks.json`, a real-phone test). Not in either app: anonymous calling.
+
 ## 0.2.0 (build 9) — klantkaart en meldingen
 
 ### Nieuw (NL)

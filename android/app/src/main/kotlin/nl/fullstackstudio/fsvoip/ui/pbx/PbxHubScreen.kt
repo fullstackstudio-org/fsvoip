@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.MainScope
@@ -113,11 +114,13 @@ fun PbxHubScreen(model: AppModel, accountId: String, part: PbxPart, back: () -> 
     val allowed = meByAccount[accountId]?.canManagePbx ?: false
     var wasAllowed by remember(accountId) { mutableStateOf(allowed) }
 
+    val accessLostText = stringResource(R.string.adm_pbx_error_accessLost)
+
     LaunchedEffect(allowed) {
         if (allowed) {
             wasAllowed = true
         } else if (wasAllowed) {
-            model.showNotice(context.getString(R.string.adm_pbx_error_accessLost), isError = true)
+            model.showNotice(accessLostText, isError = true)
             back()
         }
     }

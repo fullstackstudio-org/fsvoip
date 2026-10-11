@@ -56,8 +56,15 @@ class MainActivity : FragmentActivity(), PermissionRequester {
         // A call on the screen may show over the lock screen and turn the screen on; otherwise this is a normal app.
         lifecycleScope.launch {
             combine(services.phone.sessions, services.phone.lastEnded) { sessions, ended -> sessions.isNotEmpty() || ended != null }.collect { inCall ->
-                setShowWhenLocked(inCall)
-                setTurnScreenOn(inCall)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                    setShowWhenLocked(inCall)
+                    setTurnScreenOn(inCall)
+                } else {
+                    // Android 8.0: the window flags are the only way.
+                    @Suppress("DEPRECATION")
+                    val flags = android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+                    if (inCall) window.addFlags(flags) else window.clearFlags(flags)
+                }
             }
         }
 

@@ -250,13 +250,15 @@ private fun InviteLinkCard(invite: InviteModel, invitation: InviteModel.Invitati
             Text(stringResource(R.string.snd_invite_shown_how), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
 
             if (active) {
+                val shareSubject = stringResource(R.string.snd_invite_share_subject)
+                val shareMessage = stringResource(R.string.snd_invite_share_message, invitation.deviceName)
                 SecondaryButton(
                     stringResource(R.string.snd_invite_share),
                     onClick = {
                         val send = Intent(Intent.ACTION_SEND)
                             .setType("text/plain")
-                            .putExtra(Intent.EXTRA_SUBJECT, context.getString(R.string.snd_invite_share_subject))
-                            .putExtra(Intent.EXTRA_TEXT, context.getString(R.string.snd_invite_share_message, invitation.deviceName) + "\n" + invitation.url.reveal())
+                            .putExtra(Intent.EXTRA_SUBJECT, shareSubject)
+                            .putExtra(Intent.EXTRA_TEXT, shareMessage + "\n" + invitation.url.reveal())
                         context.startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                     },
                     icon = Icons.Filled.Share,
