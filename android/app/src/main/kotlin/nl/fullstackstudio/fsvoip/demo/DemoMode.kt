@@ -54,7 +54,8 @@ object DemoMode {
         when (screen) {
             "recents" -> model.select(AppModel.Tab.RECENTS)
             "contacts" -> model.select(AppModel.Tab.CONTACTS)
-            "onhold" -> model.select(AppModel.Tab.ON_HOLD)
+            // The tab only exists once `GET /me` said parking works: open it after that.
+            "onhold" -> main.postDelayed({ model.select(AppModel.Tab.ON_HOLD) }, 1500)
             "onhold-empty", "onhold-unavailable", "onhold-user" -> {
                 CallExpDemoHandler.mode = when (screen) {
                     "onhold-empty" -> CallExpDemoHandler.Mode.EMPTY
@@ -62,7 +63,7 @@ object DemoMode {
                     else -> CallExpDemoHandler.Mode.NORMAL
                 }
                 if (screen == "onhold-user") model.chooseParkAccount(USER_ID)
-                model.select(AppModel.Tab.ON_HOLD)
+                main.postDelayed({ model.select(AppModel.Tab.ON_HOLD) }, 1500)
             }
             "chooser" -> model.select(AppModel.Tab.DIALER)
             "notice", "notice-contacts", "notice-home" -> main.postDelayed({
