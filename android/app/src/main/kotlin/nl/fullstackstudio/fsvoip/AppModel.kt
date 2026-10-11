@@ -501,6 +501,9 @@ class AppModel(
         playMedia("${account.id}/sound/${sound.id}", pbx.soundSource(account, sound.id), sound.name, string(R.string.settings_admin_sounds))
     }
 
+    /** Whether this pairing may invite colleagues (an administrator, and the server says so). */
+    fun canInvite(accountId: String): Boolean = _me.value[accountId]?.let { it.canManagePbx && it.capabilities?.invite == true } ?: false
+
     /** Whether the sounds may be managed (the server's capability, not only the role). */
     fun canManageSounds(accountId: String): Boolean = _me.value[accountId]?.let { it.canManagePbx && it.capabilities?.sounds == nl.fullstackstudio.fsvoip.core.SoundsAccess.MANAGE } ?: false
 

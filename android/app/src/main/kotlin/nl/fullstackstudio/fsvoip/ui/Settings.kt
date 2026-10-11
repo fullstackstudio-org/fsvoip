@@ -84,6 +84,7 @@ fun SettingsNavigation(model: AppModel, stack: SnapshotStateList<SettingsPage>, 
         is SettingsPage.Numbers -> NumbersScreen(model, page.id, open = { stack.add(SettingsPage.Number(page.id, it)) }, back = { stack.removeAt(stack.lastIndex) })
         is SettingsPage.Number -> NumberScreen(model, page.id, page.numberId, openStep = { stack.add(SettingsPage.NumberStep(page.id, page.numberId, it)) }, back = { stack.removeAt(stack.lastIndex) })
         is SettingsPage.NumberStep -> NumberStepScreen(model, page.id, page.numberId, page.kind, back = { stack.removeAt(stack.lastIndex) })
+        is SettingsPage.Invite -> InviteScreen(model, page.id, back = { stack.removeAt(stack.lastIndex) })
         is SettingsPage.Sounds -> SoundsScreen(model, page.id, back = { stack.removeAt(stack.lastIndex) })
         SettingsPage.Licenses -> LicensesScreen(back = { stack.removeAt(stack.lastIndex) })
     }
@@ -228,6 +229,10 @@ private fun AdminSection(model: AppModel, open: (SettingsPage) -> Unit) {
 
         if (model.canManageSounds(account.id)) {
             LinkRow(stringResource(R.string.settings_admin_sounds), null) { open(SettingsPage.Sounds(account.id)) }
+        }
+
+        if (model.canInvite(account.id)) {
+            LinkRow(stringResource(R.string.settings_admin_invite), null) { open(SettingsPage.Invite(account.id)) }
         }
 
         if (model.canPlayRecordings(account.id)) {

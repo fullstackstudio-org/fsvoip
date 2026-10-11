@@ -154,6 +154,8 @@ sealed interface SettingsPage {
     data class NumberStep(val id: String, val numberId: String, val kind: NumberStepKind) : SettingsPage
 
     data class Sounds(val id: String) : SettingsPage
+
+    data class Invite(val id: String) : SettingsPage
 }
 
 @Composable
