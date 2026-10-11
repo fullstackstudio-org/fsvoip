@@ -2,6 +2,7 @@
 import CallController
 import Combine
 import Core
+import FSContacts
 import Foundation
 import Pairing
 import SipEngine
@@ -26,10 +27,34 @@ public final class FSVoipAppModel: ObservableObject {
         }
     }
 
-    public enum Tab: Hashable {
+    /// The five tabs. Settings is a sheet (`isSettingsPresented`), not a tab.
+    public enum Tab: Hashable, CaseIterable {
         case dialer
+        case onHold
+        /// "Geschiedenis".
         case recents
-        case settings
+        case voicemail
+        case contacts
+    }
+
+    /// Where the settings sheet opens.
+    public enum SettingsStart: Equatable {
+        case root
+        /// The "Centrale" section of the first admin account (demo screens and links).
+        case centrale
+        case recordings
+        /// "Geluiden" of the first admin account (demo screens).
+        case sounds
+        case appearance
+        /// "Profiel", "Oproepvoorkeuren" and "Gebruiker uitnodigen" of the first account (demo screens).
+        case profile
+        case callPreferences
+        case invite
+        /// Single parts of the Centrale (demo screens).
+        case numbers
+        case devices
+        case ringGroups
+        case hours
     }
 
     public struct Notice: Identifiable, Equatable {
@@ -54,10 +79,33 @@ public final class FSVoipAppModel: ObservableObject {
     @Published public private(set) var internalContacts: [String: [InternalContact]] = [:]
     @Published public var notice: Notice?
     @Published public var selectedTab: Tab = .dialer
+    @Published public var isSettingsPresented = false
+    @Published public var settingsStart: SettingsStart = .root
+    /// What `GET /me` said each pairing may do (role and capabilities), from the last refresh. Not stored on the phone: after a restart
+    /// nothing is offered until the server has answered (fail closed).
+    @Published public private(set) var meByAccount: [String: MeResponse] = [:]
     /// Bumped whenever a per-account setting changes, so the settings screens redraw.
     @Published public private(set) var settingsRevision = 0
 
     public let phone: PhoneController
+    /// The customer's address books, the phone's contacts and the colleagues; answers "who is this number".
+    public let contacts: ContactsHub
+    /// The "Centrale" section of admin pairings (`nil` = not offered, e.g. in a build without it).
+    public let pbx: PbxHub?
+    /// Voicemail and recordings with their player (`nil` = not offered).
+    public let media: MediaHub?
+    /// Parking and the "On hold" tab; `nil` = not offered.
+    public let park: ParkModel?
+    /// Do-not-disturb of the own extension ("Beschikbaar"); `nil` = not offered.
+    public let availability: AvailabilityHub?
+    /// The own extension (e-mail, forwarding, voicemail) and inviting a colleague. Never `nil`: without a service it simply has nothing.
+    public let selfExtension: SelfExtensionHub
+    /// "Uitbellen via": the number the next call goes out with.
+    public let outbound: OutboundChoiceModel
+    /// The customer card: caller lookup for incoming calls and the timeline of a contact. `nil` = not offered (demo mode, tests).
+    public let customerCards: CustomerCardServicing?
+    /// Calls of the PBX (the team history) per account, for "Geschiedenis".
+    let history: HistoryModel
 
     private let accountStore: AccountStore
     private let service: AccountServicing
@@ -69,6 +117,16 @@ public final class FSVoipAppModel: ObservableObject {
     private let requestNotifications: () async -> Void
     private let logger: FSLogger
     private var phoneChanges: AnyCancellable?
+    private var contactsChanges: AnyCancellable?
+    private var contactsConfiguration: Task<Void, Never>?
+    private var contactsTimer: Task<Void, Never>?
+    private var pbxAccessLost: AnyCancellable?
+    private var mediaAccessLost: AnyCancellable?
+    private var callActivity: AnyCancellable?
+    private var outboundChanges: AnyCancellable?
+    private var selfExtensionChanges: AnyCancellable?
+    private var parkChanges: AnyCancellable?
+    @Published private var chosenParkAccountId: String?
 
     public init(
         phone: PhoneController,
@@ -80,9 +138,26 @@ public final class FSVoipAppModel: ObservableObject {
         requestMicrophone: @escaping () async -> Bool = { await MicrophonePermission.request() },
         pushTokens: PushTokenReporting? = nil,
         requestNotifications: @escaping () async -> Void = {},
+        contacts: ContactsHub? = nil,
+        pbx: PbxHub? = nil,
+        media: MediaHub? = nil,
+        availability: AvailabilityHub? = nil,
+        selfExtension: SelfExtensionHub? = nil,
+        park: ParkServicing? = nil,
+        outboundNumbers: OutboundNumbersServicing? = nil,
+        customerCards: CustomerCardServicing? = nil,
         logger: FSLogger = FSLogger(category: "app")
     ) {
         self.phone = phone
+        self.customerCards = customerCards
+        self.contacts = contacts ?? ContactsHub()
+        self.pbx = pbx
+        self.media = media
+        self.availability = availability
+        self.selfExtension = selfExtension ?? .unavailable
+        self.park = park.map { ParkModel(service: $0) }
+        outbound = OutboundChoiceModel(service: outboundNumbers, preferences: preferences)
+        history = HistoryModel(media: media)
         self.accountStore = accountStore
         self.service = service
         self.preferences = preferences
@@ -93,14 +168,79 @@ public final class FSVoipAppModel: ObservableObject {
         self.requestNotifications = requestNotifications
         self.logger = logger
 
+        outbound.capabilities = { [weak self] accountId in self?.capabilities(for: accountId) }
+        parkChanges = self.park?.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        outboundChanges = outbound.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        history.nameLookup = { [weak self] number in self?.name(forNumber: number) }
         phone.anonymousCallerText = L10n.string("call.anonymous")
         phone.lookupName = { [weak self] number in self?.name(forNumber: number) }
+
+        if let customerCards {
+            // Best effort and capped at one second by the phone: a failed or slow lookup never touches the call.
+            phone.lookupCaller = { number, account in
+                guard let lookup = try? await customerCards.lookup(number: number, for: account) else {
+                    return nil
+                }
+
+                return CallerContext(lookup)
+            }
+        }
         phone.onCallFinished = { [weak self] call in
             self?.recentsStore.add(call)
             self?.recents = self?.recentsStore.all() ?? []
+            self?.park?.callFinished(call, account: self?.account(id: call.accountId))
         }
+        self.park?.dial = { [weak self] number, accountId in
+            self?.call(number, from: accountId, useChosenNumber: false) ?? false
+        }
+        self.park?.notify = { [weak self] message, isError in
+            self?.notice = Notice(message: message, isError: isError)
+        }
+        self.park?.isAdmin = { [weak self] accountId in
+            self?.meByAccount[accountId]?.effectiveRole == .admin
+        }
+        self.park?.onRevoked = { [weak self] in
+            Task { await self?.refreshAccounts() }
+        }
+        pbx?.onRevoked = { [weak self] in
+            Task { await self?.refreshAccounts() }
+        }
+        pbxAccessLost = pbx?.$lostAccessFor.compactMap { $0 }.sink { [weak self] accountId in
+            guard let self else { return }
+            self.pbx?.lostAccessFor = nil
+
+            if let account = account(id: accountId) {
+                notice = Notice(message: String(format: L10n.string("pbx.notice.lostAccess"), account.pbxName), isError: true)
+            }
+        }
+        media?.onRevoked = { [weak self] in
+            Task { await self?.refreshAccounts() }
+        }
+        self.selfExtension.onRevoked = { [weak self] in
+            Task { await self?.refreshAccounts() }
+        }
+        selfExtensionChanges = self.selfExtension.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        media?.nameLookup = { [weak self] number in self?.name(forNumber: number) }
+        mediaAccessLost = media?.$lostAccessFor.compactMap { $0 }.sink { [weak self] accountId in
+            guard let self else { return }
+            self.media?.lostAccessFor = nil
+
+            if let account = account(id: accountId) {
+                notice = Notice(message: String(format: L10n.string("media.notice.lostAccess"), account.pbxName), isError: true)
+            }
+        }
+        // A call (or a ringing call) takes the audio: voicemail and recordings pause and do not start.
+        callActivity = phone.$sessions
+            .map { sessions in sessions.contains { !$0.phase.isEnded } }
+            .removeDuplicates()
+            .sink { [weak self] active in self?.media?.callStateChanged(isActive: active) }
         // Republish the phone's changes so screens that only watch the app model still redraw.
         phoneChanges = phone.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        contactsChanges = self.contacts.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        // A 401 on the contacts means the pairing is gone: `GET /me` removes the account here (and with it its contacts).
+        self.contacts.onUnauthorized = { [weak self] _ in
+            Task { await self?.refreshAccounts() }
+        }
 
         reloadAccounts()
         recents = recentsStore.all()
@@ -117,6 +257,25 @@ public final class FSVoipAppModel: ObservableObject {
         }
 
         phone.sync(accounts: accounts)
+        configureContacts()
+    }
+
+    /// Tell the contacts which accounts exist. Runs one after the other, and a sync waits for it.
+    private func configureContacts() {
+        let ids = accounts.map(\.id)
+        let previous = contactsConfiguration
+        let hub = contacts
+
+        contactsConfiguration = Task {
+            await previous?.value
+            await hub.configure(accountIds: ids)
+        }
+    }
+
+    /// Sync the address books of all accounts. `force`: also when one was synced a moment ago (after a refresh push, on pull to refresh).
+    public func syncContacts(force: Bool = false) async {
+        await contactsConfiguration?.value
+        await contacts.syncAll(force: force)
     }
 
     public func account(id: String) -> StoredAccount? {
@@ -132,13 +291,28 @@ public final class FSVoipAppModel: ObservableObject {
         for account in accounts {
             do {
                 switch try await service.refresh(account) {
-                case let .updated(updated, contacts):
+                case let .updated(updated, contacts, me):
                     internalContacts[updated.id] = contacts
+                    self.contacts.setInternalContacts(contacts, accountId: updated.id)
+
+                    // The one `GET /me` of this refresh feeds the contacts and the "Centrale" section alike.
+                    if let me {
+                        meByAccount[updated.id] = me
+                        self.contacts.apply(capabilities: me.capabilities?.contacts ?? ContactCapabilities(), accountId: updated.id)
+                        pbx?.apply(me: me, accountId: updated.id)
+                        media?.apply(me: me, accountId: updated.id)
+                        await outbound.load(updated)
+                    }
                 case .revoked:
                     internalContacts[account.id] = nil
                     cleanUp(accountId: account.id)
                     notice = Notice(message: String(format: L10n.string("notice.revoked"), account.displayLabel), isError: true)
                 }
+            } catch APIError.forbidden {
+                // The role that allowed the section is gone: hide it right away.
+                pbx?.accessDenied(accountId: account.id)
+                media?.accessDenied(accountId: account.id)
+                logger.notice("Refresh of account \(account.id) was refused (403)")
             } catch {
                 // Offline or a server hiccup: keep what we have, try again next time.
                 logger.notice("Refresh of account \(account.id) failed: \(error)")
@@ -195,6 +369,95 @@ public final class FSVoipAppModel: ObservableObject {
         reloadAccounts()
     }
 
+    // MARK: Roles and capabilities
+
+    /// What this pairing may do. `nil` until the server has answered.
+    public func capabilities(for accountId: String) -> AppCapabilities? {
+        meByAccount[accountId]?.capabilities
+    }
+
+    /// Fail closed: only an `admin` the server confirmed.
+    public func isAdmin(_ accountId: String) -> Bool {
+        meByAccount[accountId]?.effectiveRole == .admin
+    }
+
+    /// Show "Beheer" for this account: the admin role AND the `pbxManage` capability (what the "Centrale" hub concluded from the same
+    /// `GET /me`; it also hides at once on a 403).
+    public func canManagePbx(_ accountId: String) -> Bool {
+        (pbx?.isAvailable(accountId) ?? false) && (meByAccount[accountId]?.canManagePbx ?? false)
+    }
+
+    public func canManageSounds(_ accountId: String) -> Bool {
+        canManagePbx(accountId) && capabilities(for: accountId)?.sounds == .manage
+    }
+
+    public func canInvite(_ accountId: String) -> Bool {
+        canManagePbx(accountId) && (capabilities(for: accountId)?.invite ?? false)
+    }
+
+    /// Does any pairing offer parking ("On hold")?
+    public var canPark: Bool {
+        meByAccount.values.contains { $0.canPark }
+    }
+
+    /// Does this pairing offer parking (the park button in a call, the "On hold" tab)?
+    public func canPark(_ accountId: String) -> Bool {
+        park != nil && (meByAccount[accountId]?.canPark ?? false)
+    }
+
+    /// The accounts that can park, in the order of the accounts.
+    var parkAccounts: [StoredAccount] {
+        accounts.filter { canPark($0.id) }
+    }
+
+    /// The account the "On hold" tab shows: the one the user chose, else the default outgoing one if it can park, else the first.
+    var parkAccount: StoredAccount? {
+        let candidates = parkAccounts
+
+        if let chosenParkAccountId, let chosen = candidates.first(where: { $0.id == chosenParkAccountId }) {
+            return chosen
+        }
+
+        if let preferred = defaultOutgoingAccountId, let account = candidates.first(where: { $0.id == preferred }) {
+            return account
+        }
+
+        return candidates.first
+    }
+
+    func chooseParkAccount(_ accountId: String) {
+        chosenParkAccountId = accountId
+    }
+
+    /// Parks the running call of `session` and says what happened. The PBX ends our leg of the call after a successful park; this
+    /// never shows that as a failure.
+    public func parkCall(_ session: CallSession) async {
+        guard let park, canPark(session.accountId.rawValue), let account = account(id: session.accountId.rawValue) else {
+            return
+        }
+
+        // The live SIP Call-ID, never the engine's own id (for an outgoing call that can be a UUID the PBX does not know).
+        guard let callId = phone.sipCallID(for: session), !callId.isEmpty else {
+            notice = Notice(message: ParkFailure.callNotFound.message, isError: true)
+
+            return
+        }
+
+        switch await park.park(callId: callId, account: account) {
+        case let .parked(slot):
+            notice = Notice(message: String(format: L10n.string("park.notice.parked"), ParkFormat.slot(slot)), isError: false)
+        case let .failed(failure):
+            notice = Notice(message: failure.message, isError: true)
+        case .ignored:
+            break
+        }
+    }
+
+    public func openSettings(_ start: SettingsStart = .root) {
+        settingsStart = start
+        isSettingsPresented = true
+    }
+
     // MARK: Settings
 
     /// Whether the incoming call screen shows the dialled account for this account (the value in effect).
@@ -227,14 +490,15 @@ public final class FSVoipAppModel: ObservableObject {
 
     /// Start a call. Returns `false` (with a notice) when it could not start.
     @discardableResult
-    public func call(_ number: String, from accountId: String?) -> Bool {
+    public func call(_ number: String, from accountId: String?, useChosenNumber: Bool = true) -> Bool {
         guard let accountId = accountId ?? defaultOutgoingAccountId else {
             notice = Notice(message: L10n.string("call.error.noAccount"), isError: true)
             return false
         }
 
         do {
-            try phone.startCall(number: number, accountId: accountId)
+            // The chosen number rides along with this one call; without the capability the options are empty.
+            try phone.startCall(number: number, accountId: accountId, options: useChosenNumber ? outbound.options(for: accountId) : .none)
             return true
         } catch let error as PhoneError {
             notice = Notice(message: Self.message(for: error), isError: true)
@@ -250,8 +514,12 @@ public final class FSVoipAppModel: ObservableObject {
         recents = []
     }
 
-    /// Name of an internal contact (the other extensions of the same PBX) for a number.
+    /// The name for a number: the customer's address book, then the phone's contacts, then the colleagues of the PBX.
     public func name(forNumber number: String) -> String? {
+        if let name = contacts.name(forNumber: number) {
+            return name
+        }
+
         for contacts in internalContacts.values {
             if let match = contacts.first(where: { $0.number == number }) {
                 return match.name
@@ -268,11 +536,33 @@ public final class FSVoipAppModel: ObservableObject {
         Task {
             await refreshAccounts()
             await reportPushTokens()
+            await syncContacts()
+            await contacts.refreshDeviceContacts()
         }
+        startContactsTimer()
     }
 
     public func didEnterBackground() {
         phone.enterBackground()
+        // No polling in the background: the address book is read again when the app comes to the front.
+        contactsTimer?.cancel()
+        contactsTimer = nil
+    }
+
+    /// While the app is in front, look for changes every few minutes.
+    private func startContactsTimer() {
+        contactsTimer?.cancel()
+        contactsTimer = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 300 * 1_000_000_000)
+
+                guard !Task.isCancelled else {
+                    return
+                }
+
+                await self?.syncContacts()
+            }
+        }
     }
 
     // MARK: Push
@@ -311,9 +601,54 @@ public final class FSVoipAppModel: ObservableObject {
         case let .revoked(revoked):
             removeRevoked(accountId: revoked.accountId)
         case .refresh:
-            Task { await refreshAccounts() }
+            // The portal changed something about this pairing (a role, a name, the address book): read it all again.
+            Task {
+                await refreshAccounts()
+                await syncContacts(force: true)
+            }
         case .ring:
             logger.notice("A ring message arrived as a regular notification: ignored")
+        case .notice:
+            // Showing it is the system's job (banner); opening the right screen happens when it is tapped (`openNotification`).
+            break
+        }
+    }
+
+    /// Does this regular push show a banner while the app is in the foreground? Notices from the portal do; "unpaired" and "refresh"
+    /// are handled silently.
+    public func showsBannerInForeground(payload: [AnyHashable: Any]) -> Bool {
+        if case .notice? = try? PushMessage.decode(apnsDictionary: payload) {
+            return true
+        }
+
+        return false
+    }
+
+    /// The user tapped a notification. A notice opens the screen its `href` maps to; anything else is handled as a normal push.
+    public func openNotification(payload: [AnyHashable: Any]) {
+        guard case let .notice(notice)? = try? PushMessage.decode(apnsDictionary: payload) else {
+            handleNotification(payload: payload)
+            return
+        }
+
+        // A notice for an account that is no longer on this phone opens nothing.
+        guard account(id: notice.accountId) != nil else {
+            logger.notice("Notice for an account that is not on this phone: ignored")
+            return
+        }
+
+        open(NoticeRoute.destination(forHref: notice.href))
+    }
+
+    /// Show the screen for a notice destination: any sheet closes, the tab opens. `.home` is the dialler.
+    public func open(_ destination: NoticeDestination) {
+        isSettingsPresented = false
+
+        switch destination {
+        case .home: selectedTab = .dialer
+        case .recents: selectedTab = .recents
+        case .voicemail: selectedTab = .voicemail
+        case .contacts: selectedTab = .contacts
         }
     }
 
@@ -436,8 +771,18 @@ public final class FSVoipAppModel: ObservableObject {
     // MARK: Helpers
 
     private func cleanUp(accountId: String) {
+        pbx?.forget(accountId: accountId)
+        media?.forget(accountId: accountId)
         preferences.removePreferences(for: accountId)
         internalContacts[accountId] = nil
+        meByAccount[accountId] = nil
+        availability?.forget(accountId: accountId)
+        selfExtension.forget(accountId: accountId)
+        outbound.forget(accountId: accountId)
+        park?.forget(accountId: accountId)
+        history.forget(accountId: accountId)
+        // Unpairing removes the address book of that account from this phone.
+        contacts.forget(accountId: accountId)
         settingsRevision += 1
     }
 

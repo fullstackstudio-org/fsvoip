@@ -1,0 +1,61 @@
+{
+  "account": {
+    "id": "3f0c2b1e-8a4d-4d6f-9b7a-1c2d3e4f5a6b",
+    "label": "Jan (balie)",
+    "labelOverride": "Jan (balie)",
+    "pbxName": "Voorbeeld Bouw",
+    "extensionName": "Jan de Vries",
+    "extensionNumber": "102",
+    "customerName": "Voorbeeld Bouw B.V."
+  },
+  "sip": {
+    "domain": "voorbeeld-bouw.powervoip.nl",
+    "proxy": "sip.powervoip.nl",
+    "port": 5060,
+    "transport": "tcp",
+    "srv": true
+  },
+  "internal": [
+    {
+      "number": "100",
+      "name": "Receptie"
+    },
+    {
+      "number": "101",
+      "name": "Pieter Jansen"
+    },
+    {
+      "number": "103",
+      "name": "Werkplaats"
+    }
+  ],
+  "contacts": {
+    "internal": true,
+    "listsAvailable": 2,
+    "total": 148
+  },
+  "push": {
+    "registered": true,
+    "kind": "apns_voip",
+    "env": "sandbox",
+    "invalid": false
+  },
+  "serverTime": "2026-10-08T12:34:56.789Z",
+  "role": "user",
+  "capabilities": {
+    "pbxManage": false,
+    "recordings": false,
+    "voicemail": "own",
+    "calls": "own",
+    "contacts": {
+      "read": true,
+      "write": true,
+      "delete": false
+    }
+  },
+  "pbx": {
+    "name": "Voorbeeld Bouw",
+    "state": "active",
+    "readOnly": false
+  }
+}

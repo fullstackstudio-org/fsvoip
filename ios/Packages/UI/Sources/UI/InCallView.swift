@@ -10,7 +10,9 @@ struct InCallView: View {
     @ObservedObject var phone: PhoneController
     let session: CallSession
     @State private var showsKeypad = false
+    @ScaledMetric(relativeTo: .largeTitle) private var titleSize: CGFloat = 34
     @State private var sentDigits = ""
+    @State private var isParking = false
 
     private var isEnded: Bool {
         session.phase.isEnded
@@ -28,16 +30,19 @@ struct InCallView: View {
                 Spacer(minLength: 16)
 
                 if session.phase == .incoming {
+                    // Weigeren/Opnemen sit at the bottom, where the end button sits on every other call screen.
+                    Spacer(minLength: 0)
                     incomingActions
+                        .padding(.bottom, 24)
                 } else if showsKeypad {
                     dtmfKeypad
                 } else {
                     controls
                 }
 
-                Spacer(minLength: 16)
-
                 if session.phase != .incoming {
+                    Spacer(minLength: 16)
+
                     endButton
                         .padding(.bottom, 24)
                 }
@@ -47,6 +52,14 @@ struct InCallView: View {
         .foregroundStyle(.white)
         .environment(\.colorScheme, .dark)
         .accessibilityIdentifier("in-call-screen")
+        #if DEBUG
+        .task {
+            // Demo mode only (`-FSVoipDemoScreen parkcall`): park the demo call a few seconds after it connected.
+            guard UserDefaults.standard.string(forKey: "FSVoipDemoScreen") == "parkcall" else { return }
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            park()
+        }
+        #endif
         .onChange(of: session.id) { _ in
             showsKeypad = false
             sentDigits = ""
@@ -71,7 +84,7 @@ struct InCallView: View {
             .background(Color.white.opacity(0.08), in: Capsule())
 
             Text(session.remoteTitle ?? L10n.string("call.anonymous"))
-                .font(.system(size: 34, weight: .semibold))
+                .font(.system(size: titleSize, weight: .semibold))
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
                 .minimumScaleFactor(0.6)
@@ -85,10 +98,28 @@ struct InCallView: View {
                     .foregroundStyle(.white.opacity(0.6))
             }
 
+            if let line = CallerLine.text(session.callerContext) {
+                Text(line)
+                    .font(.footnote.weight(.semibold))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.white.opacity(0.08), in: Capsule())
+                    .accessibilityIdentifier("call-customer-card")
+            }
+
             status
                 .font(.body.monospacedDigit())
                 .foregroundStyle(.white.opacity(0.7))
                 .padding(.top, 2)
+
+            // The number this outgoing call goes out with, when the user chose one in the dialler.
+            if session.direction == .outgoing, let via = session.viaNumber {
+                Text(String(format: L10n.string("call.via"), PbxVocabulary.formatNumber(via)))
+                    .font(.footnote.monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.6))
+                    .accessibilityIdentifier("call-via")
+            }
 
             if showsKeypad, !sentDigits.isEmpty {
                 Text(sentDigits)
@@ -158,10 +189,36 @@ struct InCallView: View {
                 .disabled(!session.phase.isConnected)
                 .accessibilityIdentifier("hold-button")
             }
+
+            // Parking: put the call on a numbered slot for the whole team. Only when the PBX offers it and the call is connected.
+            if model.canPark(session.accountId.rawValue) {
+                GridRow {
+                    ControlButton(symbol: "parkingsign", titleKey: "call.park", isOn: isParking) {
+                        park()
+                    }
+                    .disabled(!session.phase.isConnected || isParking)
+                    .accessibilityIdentifier("park-button")
+                    .accessibilityHint(L10n.string("call.park.hint"))
+
+                    Color.clear
+                        .gridCellUnsizedAxes([.horizontal, .vertical])
+                }
+            }
         }
         .frame(maxWidth: .infinity)
         .disabled(isEnded)
         .opacity(isEnded ? 0.4 : 1)
+    }
+
+    private func park() {
+        guard !isParking else { return }
+
+        isParking = true
+
+        Task {
+            await model.parkCall(session)
+            isParking = false
+        }
     }
 
     private var dtmfKeypad: some View {

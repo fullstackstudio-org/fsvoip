@@ -34,6 +34,11 @@ public final class PhoneController: ObservableObject {
     public var lookupName: @MainActor (String) -> String? = { _ in nil }
     /// Text for an anonymous caller (localised by the app).
     public var anonymousCallerText = "Onbekend"
+    /// The customer card: who is this caller according to the website of the customer (name, open orders and requests). Asked for an
+    /// INCOMING call after it was reported to the system; it never delays the call (`callerLookupTimeout`), and `nil` = nothing to add.
+    public var lookupCaller: (@Sendable (_ number: String, _ account: StoredAccount) async -> CallerContext?)?
+    /// How long an incoming call waits for `lookupCaller`.
+    public var callerLookupTimeout: TimeInterval = CallerLookupTimeout.incomingCall
 
     let engine: SipEngine
     let system: CallSystem
@@ -57,6 +62,8 @@ public final class PhoneController: ObservableObject {
     var awakeAccounts: Set<String> = []
     /// Cancels the "no INVITE came" timer of a call reported from a push.
     var inviteTimers: [UUID: @MainActor () -> Void] = [:]
+    /// The running customer-card lookups, by call.
+    var callerLookups: [UUID: Task<Void, Never>] = [:]
     /// Calls (by `callRef`) that already ended here, and how a late INVITE for them is rejected.
     var closedCallRefs: [String: (at: Date, reject: DeclineReason)] = [:]
 
@@ -213,8 +220,19 @@ public final class PhoneController: ObservableObject {
         sessions.last
     }
 
+    /// The SIP `Call-ID` of a running call, as the PBX knows it (for parking). Read from the engine each time; `nil` before the SIP side
+    /// of the call exists.
+    public func sipCallID(for session: CallSession) -> String? {
+        guard let engineID = self.session(session.id)?.engineCallID ?? session.engineCallID else {
+            return nil
+        }
+
+        return engine.sipCallID(of: engineID)
+    }
+
     /// Start an outgoing call through the system call UI.
-    public func startCall(number rawNumber: String, accountId: String) throws {
+    /// `options` (the number to call out with) belong to this outgoing call only.
+    public func startCall(number rawNumber: String, accountId: String, options: CallOptions = .none) throws {
         let number = DialNumber.sanitize(rawNumber)
 
         guard DialNumber.isDialable(number) else {
@@ -235,7 +253,7 @@ public final class PhoneController: ObservableObject {
 
         let uuid = UUID()
         let name = lookupName(number)
-        sessions.append(CallSession(
+        var session = CallSession(
             id: uuid,
             engineCallID: nil,
             direction: .outgoing,
@@ -245,7 +263,10 @@ public final class PhoneController: ObservableObject {
             remoteName: name,
             phase: .starting,
             createdAt: now()
-        ))
+        )
+        session.callOptions = options
+        session.viaNumber = options.headers.first?.value
+        sessions.append(session)
 
         system.requestStartCall(uuid: uuid, handle: number, displayName: name) { [weak self] error in
             guard let self, error != nil else {
@@ -367,6 +388,8 @@ public final class PhoneController: ObservableObject {
             try? self.engine.decline(call.id)
             self.finish(uuid, reason: .declined, tellSystem: false)
         }
+
+        startCallerLookup(uuid)
     }
 
     fileprivate func engineCallChanged(_ info: CallInfo) {
@@ -423,6 +446,7 @@ public final class PhoneController: ObservableObject {
         session.phase = .ended(reason)
         sessions.removeAll { $0.id == uuid }
         inviteTimers.removeValue(forKey: uuid)?()
+        callerLookups.removeValue(forKey: uuid)?.cancel()
 
         if let ref = session.fssCallRef {
             // A late INVITE (or a repeated push) for this call must not ring again.
@@ -538,7 +562,7 @@ extension PhoneController: CallSystemActionHandler {
         engine.audio.configure()
 
         do {
-            return try engine.call(number: number, from: session.accountId)
+            return try engine.call(number: number, from: session.accountId, options: session.direction == .outgoing ? session.callOptions : .none)
         } catch {
             logger.error("Outgoing call failed to start: \(error)")
             return nil
@@ -570,7 +594,14 @@ extension PhoneController: CallSystemActionHandler {
 
         do {
             try engine.answer(engineID)
-            update(uuid) { $0.phase = .connecting }
+            // liblinphone reports Connected and StreamsRunning synchronously inside `answer` (the callee does not wait
+            // for the ACK), so the call can already be active here. Only a call that is still ringing moves to
+            // connecting; overwriting an active call left the screen on "Verbinden..." for the whole call.
+            update(uuid) {
+                if $0.phase == .incoming {
+                    $0.phase = .connecting
+                }
+            }
             return true
         } catch {
             logger.error("Answer failed: \(error)")

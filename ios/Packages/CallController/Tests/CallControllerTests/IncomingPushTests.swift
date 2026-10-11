@@ -537,6 +537,168 @@ final class PhoneControllerPushTests: XCTestCase {
         try pushFixture()
         XCTAssertTrue(engine.disabled.isEmpty)
     }
+    // MARK: The customer card (KP-T11)
+
+    private static let card = CallerContext(contactId: "6f7a8b9c-0d1e-4f2a-8b3c-4d5e6f7a8b9c", name: "Jansen Bakkerij", company: nil, openRequests: 1, openOrders: 2)
+
+    /// Records the lookups (the closure of the phone is `@Sendable`).
+    private final class Asked: @unchecked Sendable {
+        private let lock = NSLock()
+        private var values: [String] = []
+
+        func add(_ number: String, _ account: String = "") {
+            lock.withLock { values.append(account.isEmpty ? number : "\(number)|\(account)") }
+        }
+
+        var all: [String] { lock.withLock { values } }
+    }
+
+    func testTheCardNamesTheCallerAndUpdatesTheCallScreen() async throws {
+        phone.sync(accounts: [account(Fixture.accountId)])
+        let asked = Asked()
+        phone.lookupCaller = { number, account in
+            asked.add(number, account.id)
+
+            return Self.card
+        }
+
+        try pushFixture()
+        await phone.finishCallerLookup(callUUID)
+
+        XCTAssertEqual(asked.all, ["+31701234567|\(Fixture.accountId)"])
+        XCTAssertEqual(phone.activeSession?.callerContext, Self.card)
+        XCTAssertEqual(phone.activeSession?.remoteName, "Jansen Bakkerij")
+        // The system call screen is updated in place (CXCallUpdate), not reported again.
+        XCTAssertEqual(system.events, [
+            .reportedIncoming(callUUID, handle: "+31701234567", displayName: "Bakkerij Smit"),
+            .updated(callUUID, displayName: "Jansen Bakkerij"),
+        ])
+    }
+
+    func testAContactNameOfThePhoneWinsOverTheCard() async throws {
+        phone.sync(accounts: [account(Fixture.accountId)])
+        phone.lookupName = { $0 == "+31701234567" ? "Henk Smit" : nil }
+        phone.lookupCaller = { _, _ in Self.card }
+
+        try pushFixture()
+        await phone.finishCallerLookup(callUUID)
+
+        XCTAssertEqual(phone.activeSession?.remoteName, "Henk Smit")
+        XCTAssertNotNil(phone.activeSession?.callerContext, "the context still shows on the in-app screen")
+        XCTAssertEqual(system.events.count, 1, "no update: the name did not change")
+    }
+
+    func testASlowLookupNeverBlocksTheCall() async throws {
+        phone.sync(accounts: [account(Fixture.accountId)])
+        phone.callerLookupTimeout = 0.05
+        phone.lookupCaller = { _, _ in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+
+            return Self.card
+        }
+
+        // The call is reported and ringing before the lookup is even looked at.
+        XCTAssertEqual(try pushFixture(), .ringing(callUUID))
+        XCTAssertEqual(system.events, [.reportedIncoming(callUUID, handle: "+31701234567", displayName: "Bakkerij Smit")])
+
+        await phone.finishCallerLookup(callUUID)
+
+        XCTAssertNil(phone.activeSession?.callerContext)
+        XCTAssertEqual(phone.activeSession?.remoteName, "Bakkerij Smit")
+        XCTAssertEqual(system.events.count, 1)
+
+        // And it can still be answered.
+        engine.emitIncoming(id: "in-1", from: "0701234567", name: "Bakkerij Smit", account: Fixture.accountId, callRef: Fixture.callRef)
+        phone.answer(callUUID)
+        XCTAssertEqual(engine.log.last, "answer in-1")
+    }
+
+    func testAFailedOrEmptyLookupChangesNothing() async throws {
+        phone.sync(accounts: [account(Fixture.accountId)])
+        phone.lookupCaller = { _, _ in nil }
+
+        try pushFixture()
+        await phone.finishCallerLookup(callUUID)
+
+        XCTAssertNil(phone.activeSession?.callerContext)
+        XCTAssertEqual(system.events.count, 1)
+    }
+
+    func testAnAnswerAfterTheCallEndedIsDropped() async throws {
+        phone.sync(accounts: [account(Fixture.accountId)])
+        phone.callerLookupTimeout = 2
+        phone.lookupCaller = { _, _ in
+            try? await Task.sleep(nanoseconds: 200_000_000)
+
+            return Self.card
+        }
+
+        try pushFixture()
+        timers.fireAll()
+        XCTAssertNil(phone.activeSession, "no INVITE in time: the call ended")
+        await phone.finishCallerLookup(callUUID)
+
+        XCTAssertFalse(system.events.contains(.updated(callUUID, displayName: "Jansen Bakkerij")))
+    }
+
+    func testAnAnonymousCallerIsNotLookedUp() async throws {
+        phone.sync(accounts: [account(Fixture.accountId)])
+        let asked = Asked()
+        phone.lookupCaller = { number, _ in
+            asked.add(number)
+
+            return Self.card
+        }
+
+        phone.handleVoipPush(payload: try Fixture.dictionary("apns-voip-body").replacingCaller(number: nil, name: nil))
+        await phone.finishCallerLookup(callUUID)
+
+        XCTAssertEqual(asked.all, [])
+        XCTAssertNil(phone.activeSession?.callerContext)
+    }
+
+    func testAColleagueIsNotLookedUp() async throws {
+        phone.sync(accounts: [account(Fixture.accountId)])
+        let asked = Asked()
+        phone.lookupCaller = { number, _ in
+            asked.add(number)
+
+            return Self.card
+        }
+
+        // An internal extension number is a colleague, not a customer.
+        phone.handleVoipPush(payload: try Fixture.dictionary("apns-voip-body").replacingCaller(number: "103", name: "Piet"))
+        await phone.finishCallerLookup(callUUID)
+
+        XCTAssertEqual(asked.all, [])
+    }
+
+    func testAnAnonymousPushIsLookedUpOnceTheInviteBringsTheNumber() async throws {
+        phone.sync(accounts: [account(Fixture.accountId)])
+        let asked = Asked()
+        phone.lookupCaller = { number, _ in
+            asked.add(number)
+
+            return Self.card
+        }
+
+        phone.handleVoipPush(payload: try Fixture.dictionary("apns-voip-body").replacingCaller(number: nil, name: nil))
+        engine.emitIncoming(id: "in-1", from: "0701234567", name: nil, account: Fixture.accountId, callRef: Fixture.callRef)
+        await phone.finishCallerLookup(callUUID)
+
+        XCTAssertEqual(asked.all, ["0701234567"])
+        XCTAssertEqual(phone.activeSession?.remoteName, "Jansen Bakkerij")
+    }
+
+    func testAnInviteWithoutAPushIsLookedUpToo() async throws {
+        phone.sync(accounts: [account(Fixture.accountId)])
+        phone.lookupCaller = { _, _ in Self.card }
+
+        engine.emitIncoming(id: "in-1", from: "0701234567", name: nil, account: Fixture.accountId, callRef: Fixture.callRef)
+        await phone.finishCallerLookup(callUUID)
+
+        XCTAssertEqual(phone.activeSession?.callerContext?.openOrders, 2)
+    }
 }
 
 private extension Dictionary where Key == AnyHashable, Value == Any {

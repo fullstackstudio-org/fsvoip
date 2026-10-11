@@ -21,9 +21,9 @@ let package = Package(
     targets: [
         .target(
             name: "UI",
-            dependencies: ["Core", "Pairing", "Contacts", "SipEngine", "CallController"],
+            dependencies: ["Core", "Pairing", .product(name: "FSContacts", package: "Contacts"), "SipEngine", "CallController"],
             resources: [.process("Resources")]
         ),
-        .testTarget(name: "UITests", dependencies: ["UI", "Core", "Pairing", "SipEngine", "CallController"]),
+        .testTarget(name: "UITests", dependencies: ["UI", "Core", "Pairing", .product(name: "FSContacts", package: "Contacts"), "SipEngine", "CallController"]),
     ]
 )

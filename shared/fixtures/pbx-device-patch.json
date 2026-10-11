@@ -1,0 +1,25 @@
+{
+  "version": 4,
+  "dnd": true,
+  "noAnswerSeconds": 20,
+  "noAnswerTarget": {
+    "type": "voicemail",
+    "id": "7a1d9c3e-5b2f-4e8a-9c01-6d3e8f2a4b57"
+  },
+  "busyTarget": null,
+  "forwardAlways": {
+    "type": "external",
+    "number": "+31612345678"
+  },
+  "outboundNumberId": null,
+  "followMe": [
+    {
+      "target": {
+        "type": "ring_group",
+        "id": "9e8d7c6b-5a49-4382-b1a0-f9e8d7c6b5a4"
+      },
+      "delaySeconds": 0,
+      "timeoutSeconds": 25
+    }
+  ]
+}

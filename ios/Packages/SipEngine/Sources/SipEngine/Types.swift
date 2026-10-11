@@ -142,6 +142,47 @@ public enum RegistrationFailure: Equatable, Sendable {
     case other(String)
 }
 
+/// One extra SIP header on an outgoing INVITE.
+public struct CallHeader: Equatable, Sendable {
+    public var name: String
+    public var value: String
+
+    public init(name: String, value: String) {
+        self.name = name
+        self.value = value
+    }
+}
+
+/// What the app asks of ONE outgoing call besides the number (plan `fsvoip-app-v2`, D5).
+public struct CallOptions: Equatable, Sendable {
+    /// The header that tells the PBX which of its numbers this call goes out with.
+    public static let fromHeaderName = "X-FSS-From"
+
+    public static let none = CallOptions()
+
+    /// A national number of the PBX (`0850607848`) to call out with; `nil` = the extension's own default.
+    /// TODO(Task 0): an "anonymous" flag for exactly one call lands here once the proof of concept has passed.
+    public var fromNumber: String?
+
+    public init(fromNumber: String? = nil) {
+        self.fromNumber = fromNumber
+    }
+
+    /// The headers the engine puts on the INVITE: at most one `X-FSS-From`, only for a plain number (never a value that could
+    /// carry a second header or SIP syntax).
+    public var headers: [CallHeader] {
+        guard let fromNumber, Self.isPlainNumber(fromNumber) else {
+            return []
+        }
+
+        return [CallHeader(name: Self.fromHeaderName, value: fromNumber)]
+    }
+
+    static func isPlainNumber(_ value: String) -> Bool {
+        !value.isEmpty && value.utf8.count <= 32 && value.utf8.allSatisfy { $0 >= 48 && $0 <= 57 }
+    }
+}
+
 public struct CallID: Hashable, Sendable, CustomStringConvertible {
     public let rawValue: String
 

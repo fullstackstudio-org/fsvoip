@@ -1,0 +1,14 @@
+{
+  "id": "Zm9vYmFyLWZpeHR1cmUtcGFya2VkLWNhbGwtcmVmZXJlbmNlLTAwMQ",
+  "slot": 1,
+  "retrieveNumber": "*5901",
+  "callerNumber": "0701234567",
+  "callerName": "Bakkerij Smit",
+  "parkedAt": "2026-10-09T08:15:30.000Z",
+  "expiresAt": "2026-10-09T08:20:30.000Z",
+  "parkedBy": {
+    "deviceId": "3f0c2b1e-8a4d-4d6f-9b7a-1c2d3e4f5a6b",
+    "name": "Jan (balie)"
+  },
+  "mine": true
+}

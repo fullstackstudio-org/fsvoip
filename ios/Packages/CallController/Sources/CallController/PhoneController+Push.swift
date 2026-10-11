@@ -111,6 +111,7 @@ extension PhoneController {
 
         // The PBX waits for a FRESH registration of this account before it sends the INVITE.
         wakeRegistration(of: account.id)
+        startCallerLookup(uuid)
 
         let delay = max(0, inviteDeadline.timeIntervalSince(now()))
         inviteTimers[uuid] = schedule(delay) { [weak self] in
@@ -211,6 +212,11 @@ extension PhoneController {
             if $0.remoteNumber == nil {
                 $0.remoteNumber = call.from
             }
+        }
+
+        // The push had no number (anonymous or unreadable) but the INVITE has one: ask for the card now.
+        if session.remoteNumber == nil {
+            startCallerLookup(uuid)
         }
 
         logger.notice("INVITE joined to call \(session.fssCallRef ?? "?")")
