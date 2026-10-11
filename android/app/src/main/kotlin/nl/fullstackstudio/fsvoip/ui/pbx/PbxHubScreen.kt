@@ -99,9 +99,9 @@ class PbxNav(private val stack: MutableList<PbxRoute>, private val leave: () -> 
  */
 @Composable
 fun PbxHubScreen(model: AppModel, accountId: String, part: PbxPart, back: () -> Unit) {
-    val hub = model.feature { PbxHub(model) }
-    val section = remember(accountId) { hub.section(accountId) }
     val context = LocalContext.current
+    val hub = model.feature { PbxHub(model).also { it.gate = nl.fullstackstudio.fsvoip.ui.LocalAccessWiring.pbxGate(context, model) } }
+    val section = remember(accountId) { hub.section(accountId) }
 
     if (section == null) {
         LaunchedEffect(accountId) { back() }

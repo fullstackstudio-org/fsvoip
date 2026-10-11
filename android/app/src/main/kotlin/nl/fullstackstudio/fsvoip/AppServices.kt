@@ -147,6 +147,8 @@ class AppServices private constructor(context: Context) {
 
         // The contacts (address books of the lines, the phone's contacts, colleagues) answer first; the plain lookups stay as a fallback.
         val contacts = model.contactsKit(appContext)
+        nl.fullstackstudio.fsvoip.ui.LocalAccessWiring.install(appContext)
+
         val internal = { CompositeNameLookup { model.internalContacts.value.values.map { InternalContactsProvider(it) } } }
         phone.lookupName = { number ->
             val sources = buildList<NameLookup> {

@@ -33,7 +33,7 @@ class DemoPbxHandler(private val now: () -> Long = System::currentTimeMillis) : 
 
     private val sharedBox = "vm-algemeen"
     private val welcomeSound = "snd-welkom"
-    private val closedSound = "snd-gesloten"
+    private val closedSound = "snd-kantoor"
     private val hoursId = "hours-kantoor"
     private val groupAll = "grp-iedereen"
     private val queueId = "queue-support"
@@ -42,7 +42,7 @@ class DemoPbxHandler(private val now: () -> Long = System::currentTimeMillis) : 
     private val groups = linkedMapOf<String, JsonObject>()
     private var hours: JsonObject
     private val numbers = linkedMapOf<String, DemoNumber>()
-    private val sounds = listOf(welcomeSound to "Welkom bij JEST Bouw", closedSound to "Buiten kantoortijd", "snd-wacht" to "Wachtmuziek")
+    private val sounds = listOf(welcomeSound to "Welkomstbericht", closedSound to "Buiten kantoortijd", "snd-muziek" to "Wachtmuziek")
 
     private class DemoNumber(
         val id: String,
@@ -190,9 +190,7 @@ class DemoPbxHandler(private val now: () -> Long = System::currentTimeMillis) : 
                 put("hours", JsonArray(listOf(withSync(hours)))); put("targets", targets()); put("holidayRules", holidayRules())
             })
             request.matches("PATCH", "pbx", "hours", "*") -> patchHours(request)
-            request.matches("GET", "pbx", "sounds") -> demoJson(200, buildJsonObject {
-                put("sounds", JsonArray(sounds.map { (id, name) -> buildJsonObject { put("id", id); put("name", name) } }))
-            })
+            // GET pbx/sounds is answered by the sounds demo handler (the same sounds, with their uses and playback).
             request.matches("GET", "pbx", "numbers") -> demoJson(200, buildJsonObject { put("numbers", JsonArray(numbers.values.map(::entry))) })
             request.matches("GET", "pbx", "numbers", "*", "chain") -> numbers[segments[2]]?.let { demoJson(200, chain(it)) } ?: demoError(404, "not_found")
             request.matches("PUT", "pbx", "numbers", "*", "chain", "*") -> putStep(request)
