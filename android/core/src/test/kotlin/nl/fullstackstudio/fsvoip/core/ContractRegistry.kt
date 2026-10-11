@@ -8,7 +8,7 @@ package nl.fullstackstudio.fsvoip.core
 object ContractRegistry {
     val features: List<() -> Set<String>> = listOf(
         // { CallsContractTest().coverage() },
-        // { PbxContractTest().coverage() },
+        { PbxContractTest().coverage() },
         // { ContactsContractTest().coverage() },
     )
 }
