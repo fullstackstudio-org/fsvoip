@@ -61,7 +61,19 @@ interface SipEngine {
     fun refreshRegistration(account: SipAccountId)
 
     // Calls
-    fun call(number: String, account: SipAccountId): CallId
+    /** Start an outgoing call. [options] ride along on the INVITE ([CallOptions.headers]); an incoming call never has them. */
+    fun call(number: String, account: SipAccountId, options: CallOptions): CallId
+
+    /** An outgoing call without options. */
+    fun call(number: String, account: SipAccountId): CallId = call(number, account, CallOptions.NONE)
+
+    /**
+     * The SIP `Call-ID` of this call's dialog as the PBX sees it, read from the stack NOW (not cached at call creation: for an
+     * outgoing call the stack may only know it once the INVITE left). `null` when the stack has none (yet). The default returns
+     * the engine id itself, for engines whose ids already are the SIP Call-ID (fakes, the null engine).
+     */
+    fun sipCallId(call: CallId): String? = call.raw.ifEmpty { null }
+
     fun answer(call: CallId)
 
     /** Reject an incoming call that was not answered: 603 Decline or 486 Busy Here. */
@@ -95,7 +107,7 @@ class NullSipEngine : SipEngine {
     override fun registrationState(account: SipAccountId): RegistrationState = RegistrationState.Unregistered
     override fun setRegistrationEnabled(enabled: Boolean, account: SipAccountId) = Unit
     override fun refreshRegistration(account: SipAccountId) = Unit
-    override fun call(number: String, account: SipAccountId): CallId = throw SipEngineException.NotStarted()
+    override fun call(number: String, account: SipAccountId, options: CallOptions): CallId = throw SipEngineException.NotStarted()
     override fun answer(call: CallId) = throw SipEngineException.UnknownCall(call)
     override fun decline(call: CallId, reason: DeclineReason) = throw SipEngineException.UnknownCall(call)
     override fun hangup(call: CallId) = throw SipEngineException.UnknownCall(call)

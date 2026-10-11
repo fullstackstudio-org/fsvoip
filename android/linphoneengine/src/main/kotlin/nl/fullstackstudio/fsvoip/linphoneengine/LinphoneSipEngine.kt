@@ -26,6 +26,7 @@ import nl.fullstackstudio.fsvoip.sipengine.CallDirection
 import nl.fullstackstudio.fsvoip.sipengine.CallEndReason
 import nl.fullstackstudio.fsvoip.sipengine.CallId
 import nl.fullstackstudio.fsvoip.sipengine.CallInfo
+import nl.fullstackstudio.fsvoip.sipengine.CallOptions
 import nl.fullstackstudio.fsvoip.sipengine.CallState
 import nl.fullstackstudio.fsvoip.sipengine.DeclineReason
 import nl.fullstackstudio.fsvoip.sipengine.DtmfDigit
@@ -261,7 +262,7 @@ class LinphoneSipEngine(
 
     // MARK: Calls
 
-    override fun call(number: String, account: SipAccountId): CallId {
+    override fun call(number: String, account: SipAccountId, options: CallOptions): CallId {
         val core = requireCore()
         val existing = accounts[account] ?: throw SipEngineException.UnknownAccount(account)
         val config = accountConfigs[account] ?: throw SipEngineException.UnknownAccount(account)
@@ -274,6 +275,7 @@ class LinphoneSipEngine(
         val params = core.createCallParams(null) ?: throw SipEngineException.Engine("no call params")
         params.account = existing
         params.isVideoEnabled = false
+        apply(options) { name, value -> params.addCustomHeader(name, value) }
 
         val call = core.inviteAddressWithParams(address, params) ?: throw SipEngineException.Engine("The call could not be started")
         val id = track(call)
@@ -281,6 +283,13 @@ class LinphoneSipEngine(
 
         return id
     }
+
+    /**
+     * The SIP Call-ID of the dialog, read live from the call log. 🚨 Not [CallId.raw]: [track] fixes the engine id when the call
+     * object is first seen, and for an outgoing call `inviteAddressWithParams` can return before the INVITE (and its Call-ID)
+     * exists, so the engine id is then a random UUID the PBX never heard of (parking an outgoing call gave `call_not_found`).
+     */
+    override fun sipCallId(call: CallId): String? = nonEmpty(callsById[call]?.callLog?.callId)
 
     override fun answer(call: CallId) {
         val linphoneCall = requireCall(call)
@@ -498,6 +507,13 @@ class LinphoneSipEngine(
 
     companion object {
         const val FSS_CALL_HEADER = "X-FSS-Call"
+
+        /** Put the headers of [options] on the INVITE that [sink] will become. Exactly the ones [CallOptions.headers] lists. */
+        fun apply(options: CallOptions, sink: (name: String, value: String) -> Unit) {
+            for (header in options.headers) {
+                sink(header.name, header.value)
+            }
+        }
 
         fun transport(transport: SipTransport): TransportType = when (transport) {
             SipTransport.UDP -> TransportType.Udp

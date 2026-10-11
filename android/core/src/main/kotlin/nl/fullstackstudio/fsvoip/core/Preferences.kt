@@ -11,6 +11,11 @@ data class AccountPreferences(
      * applies (on when several accounts are paired, plan D10).
      */
     val showCalledAccount: Boolean? = null,
+    /**
+     * The national number the user last chose to call out with ("Bellen via"); `null` = the default number of the PBX. Only ever read
+     * together with `AppCapabilities.callerChoice`. Never sent anywhere except as the header of a call.
+     */
+    val outboundNumber: String? = null,
 ) {
     fun effectiveShowCalledAccount(accountCount: Int): Boolean = showCalledAccount ?: (accountCount > 1)
 }
