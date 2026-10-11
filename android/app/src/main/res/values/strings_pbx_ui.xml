@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="adm_ui_back">Terug</string>
+    <string name="adm_ui_less">Minder</string>
+    <string name="adm_ui_more">Meer</string>
+    <string name="adm_ui_ok">OK</string>
+    <string name="adm_ui_discard_title">Wijzigingen weggooien?</string>
+    <string name="adm_ui_discard_message">Je wijzigingen zijn nog niet opgeslagen.</string>
+    <string name="adm_ui_discard_confirm">Weggooien</string>
+    <string name="adm_ui_discard_keep">Verder bewerken</string>
+    <string name="adm_pbx_error_notAvailable">Dit is op dit toestel niet beschikbaar.</string>
+    <string name="adm_pbx_overview_loadFailed">De centrale kon niet worden geladen.</string>
+</resources>

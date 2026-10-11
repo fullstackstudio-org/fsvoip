@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="adm_ui_back">Back</string>
+    <string name="adm_ui_less">Less</string>
+    <string name="adm_ui_more">More</string>
+    <string name="adm_ui_ok">OK</string>
+    <string name="adm_ui_discard_title">Discard changes?</string>
+    <string name="adm_ui_discard_message">Your changes have not been saved yet.</string>
+    <string name="adm_ui_discard_confirm">Discard</string>
+    <string name="adm_ui_discard_keep">Keep editing</string>
+    <string name="adm_pbx_error_notAvailable">This is not available on this device.</string>
+    <string name="adm_pbx_overview_loadFailed">The phone system could not be loaded.</string>
+</resources>
