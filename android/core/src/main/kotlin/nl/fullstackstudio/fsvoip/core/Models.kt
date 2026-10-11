@@ -130,6 +130,8 @@ data class ContactsInfo(
     @SerialName("internal") val hasInternal: Boolean,
     /** Number of customer contact lists in the portal. */
     val listsAvailable: Int,
+    /** Number of customer contacts (`GET /contacts`). Only in `GET /me` of a server with the contacts API; `null` otherwise. */
+    val total: Int? = null,
 )
 
 @Serializable
