@@ -140,15 +140,6 @@ fun CallPreferencesScreen(model: AppModel, accountId: String, back: () -> Unit) 
                 }
             }
 
-            OutlinedTextField(
-                value = draft.email,
-                onValueChange = { draft = draft.copy(email = it) },
-                label = { Text(stringResource(R.string.profile_email)) },
-                placeholder = { Text(stringResource(R.string.profile_email_placeholder)) },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).testTag("prefs-email-field"),
-            )
         }
 
         Column(Modifier.padding(16.dp)) {
@@ -196,7 +187,7 @@ private sealed interface Message {
 }
 
 @Composable
-private fun failureText(failure: SelfExtensionFailure): String = when (failure) {
+internal fun failureText(failure: SelfExtensionFailure): String = when (failure) {
     SelfExtensionFailure.AccessDenied -> stringResource(R.string.self_error_denied)
     SelfExtensionFailure.Revoked -> stringResource(R.string.self_error_revoked)
     SelfExtensionFailure.ReadOnly -> stringResource(R.string.self_error_denied)
@@ -213,7 +204,7 @@ private fun failureText(failure: SelfExtensionFailure): String = when (failure) 
 }
 
 @Composable
-private fun StepperRow(text: String, onMinus: () -> Unit, onPlus: () -> Unit) {
+internal fun StepperRow(text: String, onMinus: () -> Unit, onPlus: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f).testTag("prefs-noanswer-seconds"))
         IconButton(onClick = onMinus) { Icon(Icons.Filled.Remove, contentDescription = null) }
@@ -223,7 +214,7 @@ private fun StepperRow(text: String, onMinus: () -> Unit, onPlus: () -> Unit) {
 
 /** A row that shows a destination by name and opens a list to pick another one (a colleague, a group, a voicemail box, an external number). */
 @Composable
-private fun TargetChoiceRow(title: String, target: PbxTarget?, options: List<PbxTargetOption>, noneLabel: String, tag: String, onChange: (PbxTarget?) -> Unit) {
+internal fun TargetChoiceRow(title: String, target: PbxTarget?, options: List<PbxTargetOption>, noneLabel: String, tag: String, onChange: (PbxTarget?) -> Unit) {
     var open by remember { mutableStateOf(false) }
     val gone = stringResource(R.string.pbx_target_gone)
 
@@ -284,7 +275,7 @@ private fun TargetChoiceRow(title: String, target: PbxTarget?, options: List<Pbx
 }
 
 @Composable
-private fun ChoiceLine(text: String, selected: Boolean, onClick: () -> Unit) {
+internal fun ChoiceLine(text: String, selected: Boolean, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         RadioButton(selected = selected, onClick = onClick)
         Text(text, style = MaterialTheme.typography.bodyLarge)

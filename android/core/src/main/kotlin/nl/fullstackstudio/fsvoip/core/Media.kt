@@ -72,6 +72,9 @@ interface MediaServicing {
 
     /** URL and headers for a player. */
     fun voicemailSource(account: StoredAccount, boxId: String, ref: String): MediaSource
+
+    /** URL and headers for a player: the recording of a call (admin only). */
+    fun recordingSource(account: StoredAccount, callId: String): MediaSource
 }
 
 class LiveMediaService(private val api: FsVoipApiClient, private val locale: () -> String = { "nl" }) : MediaServicing {
@@ -86,6 +89,8 @@ class LiveMediaService(private val api: FsVoipApiClient, private val locale: () 
     }
 
     override fun voicemailSource(account: StoredAccount, boxId: String, ref: String): MediaSource = client(account).voicemailAudio(boxId, ref)
+
+    override fun recordingSource(account: StoredAccount, callId: String): MediaSource = client(account).recordingAudio(callId)
 }
 
 // MARK: History

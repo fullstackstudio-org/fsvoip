@@ -40,6 +40,8 @@ private class FakeMedia : MediaServicing {
     }
 
     override fun voicemailSource(account: StoredAccount, boxId: String, ref: String) = MediaSource("https://example.test/$boxId/$ref/audio", mapOf("Authorization" to "Bearer t"))
+
+    override fun recordingSource(account: StoredAccount, callId: String) = MediaSource("https://example.test/calls/$callId/recording", mapOf("Authorization" to "Bearer t"))
 }
 
 class HistoryModelTest {

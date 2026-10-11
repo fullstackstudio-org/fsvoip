@@ -125,6 +125,18 @@ sealed interface SettingsPage {
     data object Licenses : SettingsPage
 
     data class CallPreferences(val id: String) : SettingsPage
+
+    // "Beheer" (administrator pairings)
+    data class Devices(val id: String) : SettingsPage
+
+    data class DeviceEdit(val id: String, val deviceId: String) : SettingsPage
+
+    data class RingGroups(val id: String) : SettingsPage
+
+    /** [groupId] `null` = a new group. */
+    data class RingGroupEdit(val id: String, val groupId: String?) : SettingsPage
+
+    data class Recordings(val id: String) : SettingsPage
 }
 
 @Composable

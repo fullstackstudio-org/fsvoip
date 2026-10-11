@@ -8,7 +8,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -24,7 +27,7 @@ sealed class ApiException(message: String) : Exception(message) {
     class RateLimited(val retryAfterSeconds: Int?) : ApiException("rate_limited")
 
     /** 400: the app sent something the server does not accept (a bug in the app). `code`: `resync`, `invalid_phone`, ... */
-    class InvalidRequest(val detail: String?, val code: String? = null, val field: String? = null) : ApiException("invalid_request")
+    class InvalidRequest(val detail: String?, val code: String? = null, val field: String? = null, val error: String = "invalid_request") : ApiException("invalid_request")
 
     /** 403: this pairing may not do that. `required` = the role that is needed, `field` = the extension field a `user` may not change. */
     class Forbidden(val required: String?, val field: String?) : ApiException("forbidden")
@@ -33,7 +36,21 @@ sealed class ApiException(message: String) : Exception(message) {
     class CallNotFound : ApiException("call_not_found")
 
     /** 409: `stale`, `read_only`, `no_free_slot`, `park_unavailable`, `park_busy`, `in_use`, `conflict` (`code`), ... */
-    class Conflict(val error: String, val code: String?, val version: Int?) : ApiException(error)
+    class Conflict(
+        val error: String,
+        val code: String?,
+        val version: Int?,
+        /** `in_use`: where the object is still used. */
+        val places: JsonElement? = null,
+        /** `stale` of a number chain: the fresh chain, best effort. */
+        val chain: JsonElement? = null,
+    ) : ApiException(error)
+
+    /** 422 `blocked_destination`: a block list stops these external numbers. */
+    class BlockedDestination(val numbers: List<String>) : ApiException("blocked_destination")
+
+    /** 422 `cost_not_accepted`: the call recording costs money and was not accepted yet. */
+    class CostNotAccepted(val cost: RecordingCost?) : ApiException("cost_not_accepted")
 
     /** 410: the audio is past its retention period (recordings 90 days, voicemail 30 days). */
     class Gone : ApiException("gone")
@@ -58,6 +75,9 @@ sealed class ApiException(message: String) : Exception(message) {
     class UnexpectedStatus(val status: Int) : ApiException("status $status")
 }
 
+/** A body that is not JSON (a multipart upload). */
+class RawBody(val bytes: ByteArray, val contentType: String)
+
 /** Where a media player fetches audio from, and the headers it must send. Never print it: the headers hold the device token. */
 class MediaSource(val url: String, val headers: Map<String, String>) {
     override fun toString(): String = "MediaSource(•••)"
@@ -69,6 +89,8 @@ data class HttpRequest(
     val url: String,
     val headers: Map<String, String>,
     val body: ByteArray?,
+    /** `null` = JSON. Set for a multipart upload (with its boundary). */
+    val contentType: String? = null,
 ) {
     // Never print headers or the body: they carry the device token or the SIP password.
     override fun toString(): String = "HttpRequest($method $url)"
@@ -97,7 +119,7 @@ class OkHttpTransport(
     override suspend fun send(request: HttpRequest): HttpResponse = withContext(Dispatchers.IO) {
         // POST, PUT and PATCH need a body even when there is nothing to send (`POST /unpair`).
         val body = (request.body ?: if (request.method in setOf("POST", "PUT", "PATCH")) ByteArray(0) else null)
-            ?.toRequestBody("application/json".toMediaType())
+            ?.toRequestBody((request.contentType ?: "application/json").toMediaType())
         val builder = Request.Builder().url(request.url).method(request.method, body)
         request.headers.forEach { (name, value) -> builder.header(name, value) }
 
@@ -168,6 +190,21 @@ class FsVoipApiClient(
     suspend fun hangupParked(id: String): OkResponse =
         perform("DELETE", "parked/${segment(id)}", null, authenticated = true, OkResponse.serializer())
 
+    // MARK: The PBX (admin pairings)
+
+    suspend fun pbxDevices(): PbxDevices = perform("GET", "pbx/devices", null, authenticated = true, PbxDevices.serializer())
+
+    suspend fun patchPbxDevice(id: String, patch: PbxDevicePatch): OkResponse =
+        perform("PATCH", "pbx/devices/${segment(id)}", patch.toJson(), authenticated = true, OkResponse.serializer())
+
+    suspend fun pbxRingGroups(): PbxRingGroups = perform("GET", "pbx/ring-groups", null, authenticated = true, PbxRingGroups.serializer())
+
+    suspend fun createPbxRingGroup(create: PbxRingGroupCreate): PbxRingGroupCreated =
+        perform("POST", "pbx/ring-groups", create.toJson(), authenticated = true, PbxRingGroupCreated.serializer())
+
+    suspend fun patchPbxRingGroup(id: String, patch: PbxRingGroupPatch): OkResponse =
+        perform("PATCH", "pbx/ring-groups/${segment(id)}", patch.toJson(), authenticated = true, OkResponse.serializer())
+
     // MARK: Media
 
     /**
@@ -179,6 +216,16 @@ class FsVoipApiClient(
 
         return MediaSource(
             url = "${baseUrl.trimEnd('/')}/voicemail/${segment(boxId)}/${segment(ref)}/audio",
+            headers = mapOf("Authorization" to "Bearer ${token.reveal()}", "User-Agent" to userAgent, "Accept" to "audio/*"),
+        )
+    }
+
+    /** The audio of a call recording (admin only): the URL and the headers a player needs. */
+    fun recordingAudio(callId: String): MediaSource {
+        val token = deviceToken ?: throw ApiException.MissingDeviceToken()
+
+        return MediaSource(
+            url = "${baseUrl.trimEnd('/')}/calls/${segment(callId)}/recording",
             headers = mapOf("Authorization" to "Bearer ${token.reveal()}", "User-Agent" to userAgent, "Accept" to "audio/*"),
         )
     }
@@ -250,6 +297,7 @@ class FsVoipApiClient(
         authenticated: Boolean,
         extraHeaders: Map<String, String> = emptyMap(),
         accept: Set<Int> = emptySet(),
+        raw: RawBody? = null,
     ): HttpResponse {
         val headers = linkedMapOf(
             "Accept" to "application/json",
@@ -263,17 +311,21 @@ class FsVoipApiClient(
             headers["Authorization"] = "Bearer ${token.reveal()}"
         }
 
-        val bytes = body?.let {
+        val bytes = raw?.bytes ?: body?.let {
             headers["Content-Type"] = "application/json"
             FsJson.default.encodeToString(JsonElement.serializer(), it).toByteArray(Charsets.UTF_8)
         }
 
+        if (raw != null) {
+            headers["Content-Type"] = raw.contentType
+        }
+
         // Never log bodies, queries or headers: the pair response carries the SIP password, a path can hold a message reference.
-        val label = path.substringBefore('?').let { if (it.startsWith("voicemail/") || it.startsWith("parked/")) it.substringBefore('/') + "/…" else it }
+        val label = path.substringBefore('?').let { if (it.startsWith("voicemail/") || it.startsWith("parked/") || it.startsWith("calls/") && it.endsWith("/recording")) it.substringBefore('/') + "/…" else it }
         logger.debug("$method /$label")
 
         val response = try {
-            transport.send(HttpRequest(method, "${baseUrl.trimEnd('/')}/$path", headers, bytes))
+            transport.send(HttpRequest(method, "${baseUrl.trimEnd('/')}/$path", headers, bytes, raw?.contentType))
         } catch (error: ApiException) {
             throw error
         } catch (error: IOException) {
@@ -311,14 +363,19 @@ class FsVoipApiClient(
             val retryAfter = response.header("Retry-After")?.trim()?.toIntOrNull()
 
             return when (response.status) {
-                400 -> ApiException.InvalidRequest(body?.message, body?.code, body?.field)
+                400 -> ApiException.InvalidRequest(body?.message, body?.code, body?.field, body?.error ?: "invalid_request")
                 401 -> ApiException.Unauthorized()
                 403 -> ApiException.Forbidden(body?.required, body?.field)
                 404 -> if (body?.error == "call_not_found") ApiException.CallNotFound() else ApiException.NotFound()
-                409 -> ApiException.Conflict(body?.error ?: "conflict", body?.code, body?.version)
+                409 -> ApiException.Conflict(body?.error ?: "conflict", body?.code, body?.version, body?.places, body?.chain)
                 410 -> ApiException.Gone()
                 413 -> ApiException.PayloadTooLarge()
                 416 -> ApiException.RangeNotSatisfiable()
+                422 -> when (body?.error) {
+                    "blocked_destination" -> ApiException.BlockedDestination((body.blocked as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.orEmpty())
+                    "cost_not_accepted" -> ApiException.CostNotAccepted(body.cost?.let { runCatching { FsJson.default.decodeFromJsonElement(RecordingCost.serializer(), it) }.getOrNull() })
+                    else -> ApiException.UnexpectedStatus(422)
+                }
                 429 -> ApiException.RateLimited(retryAfter)
                 503 -> if (body?.error == "park_uncertain") ApiException.ParkUncertain() else ApiException.Unavailable(body?.retryable ?: true, retryAfter)
                 else -> ApiException.UnexpectedStatus(response.status)

@@ -6,10 +6,10 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.lifecycleScope
 import java.util.UUID
 import kotlinx.coroutines.CompletableDeferred
@@ -18,7 +18,7 @@ import kotlinx.coroutines.launch
 import nl.fullstackstudio.fsvoip.AppServices
 import nl.fullstackstudio.fsvoip.PermissionRequester
 
-class MainActivity : ComponentActivity(), PermissionRequester {
+class MainActivity : FragmentActivity(), PermissionRequester {
     private val services by lazy { AppServices.get(this) }
     private var pendingPermission: CompletableDeferred<Boolean>? = null
 
@@ -32,6 +32,7 @@ class MainActivity : ComponentActivity(), PermissionRequester {
         super.onCreate(savedInstanceState)
 
         services.model.permissions = this
+        services.biometric.attach(this)
 
         setContent {
             FsVoipTheme {
@@ -57,6 +58,7 @@ class MainActivity : ComponentActivity(), PermissionRequester {
 
     override fun onDestroy() {
         if (services.model.permissions === this) services.model.permissions = null
+        services.biometric.detach(this)
         super.onDestroy()
     }
 

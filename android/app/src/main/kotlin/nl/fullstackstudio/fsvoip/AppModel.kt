@@ -63,6 +63,8 @@ class AppModel(
     private val accountStore: nl.fullstackstudio.fsvoip.core.AccountStore,
     private val service: AccountServicing,
     val selfExtension: SelfExtensionHub,
+    val pbx: nl.fullstackstudio.fsvoip.core.PbxHub,
+    val localAccess: nl.fullstackstudio.fsvoip.core.LocalAccessGate,
     val history: HistoryModel,
     val park: nl.fullstackstudio.fsvoip.core.ParkModel,
     val mediaService: MediaServicing,
@@ -161,6 +163,10 @@ class AppModel(
         park.onRevoked = { scope.launch { refreshAccounts() } }
         contacts.onUnauthorized = { scope.launch { refreshAccounts() } }
 
+        // A 401 on the "Centrale" routes: the pairing is gone. A 403: the role was taken away; `GET /me` shows what it is now.
+        pbx.onRevoked = { scope.launch { refreshAccounts() } }
+        pbx.onDenied = { scope.launch { refreshAccounts() } }
+
         // A call takes the speaker and the microphone: nothing else plays during it.
         scope.launch {
             phone.sessions.collect { sessions ->
@@ -197,7 +203,17 @@ class AppModel(
                 when (val result = service.refresh(account)) {
                     is AccountRefreshResult.Updated -> {
                         _internalContacts.value = _internalContacts.value + (result.account.id to result.internalContacts)
+                        val wasAdmin = _me.value[result.account.id]?.canManagePbx == true
                         _me.value = _me.value + (result.account.id to result.me)
+
+                        // The role was taken away: the admin sections disappear, the local check closes, and the user hears why.
+                        if (!result.me.canManagePbx) {
+                            pbx.forget(result.account.id)
+                            if (wasAdmin) {
+                                localAccess.lock()
+                                _notice.value = Notice(string(R.string.pbx_error_accessLost), isError = true)
+                            }
+                        }
 
                         contacts.setInternal(result.account.id, result.internalContacts)
 
@@ -472,14 +488,31 @@ class AppModel(
 
     /** Plays a message. Not during a call; the audio bar shows what plays. */
     fun playVoicemail(account: StoredAccount, message: VoicemailMessage, title: String, subtitle: String) {
+        playMedia("${account.id}/${message.key}", voicemailModel(account).source(message), title, subtitle)
+    }
+
+    /** Plays the recording of a call (admin only; the server refuses anyone else). */
+    fun playRecording(account: StoredAccount, callId: String, title: String, subtitle: String) {
+        playMedia("${account.id}/recording/$callId", mediaService.recordingSource(account, callId), title, subtitle)
+    }
+
+    /** Whether this pairing may listen to recordings: an administrator, and the server says so. */
+    fun canPlayRecordings(accountId: String): Boolean = _me.value[accountId]?.let { it.canManagePbx && it.capabilities?.recordings == true } ?: false
+
+    /** Whether the "Centrale" sections are shown for this account. */
+    fun canManagePbx(accountId: String): Boolean = _me.value[accountId]?.canManagePbx == true
+
+    /** Frozen or still being set up: everything can be looked at, nothing can be changed. */
+    fun isPbxReadOnly(accountId: String): Boolean = _me.value[accountId]?.pbx?.readOnly ?: false
+
+    private fun playMedia(id: String, source: nl.fullstackstudio.fsvoip.core.MediaSource, title: String, subtitle: String) {
         if (phone.sessions.value.isNotEmpty()) {
             _notice.value = Notice(string(R.string.media_error_callInProgress), isError = true)
             return
         }
 
-        val source = voicemailModel(account).source(message)
-        _nowPlaying.value = NowPlaying("${account.id}/${message.key}", title, subtitle)
-        player.play("${account.id}/${message.key}", source)
+        _nowPlaying.value = NowPlaying(id, title, subtitle)
+        player.play(id, source)
     }
 
     fun stopPlayer() {
@@ -651,6 +684,7 @@ class AppModel(
         selfExtension.forget(accountId)
         history.forget(accountId)
         park.forget(accountId)
+        pbx.forget(accountId)
         voicemailModels.remove(accountId)
         if (_nowPlaying.value?.id?.startsWith("$accountId/") == true) stopPlayer()
         _settingsRevision.value++

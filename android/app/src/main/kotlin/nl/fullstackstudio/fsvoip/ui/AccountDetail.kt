@@ -29,6 +29,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.time.ZoneId
@@ -37,6 +38,9 @@ import java.time.format.FormatStyle
 import kotlinx.coroutines.launch
 import nl.fullstackstudio.fsvoip.AppModel
 import nl.fullstackstudio.fsvoip.R
+import nl.fullstackstudio.fsvoip.core.SelfExtensionDraft
+import nl.fullstackstudio.fsvoip.core.SelfExtensionFailure
+import nl.fullstackstudio.fsvoip.core.SelfExtensionSaveOutcome
 import nl.fullstackstudio.fsvoip.core.ServerTransport
 import nl.fullstackstudio.fsvoip.core.StoredAccount
 import nl.fullstackstudio.fsvoip.pairing.AccountService
@@ -72,7 +76,33 @@ fun AccountDetailScreen(model: AppModel, accountId: String, back: () -> Unit) {
         }
     }
 
-    SubpageScaffold(account.displayLabel, back) {
+    val own by model.selfExtension.states.collectAsStateWithLifecycle()
+    val ownState = own[account.id]
+    val offersEmail = model.meOf(account.id)?.canEditOwnExtension == true && ownState != null
+    var email by remember(account.id, ownState?.email) { mutableStateOf(ownState?.email.orEmpty()) }
+    var savingEmail by remember { mutableStateOf(false) }
+    var emailFailure by remember { mutableStateOf<SelfExtensionFailure?>(null) }
+    val emailChanged = ownState != null && email.trim() != ownState.email.orEmpty().trim()
+
+    LaunchedEffect(account.id) {
+        if (model.meOf(account.id)?.canEditOwnExtension == true) model.selfExtension.load(account)
+    }
+
+    fun saveEmail() {
+        val state = ownState ?: return
+        if (!emailChanged || savingEmail) return
+        val original = SelfExtensionDraft.of(state)
+        savingEmail = true
+        scope.launch {
+            when (val outcome = model.selfExtension.save(original.copy(email = email), original, account)) {
+                is SelfExtensionSaveOutcome.Failed -> emailFailure = outcome.failure
+                else -> emailFailure = null
+            }
+            savingEmail = false
+        }
+    }
+
+    SubpageScaffold(stringResource(R.string.settings_profile), back) {
         Column {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(account.displayLabel, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
@@ -83,6 +113,34 @@ fun AccountDetailScreen(model: AppModel, accountId: String, back: () -> Unit) {
             }
             if (state is RegistrationState.Failed) {
                 ActionRow(stringResource(R.string.account_reconnect), null) { model.phone.refreshRegistrations() }
+            }
+        }
+
+        section(stringResource(R.string.profile_device), stringResource(R.string.profile_device_footer)) {
+            ValueRow(stringResource(R.string.profile_device_name), account.extensionName)
+            account.extensionNumber?.let { ValueRow(stringResource(R.string.profile_device_number), it) }
+        }
+
+        if (offersEmail) {
+            section(stringResource(R.string.profile_email), stringResource(R.string.profile_email_footer)) {
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = { email = it },
+                    placeholder = { Text(stringResource(R.string.profile_email_placeholder)) },
+                    singleLine = true,
+                    isError = emailFailure != null,
+                    supportingText = emailFailure?.let { failure -> { Text(failureText(failure)) } },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { saveEmail() }),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("profile-email-field"),
+                )
+
+                if (emailChanged) {
+                    Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = { saveEmail() }, enabled = !savingEmail, modifier = Modifier.testTag("profile-email-save")) { Text(stringResource(R.string.action_save)) }
+                        if (savingEmail) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    }
+                }
             }
         }
 

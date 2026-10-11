@@ -106,6 +106,10 @@ dependencies {
     // Voicemail (and later recordings): ExoPlayer with the device token in the request headers, Range for seeking.
     implementation(libs.androidx.media3.exoplayer)
 
+    // The local check (fingerprint, face or screen lock) in front of the "Centrale" section and the recordings.
+    implementation(libs.androidx.biometric)
+    implementation(libs.androidx.fragment)
+
     // FCM. Always compiled in; only active when google-services.json was present at build time.
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.messaging)

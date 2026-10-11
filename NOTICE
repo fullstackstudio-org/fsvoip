@@ -66,7 +66,8 @@ Other components of the Android app (all Apache-2.0):
   - AndroidX (core, activity, lifecycle, Jetpack Compose, Material 3, Material icons) (Google / AOSP)
   - Firebase Cloud Messaging (Google), only used when the build has a google-services.json
   - OkHttp and Okio (Square)
-  - AndroidX Media3 / ExoPlayer (Google) for playing voicemail
+  - AndroidX Media3 / ExoPlayer (Google) for playing voicemail and recordings
+  - AndroidX Biometric (Google) for the local check in front of the administrator sections
   - ZXing core and zxing-android-embedded (ZXing authors, JourneyApps) for the QR scanner
 
 Build and test tooling (not part of the app)

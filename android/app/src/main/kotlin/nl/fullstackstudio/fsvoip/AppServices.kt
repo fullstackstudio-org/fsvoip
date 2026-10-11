@@ -59,6 +59,7 @@ class AppServices private constructor(context: Context) {
     val phone: PhoneController
     val model: AppModel
     val pushTokens: PushTokenReporter
+    val biometric: BiometricAuthenticator
 
     /** The current FCM token (kept in memory only), for `POST /pair`. */
     @Volatile
@@ -78,6 +79,7 @@ class AppServices private constructor(context: Context) {
         }
 
         val version = BuildConfig.VERSION_NAME
+        biometric = BiometricAuthenticator(appContext)
         val accounts = AccountStore(secrets)
         val preferences = KeyValuePreferencesStore(plain)
         val api = FsVoipApiClient(baseUrl = BuildConfig.API_BASE_URL, transport = OkHttpTransport(), userAgent = "FSVoip/$version (Android)")
@@ -112,6 +114,8 @@ class AppServices private constructor(context: Context) {
             accountStore = accounts,
             service = AccountService(api, accounts),
             selfExtension = SelfExtensionHub(LiveSelfExtensionService(api)),
+            pbx = nl.fullstackstudio.fsvoip.core.PbxHub(nl.fullstackstudio.fsvoip.core.LivePbxService(api)),
+            localAccess = nl.fullstackstudio.fsvoip.core.LocalAccessGate(biometric),
             history = HistoryModel(media),
             park = nl.fullstackstudio.fsvoip.core.ParkModel(nl.fullstackstudio.fsvoip.core.LiveParkService(api)),
             mediaService = media,

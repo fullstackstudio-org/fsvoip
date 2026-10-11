@@ -17,6 +17,8 @@ zxingEmbedded = "4.3.0"
 junit = "4.13.2"
 okhttp = "4.12.0"
 media3 = "1.8.0"
+biometric = "1.1.0"
+fragment = "1.8.9"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -40,6 +42,8 @@ linphone = { group = "org.linphone.no-video", name = "linphone-sdk-android", ver
 zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxingCore" }
 zxing-embedded = { group = "com.journeyapps", name = "zxing-android-embedded", version.ref = "zxingEmbedded" }
 androidx-media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", version.ref = "media3" }
+androidx-biometric = { group = "androidx.biometric", name = "biometric", version.ref = "biometric" }
+androidx-fragment = { group = "androidx.fragment", name = "fragment", version.ref = "fragment" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 

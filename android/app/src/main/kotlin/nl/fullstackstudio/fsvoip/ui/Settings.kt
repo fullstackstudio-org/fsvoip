@@ -72,6 +72,11 @@ fun SettingsNavigation(model: AppModel, stack: SnapshotStateList<SettingsPage>, 
         null -> SettingsScreen(model, open = { stack.add(it) }, close = close)
         is SettingsPage.Account -> AccountDetailScreen(model, page.id, back = { stack.removeAt(stack.lastIndex) })
         is SettingsPage.CallPreferences -> CallPreferencesScreen(model, page.id, back = { stack.removeAt(stack.lastIndex) })
+        is SettingsPage.Devices -> DevicesScreen(model, page.id, open = { stack.add(SettingsPage.DeviceEdit(page.id, it)) }, back = { stack.removeAt(stack.lastIndex) })
+        is SettingsPage.DeviceEdit -> DeviceEditScreen(model, page.id, page.deviceId, back = { stack.removeAt(stack.lastIndex) })
+        is SettingsPage.RingGroups -> RingGroupsScreen(model, page.id, open = { stack.add(SettingsPage.RingGroupEdit(page.id, it)) }, back = { stack.removeAt(stack.lastIndex) })
+        is SettingsPage.RingGroupEdit -> RingGroupEditScreen(model, page.id, page.groupId, back = { stack.removeAt(stack.lastIndex) })
+        is SettingsPage.Recordings -> RecordingsScreen(model, page.id, back = { stack.removeAt(stack.lastIndex) })
         SettingsPage.Licenses -> LicensesScreen(back = { stack.removeAt(stack.lastIndex) })
     }
 }
@@ -106,6 +111,7 @@ private fun SettingsScreen(model: AppModel, open: (SettingsPage) -> Unit, close:
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())) {
             OwnExtensionSection(model, open)
+            AdminSection(model, open)
 
             section(stringResource(R.string.settings_lines), stringResource(R.string.settings_lines_footer)) {
                 for (account in accounts) {
@@ -189,7 +195,29 @@ private fun OwnExtensionSection(model: AppModel, open: (SettingsPage) -> Unit) {
             ) { model.setAvailable(it, account.id) }
         }
 
+        LinkRow(stringResource(R.string.settings_profile), account.displayLabel) { open(SettingsPage.Account(account.id)) }
         LinkRow(stringResource(R.string.settings_callPreferences), null) { open(SettingsPage.CallPreferences(account.id)) }
+    }
+}
+
+/** "Beheer": what an administrator of the PBX may set up from the app. Only when `GET /me` says this pairing is an administrator. */
+@Composable
+private fun AdminSection(model: AppModel, open: (SettingsPage) -> Unit) {
+    val accounts by model.accounts.collectAsStateWithLifecycle()
+    model.me.collectAsStateWithLifecycle().value
+    val account = model.defaultOutgoingAccountId?.let { id -> accounts.firstOrNull { it.id == id } } ?: accounts.firstOrNull() ?: return
+
+    if (!model.canManagePbx(account.id)) {
+        return
+    }
+
+    section(stringResource(R.string.settings_admin), stringResource(R.string.settings_admin_footer)) {
+        LinkRow(stringResource(R.string.pbx_devices_title), null) { open(SettingsPage.Devices(account.id)) }
+        LinkRow(stringResource(R.string.pbx_ringGroups_title), null) { open(SettingsPage.RingGroups(account.id)) }
+
+        if (model.canPlayRecordings(account.id)) {
+            LinkRow(stringResource(R.string.media_recordings_title), null) { open(SettingsPage.Recordings(account.id)) }
+        }
     }
 }
 
@@ -294,8 +322,9 @@ fun SwitchRow(title: String, subtitle: String?, checked: Boolean, modifier: Modi
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SubpageScaffold(title: String, back: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+fun SubpageScaffold(title: String, back: () -> Unit, bottomBar: @Composable () -> Unit = {}, content: @Composable ColumnScope.() -> Unit) {
     Scaffold(
+        bottomBar = bottomBar,
         topBar = {
             TopAppBar(
                 title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
