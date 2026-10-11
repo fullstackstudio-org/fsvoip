@@ -205,6 +205,55 @@ class FsVoipApiClient(
     suspend fun patchPbxRingGroup(id: String, patch: PbxRingGroupPatch): OkResponse =
         perform("PATCH", "pbx/ring-groups/${segment(id)}", patch.toJson(), authenticated = true, OkResponse.serializer())
 
+    suspend fun pbxOverview(): PbxOverview = perform("GET", "pbx/overview", null, authenticated = true, PbxOverview.serializer())
+
+    suspend fun pbxHours(): PbxHours = perform("GET", "pbx/hours", null, authenticated = true, PbxHours.serializer())
+
+    suspend fun patchPbxHours(id: String, patch: PbxHoursPatch): OkResponse =
+        perform("PATCH", "pbx/hours/${segment(id)}", patch.toJson(), authenticated = true, OkResponse.serializer())
+
+    suspend fun patchPbxNumberRouting(id: String, patch: PbxRoutingPatch): OkResponse =
+        perform("PATCH", "pbx/numbers/${segment(id)}/routing", patch.toJson(), authenticated = true, OkResponse.serializer())
+
+    suspend fun pbxNumbers(): PbxNumbersPage = perform("GET", "pbx/numbers", null, authenticated = true, PbxNumbersPage.serializer())
+
+    suspend fun pbxNumberChain(id: String): NumberChain = perform("GET", "pbx/numbers/${segment(id)}/chain", null, authenticated = true, NumberChain.serializer())
+
+    /** One step of a chain; answers with the fresh chain. `409 stale` carries the fresh chain in [ApiException.Conflict.chain]. */
+    suspend fun putPbxNumberChainStep(id: String, step: ChainStep, chain: NumberChain): NumberChain =
+        perform("PUT", "pbx/numbers/${segment(id)}/chain/${step.path}", step.request(chain), authenticated = true, NumberChain.serializer())
+
+    suspend fun patchPbxNumberRecording(id: String, patch: NumberRecordingPatch): NumberChain =
+        perform("PATCH", "pbx/numbers/${segment(id)}/recording", patch.toJson(), authenticated = true, NumberChain.serializer())
+
+    suspend fun pbxSounds(): PbxSoundsPage = perform("GET", "pbx/sounds", null, authenticated = true, PbxSoundsPage.serializer())
+
+    /** `POST /pbx/sounds`: exactly the parts `name` and `file`. The server reads the type from the first bytes. */
+    suspend fun uploadPbxSound(name: String, fileName: String, contentType: String, bytes: ByteArray): SoundUploadResponse {
+        val body = Multipart.build(listOf(Multipart.Part.Text("name", name), Multipart.Part.File("file", fileName, contentType, bytes)))
+
+        return decode("pbx/sounds", SoundUploadResponse.serializer(), execute("POST", "pbx/sounds", null, authenticated = true, raw = body))
+    }
+
+    suspend fun renamePbxSound(id: String, name: String): OkResponse =
+        perform("PATCH", "pbx/sounds/${segment(id)}", kotlinx.serialization.json.buildJsonObject { put("name", JsonPrimitive(name)) }, authenticated = true, OkResponse.serializer())
+
+    suspend fun deletePbxSound(id: String): OkResponse = perform("DELETE", "pbx/sounds/${segment(id)}", null, authenticated = true, OkResponse.serializer())
+
+    /** The audio of a sound (admin only): the URL and the headers a player needs. */
+    fun soundAudio(id: String): MediaSource {
+        val token = deviceToken ?: throw ApiException.MissingDeviceToken()
+
+        return MediaSource(
+            url = "${baseUrl.trimEnd('/')}/pbx/sounds/${segment(id)}/audio",
+            headers = mapOf("Authorization" to "Bearer ${token.reveal()}", "User-Agent" to userAgent, "Accept" to "audio/*"),
+        )
+    }
+
+    /** Invite a colleague: a link that pairs their phone with the extension [deviceId] (role `user`). 🚨 A credential: show it once. */
+    suspend fun createPbxDeviceAppPairing(deviceId: String): AppPairingResponse =
+        perform("POST", "pbx/devices/${segment(deviceId)}/app-pairing", null, authenticated = true, AppPairingResponse.serializer())
+
     // MARK: Media
 
     /**
@@ -321,7 +370,7 @@ class FsVoipApiClient(
         }
 
         // Never log bodies, queries or headers: the pair response carries the SIP password, a path can hold a message reference.
-        val label = path.substringBefore('?').let { if (it.startsWith("voicemail/") || it.startsWith("parked/") || it.startsWith("calls/") && it.endsWith("/recording")) it.substringBefore('/') + "/…" else it }
+        val label = path.substringBefore('?').let { if (it.startsWith("voicemail/") || it.startsWith("parked/") || it.contains("app-pairing") || it.startsWith("calls/") && it.endsWith("/recording")) it.substringBefore('/') + "/…" else it }
         logger.debug("$method /$label")
 
         val response = try {

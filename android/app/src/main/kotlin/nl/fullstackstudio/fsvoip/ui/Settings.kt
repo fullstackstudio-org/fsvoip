@@ -77,6 +77,14 @@ fun SettingsNavigation(model: AppModel, stack: SnapshotStateList<SettingsPage>, 
         is SettingsPage.RingGroups -> RingGroupsScreen(model, page.id, open = { stack.add(SettingsPage.RingGroupEdit(page.id, it)) }, back = { stack.removeAt(stack.lastIndex) })
         is SettingsPage.RingGroupEdit -> RingGroupEditScreen(model, page.id, page.groupId, back = { stack.removeAt(stack.lastIndex) })
         is SettingsPage.Recordings -> RecordingsScreen(model, page.id, back = { stack.removeAt(stack.lastIndex) })
+        is SettingsPage.Overview -> PbxOverviewScreen(model, page.id, open = { stack.add(it) }, back = { stack.removeAt(stack.lastIndex) })
+        is SettingsPage.Hours -> HoursScreen(model, page.id, open = { stack.add(SettingsPage.HoursEdit(page.id, it)) }, back = { stack.removeAt(stack.lastIndex) })
+        is SettingsPage.HoursEdit -> HoursEditScreen(model, page.id, page.hoursId, openClosed = { stack.add(SettingsPage.TemporaryClosed(page.id, page.hoursId)) }, back = { stack.removeAt(stack.lastIndex) })
+        is SettingsPage.TemporaryClosed -> TemporaryClosedScreen(model, page.id, page.hoursId, back = { stack.removeAt(stack.lastIndex) })
+        is SettingsPage.Numbers -> NumbersScreen(model, page.id, open = { stack.add(SettingsPage.Number(page.id, it)) }, back = { stack.removeAt(stack.lastIndex) })
+        is SettingsPage.Number -> NumberScreen(model, page.id, page.numberId, openStep = { stack.add(SettingsPage.NumberStep(page.id, page.numberId, it)) }, back = { stack.removeAt(stack.lastIndex) })
+        is SettingsPage.NumberStep -> NumberStepScreen(model, page.id, page.numberId, page.kind, back = { stack.removeAt(stack.lastIndex) })
+        is SettingsPage.Sounds -> SoundsScreen(model, page.id, back = { stack.removeAt(stack.lastIndex) })
         SettingsPage.Licenses -> LicensesScreen(back = { stack.removeAt(stack.lastIndex) })
     }
 }
@@ -212,8 +220,15 @@ private fun AdminSection(model: AppModel, open: (SettingsPage) -> Unit) {
     }
 
     section(stringResource(R.string.settings_admin), stringResource(R.string.settings_admin_footer)) {
+        LinkRow(stringResource(R.string.settings_admin_overview), null) { open(SettingsPage.Overview(account.id)) }
+        LinkRow(stringResource(R.string.settings_admin_numbers), null) { open(SettingsPage.Numbers(account.id)) }
         LinkRow(stringResource(R.string.pbx_devices_title), null) { open(SettingsPage.Devices(account.id)) }
         LinkRow(stringResource(R.string.pbx_ringGroups_title), null) { open(SettingsPage.RingGroups(account.id)) }
+        LinkRow(stringResource(R.string.pbx_hours_title), null) { open(SettingsPage.Hours(account.id)) }
+
+        if (model.canManageSounds(account.id)) {
+            LinkRow(stringResource(R.string.settings_admin_sounds), null) { open(SettingsPage.Sounds(account.id)) }
+        }
 
         if (model.canPlayRecordings(account.id)) {
             LinkRow(stringResource(R.string.media_recordings_title), null) { open(SettingsPage.Recordings(account.id)) }

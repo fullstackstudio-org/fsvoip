@@ -496,6 +496,14 @@ class AppModel(
         playMedia("${account.id}/recording/$callId", mediaService.recordingSource(account, callId), title, subtitle)
     }
 
+    /** Plays a sound of the PBX (welcome message, music, greeting). */
+    fun playSound(account: StoredAccount, sound: nl.fullstackstudio.fsvoip.core.PbxSound) {
+        playMedia("${account.id}/sound/${sound.id}", pbx.soundSource(account, sound.id), sound.name, string(R.string.settings_admin_sounds))
+    }
+
+    /** Whether the sounds may be managed (the server's capability, not only the role). */
+    fun canManageSounds(accountId: String): Boolean = _me.value[accountId]?.let { it.canManagePbx && it.capabilities?.sounds == nl.fullstackstudio.fsvoip.core.SoundsAccess.MANAGE } ?: false
+
     /** Whether this pairing may listen to recordings: an administrator, and the server says so. */
     fun canPlayRecordings(accountId: String): Boolean = _me.value[accountId]?.let { it.canManagePbx && it.capabilities?.recordings == true } ?: false
 

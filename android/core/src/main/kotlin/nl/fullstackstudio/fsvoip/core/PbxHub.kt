@@ -98,6 +98,34 @@ interface PbxServicing {
     suspend fun createRingGroup(account: StoredAccount, create: PbxRingGroupCreate): String
 
     suspend fun patchRingGroup(account: StoredAccount, id: String, patch: PbxRingGroupPatch)
+
+    suspend fun overview(account: StoredAccount): PbxOverview
+
+    suspend fun hours(account: StoredAccount): PbxHours
+
+    suspend fun patchHours(account: StoredAccount, id: String, patch: PbxHoursPatch)
+
+    suspend fun patchRouting(account: StoredAccount, numberId: String, patch: PbxRoutingPatch)
+
+    suspend fun numbers(account: StoredAccount): PbxNumbersPage
+
+    suspend fun chain(account: StoredAccount, numberId: String): NumberChain
+
+    suspend fun putChainStep(account: StoredAccount, numberId: String, step: ChainStep, basedOn: NumberChain): NumberChain
+
+    suspend fun patchRecording(account: StoredAccount, numberId: String, patch: NumberRecordingPatch): NumberChain
+
+    suspend fun sounds(account: StoredAccount): PbxSoundsPage
+
+    suspend fun uploadSound(account: StoredAccount, name: String, fileName: String, contentType: String, bytes: ByteArray): String
+
+    suspend fun renameSound(account: StoredAccount, id: String, name: String)
+
+    suspend fun deleteSound(account: StoredAccount, id: String)
+
+    fun soundSource(account: StoredAccount, id: String): MediaSource
+
+    suspend fun invite(account: StoredAccount, deviceId: String): AppPairingResponse
 }
 
 class LivePbxService(private val api: FsVoipApiClient) : PbxServicing {
@@ -116,12 +144,75 @@ class LivePbxService(private val api: FsVoipApiClient) : PbxServicing {
     override suspend fun patchRingGroup(account: StoredAccount, id: String, patch: PbxRingGroupPatch) {
         client(account).patchPbxRingGroup(id, patch)
     }
+
+    override suspend fun overview(account: StoredAccount): PbxOverview = client(account).pbxOverview()
+
+    override suspend fun hours(account: StoredAccount): PbxHours = client(account).pbxHours()
+
+    override suspend fun patchHours(account: StoredAccount, id: String, patch: PbxHoursPatch) {
+        client(account).patchPbxHours(id, patch)
+    }
+
+    override suspend fun patchRouting(account: StoredAccount, numberId: String, patch: PbxRoutingPatch) {
+        client(account).patchPbxNumberRouting(numberId, patch)
+    }
+
+    override suspend fun numbers(account: StoredAccount): PbxNumbersPage = client(account).pbxNumbers()
+
+    override suspend fun chain(account: StoredAccount, numberId: String): NumberChain = client(account).pbxNumberChain(numberId)
+
+    override suspend fun putChainStep(account: StoredAccount, numberId: String, step: ChainStep, basedOn: NumberChain): NumberChain =
+        client(account).putPbxNumberChainStep(numberId, step, basedOn)
+
+    override suspend fun patchRecording(account: StoredAccount, numberId: String, patch: NumberRecordingPatch): NumberChain =
+        client(account).patchPbxNumberRecording(numberId, patch)
+
+    override suspend fun sounds(account: StoredAccount): PbxSoundsPage = client(account).pbxSounds()
+
+    override suspend fun uploadSound(account: StoredAccount, name: String, fileName: String, contentType: String, bytes: ByteArray): String =
+        client(account).uploadPbxSound(name, fileName, contentType, bytes).soundId
+
+    override suspend fun renameSound(account: StoredAccount, id: String, name: String) {
+        client(account).renamePbxSound(id, name)
+    }
+
+    override suspend fun deleteSound(account: StoredAccount, id: String) {
+        client(account).deletePbxSound(id)
+    }
+
+    override fun soundSource(account: StoredAccount, id: String): MediaSource = client(account).soundAudio(id)
+
+    override suspend fun invite(account: StoredAccount, deviceId: String): AppPairingResponse = client(account).createPbxDeviceAppPairing(deviceId)
+}
+
+/** What saving a step of a number chain gave. */
+sealed interface ChainSaveOutcome {
+    data class Saved(val chain: NumberChain) : ChainSaveOutcome
+
+    /** Changed in the meantime: [fresh] is the new state (also in the hub); what the user typed has not been sent. */
+    data class Stale(val fresh: NumberChain?) : ChainSaveOutcome
+
+    data class Failed(val failure: PbxFailure) : ChainSaveOutcome
 }
 
 /** The PBX objects per account id. Every `suspend` function returns `null` when it worked, otherwise the reason. */
 class PbxHub(private val service: PbxServicing) {
     private val _devices = MutableStateFlow<Map<String, PbxDevices>>(emptyMap())
     private val _ringGroups = MutableStateFlow<Map<String, PbxRingGroups>>(emptyMap())
+
+    private val _overview = MutableStateFlow<Map<String, PbxOverview>>(emptyMap())
+    private val _hours = MutableStateFlow<Map<String, PbxHours>>(emptyMap())
+    private val _numbers = MutableStateFlow<Map<String, PbxNumbersPage>>(emptyMap())
+    private val _chains = MutableStateFlow<Map<String, NumberChain>>(emptyMap())
+    private val _sounds = MutableStateFlow<Map<String, List<PbxSound>>>(emptyMap())
+
+    val overview: StateFlow<Map<String, PbxOverview>> = _overview.asStateFlow()
+    val hours: StateFlow<Map<String, PbxHours>> = _hours.asStateFlow()
+    val numbers: StateFlow<Map<String, PbxNumbersPage>> = _numbers.asStateFlow()
+
+    /** Keyed `<accountId>/<numberId>`. */
+    val chains: StateFlow<Map<String, NumberChain>> = _chains.asStateFlow()
+    val sounds: StateFlow<Map<String, List<PbxSound>>> = _sounds.asStateFlow()
 
     val devices: StateFlow<Map<String, PbxDevices>> = _devices.asStateFlow()
     val ringGroups: StateFlow<Map<String, PbxRingGroups>> = _ringGroups.asStateFlow()
@@ -148,9 +239,100 @@ class PbxHub(private val service: PbxServicing) {
         service.createRingGroup(account, create)
     }.also { refreshAfterSave(it) { loadRingGroups(account) } }
 
+    // MARK: Belstroom and opening hours
+
+    suspend fun loadOverview(account: StoredAccount): PbxFailure? = guarded { _overview.value = _overview.value + (account.id to service.overview(account)) }
+
+    suspend fun changeRouting(account: StoredAccount, numberId: String, patch: PbxRoutingPatch): PbxFailure? = guarded {
+        service.patchRouting(account, numberId, patch)
+    }.also { refreshAfterSave(it) { loadOverview(account) } }
+
+    suspend fun loadHours(account: StoredAccount): PbxFailure? = guarded { _hours.value = _hours.value + (account.id to service.hours(account)) }
+
+    suspend fun saveHours(account: StoredAccount, id: String, patch: PbxHoursPatch): PbxFailure? = guarded {
+        service.patchHours(account, id, patch)
+    }.also { refreshAfterSave(it) { loadHours(account) } }
+
+    // MARK: Numbers
+
+    suspend fun loadNumbers(account: StoredAccount): PbxFailure? = guarded { _numbers.value = _numbers.value + (account.id to service.numbers(account)) }
+
+    fun chain(accountId: String, numberId: String): NumberChain? = _chains.value["$accountId/$numberId"]
+
+    suspend fun loadChain(account: StoredAccount, numberId: String): PbxFailure? = guarded { putChain(account.id, service.chain(account, numberId)) }
+
+    /** One step of a chain, based on the chain the screen showed ([basedOn]: its `versions` go back, so a change in between is `stale`). */
+    suspend fun saveStep(account: StoredAccount, numberId: String, step: ChainStep, basedOn: NumberChain): ChainSaveOutcome =
+        chainCall(account, numberId) { service.putChainStep(account, numberId, step, basedOn) }
+
+    suspend fun saveRecording(account: StoredAccount, numberId: String, patch: NumberRecordingPatch): ChainSaveOutcome =
+        chainCall(account, numberId) { service.patchRecording(account, numberId, patch) }
+
+    private suspend fun chainCall(account: StoredAccount, numberId: String, block: suspend () -> NumberChain): ChainSaveOutcome = try {
+        val fresh = block()
+        putChain(account.id, fresh)
+        refreshNumbers(account)
+        ChainSaveOutcome.Saved(fresh)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        val failure = classified(error)
+
+        if (failure is PbxFailure.Stale) {
+            // The fresh chain rides along in the error; if it cannot be read, ask for it.
+            val fresh = failure.chain?.let { runCatching { FsJson.default.decodeFromJsonElement(NumberChain.serializer(), it) }.getOrNull() }
+                ?: runCatching { service.chain(account, numberId) }.getOrNull()
+            fresh?.let { putChain(account.id, it) }
+            ChainSaveOutcome.Stale(fresh)
+        } else {
+            ChainSaveOutcome.Failed(failure)
+        }
+    }
+
+    private suspend fun refreshNumbers(account: StoredAccount) {
+        if (_numbers.value.containsKey(account.id)) loadNumbers(account)
+    }
+
+    private fun putChain(accountId: String, chain: NumberChain) {
+        _chains.value = _chains.value + ("$accountId/${chain.id}" to chain)
+    }
+
+    // MARK: Sounds
+
+    suspend fun loadSounds(account: StoredAccount): PbxFailure? = guarded { _sounds.value = _sounds.value + (account.id to service.sounds(account).sounds) }
+
+    suspend fun uploadSound(account: StoredAccount, name: String, fileName: String, contentType: String, bytes: ByteArray): PbxFailure? = guarded {
+        service.uploadSound(account, name, fileName, contentType, bytes)
+    }.also { if (it == null) loadSounds(account) }
+
+    suspend fun renameSound(account: StoredAccount, id: String, name: String): PbxFailure? = guarded { service.renameSound(account, id, name) }.also { if (it == null) loadSounds(account) }
+
+    /** A sound that is still used is `PbxFailure.InUse` with the places; nothing is deleted then. */
+    suspend fun deleteSound(account: StoredAccount, id: String): PbxFailure? = guarded { service.deleteSound(account, id) }.also {
+        if (it == null || it is PbxFailure.NotFound) loadSounds(account)
+    }
+
+    fun soundSource(account: StoredAccount, id: String): MediaSource = service.soundSource(account, id)
+
+    // MARK: Inviting a colleague
+
+    /** The link is a credential: the caller shows it once and never keeps or logs it. */
+    suspend fun invite(account: StoredAccount, deviceId: String): Pair<AppPairingResponse?, PbxFailure?> = try {
+        service.invite(account, deviceId) to null
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        null to classified(error)
+    }
+
     fun forget(accountId: String) {
         _devices.value = _devices.value - accountId
         _ringGroups.value = _ringGroups.value - accountId
+        _overview.value = _overview.value - accountId
+        _hours.value = _hours.value - accountId
+        _numbers.value = _numbers.value - accountId
+        _sounds.value = _sounds.value - accountId
+        _chains.value = _chains.value.filterKeys { !it.startsWith("$accountId/") }
     }
 
     /** After a save the lists follow the server ("wordt bijgewerkt"), and after a `stale` they show what changed. */
@@ -164,6 +346,11 @@ class PbxHub(private val service: PbxServicing) {
     } catch (error: CancellationException) {
         throw error
     } catch (error: Exception) {
+        classified(error)
+    }
+
+    /** The failure for an error, and the side effect of a revoked pairing or a lost role. */
+    private fun classified(error: Exception): PbxFailure {
         val failure = PbxFailure.classify(error)
 
         when (failure) {
@@ -172,6 +359,6 @@ class PbxHub(private val service: PbxServicing) {
             else -> Unit
         }
 
-        failure
+        return failure
     }
 }

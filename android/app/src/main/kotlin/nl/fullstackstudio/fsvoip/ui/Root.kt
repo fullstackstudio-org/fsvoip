@@ -137,6 +137,23 @@ sealed interface SettingsPage {
     data class RingGroupEdit(val id: String, val groupId: String?) : SettingsPage
 
     data class Recordings(val id: String) : SettingsPage
+
+    // "Centrale" (administrator pairings)
+    data class Overview(val id: String) : SettingsPage
+
+    data class Hours(val id: String) : SettingsPage
+
+    data class HoursEdit(val id: String, val hoursId: String) : SettingsPage
+
+    data class TemporaryClosed(val id: String, val hoursId: String) : SettingsPage
+
+    data class Numbers(val id: String) : SettingsPage
+
+    data class Number(val id: String, val numberId: String) : SettingsPage
+
+    data class NumberStep(val id: String, val numberId: String, val kind: NumberStepKind) : SettingsPage
+
+    data class Sounds(val id: String) : SettingsPage
 }
 
 @Composable
