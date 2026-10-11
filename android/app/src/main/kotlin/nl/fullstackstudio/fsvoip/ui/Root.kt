@@ -77,6 +77,14 @@ fun RootScreen(model: AppModel) {
             MainTabs(model)
         }
 
+        val overlay by model.overlay.collectAsStateWithLifecycle()
+        overlay?.let { content ->
+            Surface(Modifier.fillMaxSize()) {
+                BackHandler { model.closeOverlay() }
+                content { model.closeOverlay() }
+            }
+        }
+
         if (scanner || pairing.isActive) {
             PairingSheet(model)
         }

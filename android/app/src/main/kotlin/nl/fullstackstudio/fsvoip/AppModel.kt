@@ -286,6 +286,22 @@ class AppModel(
 
     inline fun <reified T : Any> feature(noinline create: () -> T): T = feature(T::class, create)
 
+    private val _overlay = MutableStateFlow<(@androidx.compose.runtime.Composable (close: () -> Unit) -> Unit)?>(null)
+
+    /**
+     * A full-screen screen on top of everything but a call (settings sub pages opened from outside, demo screens). `show { close ->
+     * PbxHubScreen(model, accountId, close) }`. Closing is the screen's own job through `close`.
+     */
+    val overlay: StateFlow<(@androidx.compose.runtime.Composable (close: () -> Unit) -> Unit)?> = _overlay.asStateFlow()
+
+    fun showOverlay(content: @androidx.compose.runtime.Composable (close: () -> Unit) -> Unit) {
+        _overlay.value = content
+    }
+
+    fun closeOverlay() {
+        _overlay.value = null
+    }
+
     fun openSettings() {
         _isSettingsOpen.value = true
     }
