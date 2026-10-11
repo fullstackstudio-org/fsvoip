@@ -275,6 +275,17 @@ class AppModel(
     /** Called when an account goes away (revoked, unpaired, forgotten): features drop their per-account state. */
     val accountRemovedListeners: MutableList<(accountId: String) -> Unit> = mutableListOf()
 
+    private val features = mutableMapOf<kotlin.reflect.KClass<*>, Any>()
+
+    /**
+     * Process-wide holder of a feature's long-lived state (a hub with StateFlows, a cache): created on first use and kept, so it
+     * survives tab switches and recompositions. `val hub = model.feature { VoicemailHub(model) }`.
+     */
+    @Suppress("UNCHECKED_CAST")
+    fun <T : Any> feature(type: kotlin.reflect.KClass<T>, create: () -> T): T = synchronized(features) { features.getOrPut(type) { create() } as T }
+
+    inline fun <reified T : Any> feature(noinline create: () -> T): T = feature(T::class, create)
+
     fun openSettings() {
         _isSettingsOpen.value = true
     }
