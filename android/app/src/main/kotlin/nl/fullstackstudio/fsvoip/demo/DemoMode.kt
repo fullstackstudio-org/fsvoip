@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package nl.fullstackstudio.fsvoip.demo
 
+import kotlinx.coroutines.launch
 import android.os.Handler
 import android.os.Looper
 import java.time.Instant
@@ -31,7 +32,11 @@ object DemoMode {
     )
 
     /** In order; the first handler that answers wins. Slices append their own (one line each). */
+    /** The pretend phone system ("Centrale"); in front of the core handler so it can show a frozen PBX in `GET me`. */
+    val pbxHandler = DemoPbxHandler()
+
     val handlers: MutableList<DemoHandler> = mutableListOf(
+        pbxHandler,
         CoreDemoHandler(),
         MediaDemoHandler(),
         // slice handlers are added here
@@ -107,8 +112,19 @@ object DemoMode {
             "pairing" -> model.handleIncoming(link)
             "incall", "parkcall" -> main.postDelayed({ model.call("0612345678", ADMIN_ID) }, 1200)
             "incoming" -> main.postDelayed({ engine.simulateIncoming("0701234567", "Bakkerij Smit", USER_ID) }, 1200)
+            "pbx", "pbx-readonly" -> openPbx(model, nl.fullstackstudio.fsvoip.ui.pbx.PbxPart.OVERVIEW, screen == "pbx-readonly")
+            "devices" -> openPbx(model, nl.fullstackstudio.fsvoip.ui.pbx.PbxPart.DEVICES)
+            "ringgroups" -> openPbx(model, nl.fullstackstudio.fsvoip.ui.pbx.PbxPart.RING_GROUPS)
+            "hours" -> openPbx(model, nl.fullstackstudio.fsvoip.ui.pbx.PbxPart.HOURS)
+            "numbers", "numbers-readonly" -> openPbx(model, nl.fullstackstudio.fsvoip.ui.pbx.PbxPart.NUMBERS, screen == "numbers-readonly")
             else -> Unit
         }
+    }
+
+    private fun openPbx(model: AppModel, part: nl.fullstackstudio.fsvoip.ui.pbx.PbxPart, readOnly: Boolean = false) {
+        pbxHandler.readOnly = readOnly
+        if (readOnly) kotlinx.coroutines.MainScope().launch { model.refreshAccounts() }
+        model.showOverlay { close -> nl.fullstackstudio.fsvoip.ui.pbx.PbxHubScreen(model, ADMIN_ID, part, close) }
     }
 
     private fun account(
