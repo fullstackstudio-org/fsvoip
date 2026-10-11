@@ -29,6 +29,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -64,11 +65,11 @@ import nl.fullstackstudio.fsvoip.push.PushSupport
 import nl.fullstackstudio.fsvoip.sipengine.RegistrationState
 
 @Composable
-fun SettingsNavigation(model: AppModel, stack: SnapshotStateList<SettingsPage>) {
+fun SettingsNavigation(model: AppModel, stack: SnapshotStateList<SettingsPage>, close: () -> Unit = {}) {
     BackHandler(enabled = stack.isNotEmpty()) { stack.removeAt(stack.lastIndex) }
 
     when (val page = stack.lastOrNull()) {
-        null -> SettingsScreen(model, open = { stack.add(it) })
+        null -> SettingsScreen(model, open = { stack.add(it) }, close = close)
         is SettingsPage.Account -> AccountDetailScreen(model, page.id, back = { stack.removeAt(stack.lastIndex) })
         SettingsPage.Licenses -> LicensesScreen(back = { stack.removeAt(stack.lastIndex) })
     }
@@ -76,7 +77,7 @@ fun SettingsNavigation(model: AppModel, stack: SnapshotStateList<SettingsPage>) 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SettingsScreen(model: AppModel, open: (SettingsPage) -> Unit) {
+private fun SettingsScreen(model: AppModel, open: (SettingsPage) -> Unit, close: () -> Unit) {
     val accounts by model.accounts.collectAsStateWithLifecycle()
     val registrations by model.phone.registrations.collectAsStateWithLifecycle()
     model.settingsRevision.collectAsStateWithLifecycle().value
@@ -93,7 +94,15 @@ private fun SettingsScreen(model: AppModel, open: (SettingsPage) -> Unit) {
         model.useDeviceContacts = granted
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.tab_settings)) }) }) { padding ->
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.settings_title)) },
+                actions = { IconButton(onClick = close, modifier = Modifier.testTag("settings-close")) { Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.action_close)) } },
+            )
+        },
+    ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())) {
             section(stringResource(R.string.settings_lines), stringResource(R.string.settings_lines_footer)) {
                 for (account in accounts) {

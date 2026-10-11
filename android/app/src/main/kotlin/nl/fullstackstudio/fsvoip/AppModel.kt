@@ -16,8 +16,10 @@ import kotlinx.coroutines.launch
 import nl.fullstackstudio.fsvoip.callcontroller.CallDisplay
 import nl.fullstackstudio.fsvoip.callcontroller.PhoneController
 import nl.fullstackstudio.fsvoip.callcontroller.PhoneException
+import nl.fullstackstudio.fsvoip.core.AppCapabilities
 import nl.fullstackstudio.fsvoip.core.FsLogger
 import nl.fullstackstudio.fsvoip.core.InternalContact
+import nl.fullstackstudio.fsvoip.core.MeResponse
 import nl.fullstackstudio.fsvoip.core.PreferencesStore
 import nl.fullstackstudio.fsvoip.core.PushMessage
 import nl.fullstackstudio.fsvoip.core.RecentCall
@@ -71,7 +73,8 @@ class AppModel(
             get() = this != Idle
     }
 
-    enum class Tab { DIALER, RECENTS, SETTINGS }
+    /** Same order as the iOS app. Settings is not a tab: it is a sheet (the gear and the avatar in the top bar). */
+    enum class Tab { DIALER, ON_HOLD, RECENTS, VOICEMAIL, CONTACTS }
 
     data class Notice(val message: String, val isError: Boolean, val id: UUID = UUID.randomUUID())
 
@@ -91,6 +94,8 @@ class AppModel(
     private val _notice = MutableStateFlow<Notice?>(null)
     private val _selectedTab = MutableStateFlow(Tab.DIALER)
     private val _settingsRevision = MutableStateFlow(0)
+    private val _isSettingsPresented = MutableStateFlow(false)
+    private val _me = MutableStateFlow<Map<String, MeResponse>>(emptyMap())
 
     val pairing: StateFlow<PairingPhase> = _pairing.asStateFlow()
     val isScannerPresented: StateFlow<Boolean> = _isScannerPresented.asStateFlow()
@@ -104,6 +109,10 @@ class AppModel(
     val internalContacts: StateFlow<Map<String, List<InternalContact>>> = _internalContacts.asStateFlow()
     val notice: StateFlow<Notice?> = _notice.asStateFlow()
     val selectedTab: StateFlow<Tab> = _selectedTab.asStateFlow()
+    val isSettingsPresented: StateFlow<Boolean> = _isSettingsPresented.asStateFlow()
+
+    /** The last `GET /me` per account id: role, capabilities and the state of the PBX. */
+    val me: StateFlow<Map<String, MeResponse>> = _me.asStateFlow()
 
     /** Bumped whenever a per-account setting changes, so the settings screens redraw. */
     val settingsRevision: StateFlow<Int> = _settingsRevision.asStateFlow()
@@ -143,7 +152,10 @@ class AppModel(
         for (account in _accounts.value) {
             try {
                 when (val result = service.refresh(account)) {
-                    is AccountRefreshResult.Updated -> _internalContacts.value = _internalContacts.value + (result.account.id to result.internalContacts)
+                    is AccountRefreshResult.Updated -> {
+                        _internalContacts.value = _internalContacts.value + (result.account.id to result.internalContacts)
+                        _me.value = _me.value + (result.account.id to result.me)
+                    }
                     AccountRefreshResult.Revoked -> {
                         cleanUp(account.id)
                         _notice.value = Notice(string(R.string.notice_revoked, account.displayLabel), isError = true)
@@ -223,6 +235,19 @@ class AppModel(
     fun select(tab: Tab) {
         _selectedTab.value = tab
     }
+
+    fun openSettings() {
+        _isSettingsPresented.value = true
+    }
+
+    fun closeSettings() {
+        _isSettingsPresented.value = false
+    }
+
+    /** What this pairing may do. `null` until the first `GET /me` of the account has come back (then nothing extra is shown). */
+    fun capabilities(accountId: String): AppCapabilities? = _me.value[accountId]?.capabilities
+
+    fun meOf(accountId: String): MeResponse? = _me.value[accountId]
 
     fun dismissNotice() {
         _notice.value = null
@@ -338,6 +363,8 @@ class AppModel(
     }
 
     fun presentScanner() {
+        // The scanner sits on top of the main screen, not on top of the settings sheet.
+        _isSettingsPresented.value = false
         _scannerError.value = null
         _isScannerPresented.value = true
     }
@@ -386,6 +413,7 @@ class AppModel(
 
         if (phase is PairingPhase.Paired) {
             _selectedTab.value = Tab.DIALER
+            _isSettingsPresented.value = false
         }
 
         _pairing.value = PairingPhase.Idle
@@ -418,6 +446,7 @@ class AppModel(
     private fun cleanUp(accountId: String) {
         preferences.removePreferences(accountId)
         _internalContacts.value = _internalContacts.value - accountId
+        _me.value = _me.value - accountId
         _settingsRevision.value++
     }
 

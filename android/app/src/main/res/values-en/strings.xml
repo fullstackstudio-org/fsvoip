@@ -3,7 +3,7 @@
 <!-- Ported from ios/Packages/UI/Sources/UI/Resources/*.lproj/Localizable.strings; keep the two in step. -->
 <resources>
     <string name="tab_dialer">Call</string>
-    <string name="tab_recents">Recents</string>
+    <string name="tab_recents">History</string>
     <string name="tab_settings">Settings</string>
     <string name="action_cancel">Cancel</string>
     <string name="action_close">Close</string>
@@ -165,4 +165,17 @@
     <string name="call_line_label">Extension</string>
     <string name="call_answering">Answering…</string>
     <string name="permission_microphone_denied">FSVoip may not use the microphone. Allow it in Settings, otherwise the other side cannot hear you.</string>
+    <string name="tab_contacts">Contacts</string>
+    <string name="tab_onHold">On hold</string>
+    <string name="tab_voicemail">Voicemail</string>
+    <string name="settings_title">Settings</string>
+    <string name="settings_profile">Profile</string>
+    <string name="settings_avatar_label">Settings of %s</string>
+    <string name="settings_dot_available">Available</string>
+    <string name="settings_dot_dnd">Do not disturb</string>
+    <string name="settings_dot_connecting">Connecting</string>
+    <string name="settings_dot_offline">Offline</string>
+    <string name="soon_title">Coming soon</string>
+    <string name="soon_body">This screen is not available in the Android app yet.</string>
+    <string name="action_back">Back</string>
 </resources>

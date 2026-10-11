@@ -126,46 +126,6 @@ sealed interface SettingsPage {
 }
 
 @Composable
-private fun MainTabs(model: AppModel) {
-    val tab by model.selectedTab.collectAsStateWithLifecycle()
-    val settingsStack = remember { mutableStateListOf<SettingsPage>() }
-
-    Scaffold(
-        bottomBar = {
-            NavigationBar {
-                TabItem(tab == AppModel.Tab.DIALER, Icons.Filled.Dialpad, stringResource(R.string.tab_dialer)) { model.select(AppModel.Tab.DIALER) }
-                TabItem(tab == AppModel.Tab.RECENTS, Icons.Filled.History, stringResource(R.string.tab_recents)) { model.select(AppModel.Tab.RECENTS) }
-                TabItem(tab == AppModel.Tab.SETTINGS, Icons.Filled.Settings, stringResource(R.string.tab_settings)) { model.select(AppModel.Tab.SETTINGS) }
-            }
-        },
-    ) { padding ->
-        Box(Modifier.padding(padding).fillMaxSize()) {
-            when (tab) {
-                AppModel.Tab.DIALER -> DialerScreen(model)
-                AppModel.Tab.RECENTS -> RecentsScreen(model)
-                AppModel.Tab.SETTINGS -> SettingsNavigation(model, settingsStack)
-            }
-        }
-    }
-}
-
-@Composable
-private fun androidx.compose.foundation.layout.RowScope.TabItem(selected: Boolean, icon: ImageVector, label: String, onClick: () -> Unit) {
-    NavigationBarItem(
-        selected = selected,
-        onClick = onClick,
-        icon = { Icon(icon, contentDescription = null) },
-        label = { Text(label) },
-        // The lime accent has too little contrast as text on a light bar: the selected tab is marked by the indicator.
-        colors = NavigationBarItemDefaults.colors(
-            indicatorColor = MaterialTheme.colorScheme.surfaceVariant,
-            selectedIconColor = MaterialTheme.colorScheme.onSurface,
-            selectedTextColor = MaterialTheme.colorScheme.onSurface,
-        ),
-    )
-}
-
-@Composable
 fun OnboardingScreen(model: AppModel) {
     Scaffold { padding ->
         Column(Modifier.padding(padding).fillMaxSize().padding(horizontal = 24.dp).padding(bottom = 16.dp)) {

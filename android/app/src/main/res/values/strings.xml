@@ -3,7 +3,7 @@
 <!-- Ported from ios/Packages/UI/Sources/UI/Resources/*.lproj/Localizable.strings; keep the two in step. -->
 <resources>
     <string name="tab_dialer">Bellen</string>
-    <string name="tab_recents">Recent</string>
+    <string name="tab_recents">Geschiedenis</string>
     <string name="tab_settings">Instellingen</string>
     <string name="action_cancel">Annuleren</string>
     <string name="action_close">Sluiten</string>
@@ -165,4 +165,17 @@
     <string name="call_line_label">Toestel</string>
     <string name="call_answering">Opnemen…</string>
     <string name="permission_microphone_denied">FSVoip mag de microfoon niet gebruiken. Zet de microfoon aan in Instellingen, anders hoort de ander je niet.</string>
+    <string name="tab_contacts">Contacten</string>
+    <string name="tab_onHold">On hold</string>
+    <string name="tab_voicemail">Voicemail</string>
+    <string name="settings_title">Instellingen</string>
+    <string name="settings_profile">Profiel</string>
+    <string name="settings_avatar_label">Instellingen van %s</string>
+    <string name="settings_dot_available">Beschikbaar</string>
+    <string name="settings_dot_dnd">Niet storen</string>
+    <string name="settings_dot_connecting">Verbinden</string>
+    <string name="settings_dot_offline">Offline</string>
+    <string name="soon_title">Dit komt binnenkort</string>
+    <string name="soon_body">Dit scherm is nog niet beschikbaar in de Android-app.</string>
+    <string name="action_back">Terug</string>
 </resources>

@@ -48,33 +48,25 @@ import nl.fullstackstudio.fsvoip.AppModel
 import nl.fullstackstudio.fsvoip.R
 import nl.fullstackstudio.fsvoip.core.RecentCall
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecentsScreen(model: AppModel) {
     val recents by model.recents.collectAsStateWithLifecycle()
     val accounts by model.accounts.collectAsStateWithLifecycle()
     var confirmsClear by remember { mutableStateOf(false) }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.tab_recents)) },
-                actions = {
-                    if (recents.isNotEmpty()) {
-                        TextButton(onClick = { confirmsClear = true }) { Text(stringResource(R.string.recents_clear)) }
-                    }
-                },
-            )
-        },
-    ) { padding ->
-        if (recents.isEmpty()) {
-            Column(Modifier.padding(padding).fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Filled.History, contentDescription = null, tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(34.dp))
-                Text(stringResource(R.string.recents_empty_title), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 10.dp))
-                Text(stringResource(R.string.recents_empty_body), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 6.dp))
+    if (recents.isEmpty()) {
+        Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(Icons.Filled.History, contentDescription = null, tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(34.dp))
+            Text(stringResource(R.string.recents_empty_title), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 10.dp))
+            Text(stringResource(R.string.recents_empty_body), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 6.dp))
+        }
+    } else {
+        Column(Modifier.fillMaxSize()) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = { confirmsClear = true }) { Text(stringResource(R.string.recents_clear)) }
             }
-        } else {
-            LazyColumn(Modifier.padding(padding).fillMaxSize()) {
+
+            LazyColumn(Modifier.fillMaxSize()) {
                 items(recents, key = { it.id }) { call ->
                     RecentRow(call, showsLine = accounts.size > 1) {
                         if (call.number.isNotEmpty()) {
