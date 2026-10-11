@@ -232,12 +232,17 @@ class FsVoipApiClient(
     suspend fun <T> get(path: String, deserializer: DeserializationStrategy<T>, query: List<Pair<String, String>> = emptyList(), headers: Map<String, String> = emptyMap()): T =
         perform("GET", path, null, authenticated = true, deserializer, query, headers)
 
-    fun <T> decode(path: String, deserializer: DeserializationStrategy<T>, response: HttpResponse): T = try {
-        FsJson.default.decodeFromString(deserializer, response.body.toString(Charsets.UTF_8))
-    } catch (error: SerializationException) {
-        throw ApiException.Decoding("$path: ${error.javaClass.simpleName}")
-    } catch (error: IllegalArgumentException) {
-        throw ApiException.Decoding("$path: ${error.javaClass.simpleName}")
+    fun <T> decode(path: String, deserializer: DeserializationStrategy<T>, response: HttpResponse): T {
+        // Only the first segment goes into the message: later segments are ids (a contact, a sealed voicemail reference).
+        val label = path.split('/').firstOrNull { it.isNotEmpty() } ?: ""
+
+        return try {
+            FsJson.default.decodeFromString(deserializer, response.body.toString(Charsets.UTF_8))
+        } catch (error: SerializationException) {
+            throw ApiException.Decoding("$label: ${error.javaClass.simpleName}")
+        } catch (error: IllegalArgumentException) {
+            throw ApiException.Decoding("$label: ${error.javaClass.simpleName}")
+        }
     }
 
     /**

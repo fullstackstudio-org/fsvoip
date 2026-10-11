@@ -8,6 +8,7 @@ package nl.fullstackstudio.fsvoip
 import android.content.Context
 import androidx.annotation.StringRes
 import java.util.UUID
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -188,11 +189,12 @@ class AppModel(
     fun registration(accountId: String): RegistrationState = phone.registrationState(accountId)
 
     /** `GET /me` for every account: labels, SIP server, internal contacts. Revoked accounts are removed. */
-    suspend fun refreshAccounts() {
-        for (account in _accounts.value) {
+    suspend fun refreshAccounts() = refreshLock.withLock {
+        // One refresh at a time: two overlapping runs (resume, a refresh push, a 401) must not put back what the other removed.
+        for (account in _accounts.value.toList()) {
             try {
                 when (val result = service.refresh(account)) {
-                    is AccountRefreshResult.Updated -> {
+                    is AccountRefreshResult.Updated -> if (account(result.account.id) != null) {
                         _internalContacts.value = _internalContacts.value + (result.account.id to result.internalContacts)
                         result.me?.let { me ->
                             _meByAccount.value = _meByAccount.value + (result.account.id to me)
@@ -374,6 +376,8 @@ class AppModel(
             outbound.forget(accountId)
         }
     }
+
+    private val refreshLock = kotlinx.coroutines.sync.Mutex()
 
     private val features = mutableMapOf<kotlin.reflect.KClass<*>, Any>()
 

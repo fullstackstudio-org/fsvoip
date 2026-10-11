@@ -126,6 +126,9 @@ class ContactsHub(
     private val persistLock = Mutex()
     private val latestSaved = HashMap<String, Int>()
 
+    /** Accounts removed from this phone in this process: nothing of them is written again (until they are paired anew). */
+    private val forgotten: MutableSet<String> = java.util.Collections.synchronizedSet(HashSet())
+
     // MARK: Accounts
 
     /**
@@ -143,6 +146,13 @@ class ContactsHub(
         }
 
         knownAccountIds = accountIds
+
+        // An id that is paired again (never the case for a new pairing id, but cheap to get right) may be written again.
+        val back = accountIds.filter { it in forgotten }
+        if (back.isNotEmpty()) {
+            persistLock.withLock { back.forEach { latestSaved.remove(it) } }
+            forgotten.removeAll(back.toSet())
+        }
 
         // Files of accounts that are no longer paired (an app that was reinstalled, a crash halfway through unpairing).
         if (accountIds.isNotEmpty()) {
@@ -172,7 +182,10 @@ class ContactsHub(
 
     /** Remove everything of one account (it was unpaired or revoked). */
     fun forget(accountId: String) {
-        store.remove(accountId)
+        // A save that was already queued must not write the account back (it checks this under the same lock), and the file goes
+        // away on the work thread, after those saves.
+        forgotten.add(accountId)
+        scope.launch(workDispatcher) { persistLock.withLock { latestSaved[accountId] = Int.MAX_VALUE; store.remove(accountId) } }
         data.remove(accountId)
         failed.remove(accountId)
         lastAttempt.remove(accountId)
@@ -540,7 +553,7 @@ class ContactsHub(
         // Written one at a time; a write that was overtaken by a newer one is dropped.
         val job = scope.launch(workDispatcher) {
             persistLock.withLock {
-                if (sequence < (latestSaved[accountId] ?: 0)) return@withLock
+                if (accountId in forgotten || sequence < (latestSaved[accountId] ?: 0)) return@withLock
 
                 latestSaved[accountId] = sequence
 

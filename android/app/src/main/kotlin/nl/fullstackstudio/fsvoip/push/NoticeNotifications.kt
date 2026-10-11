@@ -40,8 +40,11 @@ object NoticeNotifications {
         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
     }
 
+    /** One id per account and link (two accounts with the same link must not share a PendingIntent). */
+    private fun key(notice: NoticePush): Int = "${notice.accountId}|${notice.href}".hashCode()
+
     fun build(context: Context, notice: NoticePush): Notification {
-        val open = PendingIntent.getActivity(context, notice.href.hashCode(), openIntent(context, notice), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val open = PendingIntent.getActivity(context, key(notice), openIntent(context, notice), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
         return NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_call)
@@ -65,7 +68,7 @@ object NoticeNotifications {
 
         try {
             // One notification per link: a repeat of the same message replaces it instead of stacking.
-            NotificationManagerCompat.from(context).notify("notice", notice.href.hashCode(), build(context, notice))
+            NotificationManagerCompat.from(context).notify("notice", key(notice), build(context, notice))
         } catch (error: SecurityException) {
             logger.notice("Notice not shown: ${error.javaClass.simpleName}")
         }

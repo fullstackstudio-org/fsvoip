@@ -104,6 +104,17 @@ sealed interface PushMessage {
             }
         }
 
+        /**
+         * A message that could not be decoded: may it still be an incoming call? Yes for an unreadable envelope, an unsupported version
+         * and a broken ring; no for a type this app version does not know and for any other broken type (a notice): those must never
+         * start the call service.
+         */
+        fun mayBeRing(failure: Throwable?): Boolean = when (failure) {
+            is PushMessageException.UnknownType -> false
+            is PushMessageException.Malformed -> failure.type == "ring"
+            else -> true
+        }
+
         /** Decode from the `data` of an FCM message, where `fsvoip` is a JSON string. */
         fun decodeFcm(data: Map<String, String>): PushMessage {
             val text = data["fsvoip"] ?: throw PushMessageException.MissingPayload()
