@@ -16,6 +16,8 @@ import kotlinx.coroutines.launch
 import nl.fullstackstudio.fsvoip.callcontroller.CallDisplay
 import nl.fullstackstudio.fsvoip.callcontroller.PhoneController
 import nl.fullstackstudio.fsvoip.callcontroller.PhoneException
+import nl.fullstackstudio.fsvoip.contacts.ContactsHub
+import nl.fullstackstudio.fsvoip.contacts.DeviceContactsReader
 import nl.fullstackstudio.fsvoip.core.AppCapabilities
 import nl.fullstackstudio.fsvoip.core.AudioPlayerModel
 import nl.fullstackstudio.fsvoip.core.HistoryModel
@@ -64,6 +66,8 @@ class AppModel(
     val history: HistoryModel,
     val mediaService: MediaServicing,
     val player: AudioPlayerModel,
+    val contacts: ContactsHub,
+    val deviceContacts: DeviceContactsReader,
     private val preferences: PreferencesStore,
     private val recentsStore: RecentCallsStore,
     private val device: () -> DeviceDescriptor,
@@ -153,6 +157,7 @@ class AppModel(
         // A 401/403 on the own extension: the pairing or the role is gone; `GET /me` removes or updates the account.
         selfExtension.onRevoked = { scope.launch { refreshAccounts() } }
         history.onRevoked = { scope.launch { refreshAccounts() } }
+        contacts.onUnauthorized = { scope.launch { refreshAccounts() } }
 
         // A call takes the speaker and the microphone: nothing else plays during it.
         scope.launch {
@@ -176,6 +181,7 @@ class AppModel(
         }
 
         phone.sync(_accounts.value)
+        scope.launch { contacts.setAccounts(_accounts.value.map { it.id }) }
     }
 
     fun account(id: String): StoredAccount? = _accounts.value.firstOrNull { it.id == id }
@@ -190,6 +196,11 @@ class AppModel(
                     is AccountRefreshResult.Updated -> {
                         _internalContacts.value = _internalContacts.value + (result.account.id to result.internalContacts)
                         _me.value = _me.value + (result.account.id to result.me)
+
+                        contacts.setInternal(result.account.id, result.internalContacts)
+
+                        // The address book of the customer: incremental after the first time, never more than once a minute.
+                        scope.launch { contacts.sync(result.account.id, canRead = result.me.capabilities?.contacts?.read ?: true) }
 
                         if (result.me.canEditOwnExtension) {
                             // Availability (the dot on the avatar), the numbers to call out with and "Oproepvoorkeuren".

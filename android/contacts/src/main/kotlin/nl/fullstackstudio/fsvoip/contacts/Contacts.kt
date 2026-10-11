@@ -12,6 +12,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.ContactsContract
+import nl.fullstackstudio.fsvoip.core.ContactPhoneLabel
 import nl.fullstackstudio.fsvoip.core.InternalContact
 
 sealed interface ContactSource {
@@ -19,17 +20,28 @@ sealed interface ContactSource {
 
     data object InternalExtensions : ContactSource
 
+    /** The address book of the customer (the portal's contacts), synced to this phone. */
+    data object AddressBook : ContactSource
+
     /** A customer contact list from the portal. */
     data class ContactList(val id: String) : ContactSource
 }
+
+data class ContactEntryPhone(val number: String, val label: ContactPhoneLabel = ContactPhoneLabel.OTHER)
 
 data class ContactEntry(
     val id: String,
     val name: String,
     val company: String? = null,
-    val numbers: List<String>,
+    val phones: List<ContactEntryPhone>,
     val source: ContactSource,
-)
+    val email: String? = null,
+    /** Of the customer's address book: the account it belongs to. */
+    val accountId: String? = null,
+) {
+    val numbers: List<String>
+        get() = phones.map { it.number }
+}
 
 /** Looks up a caller name. Synchronous and cheap: called while a call is being put on the screen. */
 fun interface NameLookup {
@@ -37,28 +49,14 @@ fun interface NameLookup {
 }
 
 object PhoneNumbers {
-    /** Same number in another notation? Equal digits, or the same last 9 digits (`+31612345678` vs `0612345678`). */
-    fun same(a: String, b: String): Boolean {
-        val x = a.filter { it in '0'..'9' }
-        val y = b.filter { it in '0'..'9' }
-
-        if (x.isEmpty() || y.isEmpty()) {
-            return false
-        }
-
-        // Short internal numbers (extensions) must match exactly.
-        if (x.length < 9 || y.length < 9) {
-            return x == y
-        }
-
-        return x.takeLast(9) == y.takeLast(9)
-    }
+    /** Same number in another notation? See [PhoneNumberMatcher]. */
+    fun same(a: String, b: String): Boolean = PhoneNumberMatcher.same(a, b)
 }
 
 /** Internal contacts straight from `GET /me`. */
 class InternalContactsProvider(internalContacts: List<InternalContact>) : NameLookup {
     val entries: List<ContactEntry> = internalContacts.map {
-        ContactEntry(id = "internal:${it.number}", name = it.name, numbers = listOf(it.number), source = ContactSource.InternalExtensions)
+        ContactEntry(id = "internal:${it.number}", name = it.name, phones = listOf(ContactEntryPhone(it.number, ContactPhoneLabel.WORK)), source = ContactSource.InternalExtensions)
     }
 
     override fun name(number: String): String? = entries.firstOrNull { entry -> entry.numbers.any { it == number } }?.name

@@ -13,6 +13,10 @@ import nl.fullstackstudio.fsvoip.callcontroller.AndroidMain
 import nl.fullstackstudio.fsvoip.callcontroller.PhoneController
 import nl.fullstackstudio.fsvoip.callcontroller.TelecomCallSystem
 import nl.fullstackstudio.fsvoip.contacts.CompositeNameLookup
+import nl.fullstackstudio.fsvoip.contacts.ContactsHub
+import nl.fullstackstudio.fsvoip.contacts.DeviceContactsReader
+import nl.fullstackstudio.fsvoip.contacts.FileContactsStore
+import nl.fullstackstudio.fsvoip.contacts.LiveContactsApi
 import nl.fullstackstudio.fsvoip.contacts.DeviceContactsProvider
 import nl.fullstackstudio.fsvoip.contacts.InternalContactsProvider
 import nl.fullstackstudio.fsvoip.contacts.NameLookup
@@ -95,6 +99,11 @@ class AppServices private constructor(context: Context) {
         phone.enterBackground()
 
         val deviceContacts = DeviceContactsProvider(appContext)
+        val deviceContactsReader = DeviceContactsReader(appContext, deviceContacts)
+        val contactsHub = ContactsHub(
+            store = FileContactsStore(java.io.File(appContext.filesDir, "contacts")),
+            api = { accountId -> accounts.account(accountId)?.let { LiveContactsApi(api.authenticated(it.deviceToken)) } },
+        )
         val media = LiveMediaService(api, locale = { if (java.util.Locale.getDefault().language == "nl") "nl" else "en" })
 
         model = AppModel(
@@ -106,6 +115,8 @@ class AppServices private constructor(context: Context) {
             history = HistoryModel(media),
             mediaService = media,
             player = AudioPlayerModel(ExoPlayerBackend(appContext, userAgent = "FSVoip/$version (Android)")),
+            contacts = contactsHub,
+            deviceContacts = deviceContactsReader,
             preferences = preferences,
             recentsStore = RecentCallsStore(plain),
             device = {
@@ -123,8 +134,11 @@ class AppServices private constructor(context: Context) {
 
         val internal = { CompositeNameLookup { model.internalContacts.value.values.map { InternalContactsProvider(it) } } }
         phone.lookupName = { number ->
+            // The phone's own contacts win, then the address book of the customer and the colleagues (one map lookup), then the
+            // colleagues straight from `GET /me` (before the first sync has finished).
             val sources = buildList<NameLookup> {
                 if (preferences.useDeviceContacts) add(deviceContacts)
+                add(NameLookup { contactsHub.name(it) })
                 add(internal())
             }
             CompositeNameLookup { sources }.name(number)

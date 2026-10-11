@@ -92,7 +92,7 @@ fun MainTabs(model: AppModel) {
                 AppModel.Tab.ON_HOLD -> ComingSoon(Icons.Filled.PauseCircle, stringResource(R.string.tab_onHold))
                 AppModel.Tab.RECENTS -> HistoryScreen(model)
                 AppModel.Tab.VOICEMAIL -> VoicemailScreen(model)
-                AppModel.Tab.CONTACTS -> ComingSoon(Icons.Filled.Contacts, stringResource(R.string.tab_contacts))
+                AppModel.Tab.CONTACTS -> ContactsScreen(model)
             }
         }
     }

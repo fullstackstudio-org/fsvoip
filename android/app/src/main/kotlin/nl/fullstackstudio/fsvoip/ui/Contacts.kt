@@ -1,0 +1,386 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// The "Contacten" tab: the address book of the customer (synced from the portal) with the colleagues of the PBX, and the phone's own
+// contacts (read only, with permission). Android port of the iOS `ContactsView`. Adding and editing contacts comes in part 2.
+
+package nl.fullstackstudio.fsvoip.ui
+
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Contacts
+import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import nl.fullstackstudio.fsvoip.AppModel
+import nl.fullstackstudio.fsvoip.R
+import nl.fullstackstudio.fsvoip.contacts.ContactEntry
+import nl.fullstackstudio.fsvoip.contacts.ContactEntryPhone
+import nl.fullstackstudio.fsvoip.contacts.ContactSource
+import nl.fullstackstudio.fsvoip.contacts.ContactsBrowsing
+import nl.fullstackstudio.fsvoip.contacts.ContactsFilter
+import nl.fullstackstudio.fsvoip.core.ContactPhoneLabel
+
+private enum class ContactsSegment { CENTRALE, PHONE }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ContactsScreen(model: AppModel) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val accounts by model.accounts.collectAsStateWithLifecycle()
+    val entries by model.contacts.entries.collectAsStateWithLifecycle()
+    val states by model.contacts.accountStates.collectAsStateWithLifecycle()
+    val syncing by model.contacts.syncingAccountIds.collectAsStateWithLifecycle()
+    model.settingsRevision.collectAsStateWithLifecycle().value
+
+    var segment by remember { mutableStateOf(ContactsSegment.CENTRALE) }
+    var query by remember { mutableStateOf("") }
+    var filter by remember { mutableStateOf<ContactsFilter>(ContactsFilter.All) }
+    var selected by remember { mutableStateOf<ContactEntry?>(null) }
+    var refreshing by remember { mutableStateOf(false) }
+
+    // The phone's own contacts: read when the permission is there AND the user switched it on; never stored.
+    var deviceEntries by remember { mutableStateOf<List<ContactEntry>>(emptyList()) }
+    var deviceDenied by remember { mutableStateOf(false) }
+    val deviceOn = model.useDeviceContacts && model.deviceContacts.hasPermission
+
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        model.useDeviceContacts = granted
+        deviceDenied = !granted
+    }
+
+    LaunchedEffect(deviceOn, segment) {
+        deviceEntries = if (deviceOn && segment == ContactsSegment.PHONE) withContext(Dispatchers.IO) { model.deviceContacts.readAll() } else emptyList()
+    }
+
+    // The address book is also synced when the tab opens (never more than once a minute).
+    LaunchedEffect(accounts.size) {
+        for (account in accounts) {
+            model.contacts.sync(account.id, canRead = model.capabilities(account.id)?.contacts?.read ?: true)
+        }
+    }
+
+    val centrale = remember(entries, filter, query) { ContactsBrowsing.visible(entries, filter, query, model.contacts) }
+    val phone = remember(deviceEntries, query) { ContactsBrowsing.visible(deviceEntries, ContactsFilter.All, query, model.contacts) }
+    val shown = if (segment == ContactsSegment.CENTRALE) centrale else phone
+    val isSyncing = syncing.isNotEmpty()
+    val failed = states.values.any { it.lastSyncFailed }
+    val allLists = states.flatMap { (accountId, state) -> state.lists.filter { it.isEnabled }.map { accountId to it } }
+
+    Column(Modifier.fillMaxSize()) {
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+            SegmentedButton(
+                selected = segment == ContactsSegment.CENTRALE,
+                onClick = { segment = ContactsSegment.CENTRALE },
+                shape = SegmentedButtonDefaults.itemShape(0, 2),
+                modifier = Modifier.testTag("contacts-segment-centrale"),
+            ) { Text(stringResource(R.string.contacts_segment_centrale)) }
+            SegmentedButton(
+                selected = segment == ContactsSegment.PHONE,
+                onClick = { segment = ContactsSegment.PHONE },
+                shape = SegmentedButtonDefaults.itemShape(1, 2),
+                modifier = Modifier.testTag("contacts-segment-phone"),
+            ) { Text(stringResource(R.string.contacts_segment_phone)) }
+        }
+
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            placeholder = { Text(stringResource(R.string.contacts_search)) },
+            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+            trailingIcon = if (query.isNotEmpty()) ({ IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.contacts_search_clear)) } }) else null,
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("contacts-search"),
+        )
+
+        if (segment == ContactsSegment.CENTRALE) {
+            FilterRow(filter, allLists.map { (accountId, list) -> ContactsFilter.OfList(accountId, list.id) to list.name }, accounts.size > 1, { id -> accounts.firstOrNull { it.id == id }?.displayLabel.orEmpty() }) { filter = it }
+        }
+
+        if (segment == ContactsSegment.CENTRALE && isSyncing && entries.isNotEmpty()) {
+            Text(stringResource(R.string.contacts_syncing), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp))
+        } else if (segment == ContactsSegment.CENTRALE && failed) {
+            Text(stringResource(R.string.contacts_syncFailed), style = MaterialTheme.typography.bodySmall, color = Brand.hangUp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp).testTag("contacts-sync-failed"))
+        }
+
+        PullToRefreshBox(
+            isRefreshing = refreshing,
+            onRefresh = {
+                scope.launch {
+                    refreshing = true
+                    for (account in accounts) model.contacts.sync(account.id, canRead = model.capabilities(account.id)?.contacts?.read ?: true, force = true)
+                    refreshing = false
+                }
+            },
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+        ) {
+            when {
+                segment == ContactsSegment.PHONE && !deviceOn -> DevicePrompt(
+                    denied = deviceDenied,
+                    onEnable = { permission.launch(Manifest.permission.READ_CONTACTS) },
+                    onOpenSettings = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) },
+                )
+                shown.isEmpty() && query.isNotEmpty() -> ContactsEmpty(stringResource(R.string.contacts_noResults_title), stringResource(R.string.contacts_noResults_body, query))
+                shown.isEmpty() && isSyncing -> ContactsEmpty(stringResource(R.string.contacts_syncing), null)
+                shown.isEmpty() -> ContactsEmpty(stringResource(R.string.contacts_empty_title), stringResource(R.string.contacts_empty_body))
+                else -> LazyColumn(Modifier.fillMaxSize().testTag("contacts-list")) {
+                    items(shown, key = { it.id }) { entry ->
+                        ContactRow(entry) { selected = entry }
+                        HorizontalDivider(Modifier.padding(start = 66.dp))
+                    }
+
+                    item {
+                        Text(
+                            if (shown.size == 1) stringResource(R.string.contacts_count_one) else stringResource(R.string.contacts_count_many, shown.size),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    selected?.let { entry -> ContactDetailSheet(model, entry, onDismiss = { selected = null }) }
+}
+
+@Composable
+private fun FilterRow(
+    filter: ContactsFilter,
+    lists: List<Pair<ContactsFilter.OfList, String>>,
+    several: Boolean,
+    accountLabel: (String) -> String,
+    select: (ContactsFilter) -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    val pickedList = (filter as? ContactsFilter.OfList)?.let { chosen -> lists.firstOrNull { it.first == chosen }?.second }
+
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        FilterChip(selected = filter == ContactsFilter.All, onClick = { select(ContactsFilter.All) }, label = { Text(stringResource(R.string.contacts_filter_pillAll)) })
+        FilterChip(selected = filter == ContactsFilter.AddressBook, onClick = { select(ContactsFilter.AddressBook) }, label = { Text(stringResource(R.string.contacts_filter_customer)) })
+        FilterChip(selected = filter == ContactsFilter.Colleagues, onClick = { select(ContactsFilter.Colleagues) }, label = { Text(stringResource(R.string.contacts_filter_internal)) })
+
+        if (lists.isNotEmpty()) {
+            Box {
+                FilterChip(
+                    selected = pickedList != null,
+                    onClick = { open = true },
+                    label = { Text(pickedList ?: stringResource(R.string.contacts_filter_lists)) },
+                    leadingIcon = { Icon(Icons.Filled.FilterList, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                    modifier = Modifier.testTag("contacts-filter-lists"),
+                )
+
+                DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                    for ((choice, name) in lists) {
+                        DropdownMenuItem(
+                            text = { Text(if (several) "$name · ${accountLabel(choice.accountId)}" else name) },
+                            onClick = {
+                                open = false
+                                select(choice)
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ContactsEmpty(title: String, message: String?) {
+    Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(Icons.Filled.Contacts, contentDescription = null, tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(34.dp))
+        Text(title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 10.dp))
+
+        if (message != null) {
+            Text(message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 6.dp))
+        }
+    }
+}
+
+@Composable
+private fun DevicePrompt(denied: Boolean, onEnable: () -> Unit, onOpenSettings: () -> Unit) {
+    Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(Icons.Filled.Contacts, contentDescription = null, tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(34.dp))
+        Text(stringResource(if (denied) R.string.contacts_phone_denied_title else R.string.contacts_phone_off_title), style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 10.dp))
+        Text(stringResource(if (denied) R.string.contacts_sources_device_denied else R.string.contacts_phone_off_message), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 6.dp, bottom = 16.dp))
+
+        if (denied) {
+            SecondaryButton(stringResource(R.string.contacts_sources_device_openSettings), onClick = onOpenSettings)
+        } else {
+            PrimaryButton(stringResource(R.string.contacts_phone_off_enable), onClick = onEnable, modifier = Modifier.testTag("contacts-enable-device"))
+        }
+    }
+}
+
+@Composable
+private fun ContactRow(entry: ContactEntry, onClick: () -> Unit) {
+    val subtitle = entry.company?.takeIf { it.isNotBlank() } ?: entry.phones.firstOrNull()?.number.orEmpty()
+    val tag = when (entry.source) {
+        ContactSource.InternalExtensions -> stringResource(R.string.contacts_source_colleague)
+        ContactSource.Device -> stringResource(R.string.contacts_source_device)
+        else -> null
+    }
+
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp).testTag("contact-row"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        InitialsAvatar(entry.name, size = 40.dp)
+        Column(Modifier.weight(1f)) {
+            Text(entry.name.ifBlank { subtitle }, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+
+            if (subtitle.isNotEmpty() && entry.name.isNotBlank()) {
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+
+        if (tag != null) {
+            Text(tag, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+fun contactLabel(label: ContactPhoneLabel): String = stringResource(
+    when (label) {
+        ContactPhoneLabel.MOBILE -> R.string.contacts_label_mobile
+        ContactPhoneLabel.WORK -> R.string.contacts_label_work
+        ContactPhoneLabel.HOME -> R.string.contacts_label_home
+        ContactPhoneLabel.MAIN -> R.string.contacts_label_main
+        ContactPhoneLabel.FAX -> R.string.contacts_label_fax
+        ContactPhoneLabel.OTHER -> R.string.contacts_label_other
+    },
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ContactDetailSheet(model: AppModel, entry: ContactEntry, onDismiss: () -> Unit) {
+    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val states by model.contacts.accountStates.collectAsStateWithLifecycle()
+    val contactId = entry.id.substringAfter('/')
+    val listNames = entry.accountId?.let { accountId ->
+        states[accountId]?.lists.orEmpty().filter { it.isEnabled && contactId in it.memberIds }.map { it.name }
+    }.orEmpty()
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet) {
+        Column(Modifier.padding(bottom = 24.dp).verticalScroll(rememberScrollState()).testTag("contact-detail")) {
+            Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                InitialsAvatar(entry.name, size = 56.dp)
+                Column {
+                    Text(entry.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                    entry.company?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
+            }
+
+            section(stringResource(R.string.contacts_detail_numbers), null) {
+                if (entry.phones.isEmpty()) {
+                    InfoRow(stringResource(R.string.contacts_detail_noNumbers))
+                }
+
+                for (phone in entry.phones) {
+                    PhoneRow(phone) {
+                        onDismiss()
+                        // A contact of the address book calls with its own line; the rest with the default one.
+                        model.call(phone.number, entry.accountId)
+                    }
+                }
+            }
+
+            entry.email?.takeIf { it.isNotBlank() }?.let { email ->
+                section(stringResource(R.string.contacts_detail_email), null) { ValueRow(stringResource(R.string.contacts_detail_email), email) }
+            }
+
+            if (listNames.isNotEmpty()) {
+                section(stringResource(R.string.contacts_detail_lists), null) { InfoRow(listNames.joinToString(", ")) }
+            }
+
+            when (entry.source) {
+                ContactSource.Device -> Text(stringResource(R.string.contacts_detail_deviceNote), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
+                ContactSource.InternalExtensions -> Text(stringResource(R.string.contacts_detail_colleagueNote), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
+                else -> Unit
+            }
+        }
+    }
+}
+
+@Composable
+private fun PhoneRow(phone: ContactEntryPhone, onCall: () -> Unit) {
+    val label = contactLabel(phone.label)
+    val description = stringResource(R.string.contacts_call_number, label, phone.number)
+
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onCall).padding(horizontal = 20.dp, vertical = 12.dp).testTag("contact-number"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(phone.number, style = MaterialTheme.typography.bodyLarge)
+        }
+        Icon(Icons.Filled.Phone, contentDescription = description, tint = MaterialTheme.colorScheme.onSurface)
+    }
+}
