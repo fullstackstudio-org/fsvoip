@@ -41,7 +41,7 @@ class FsMessagingService : FirebaseMessagingService() {
                 CallService.startForIncoming(this)
                 main.post { AppServices.get(this).phone.handleRingPush(decoded) }
             }
-            is PushMessage.Revoked, is PushMessage.Refresh -> main.post { AppServices.get(this).model.handleNotice(decoded) }
+            is PushMessage.Revoked, is PushMessage.Refresh, is PushMessage.Notice -> main.post { AppServices.get(this).model.handleNotice(decoded) }
         }
     }
 }

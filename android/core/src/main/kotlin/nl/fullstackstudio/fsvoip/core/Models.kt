@@ -8,6 +8,7 @@ package nl.fullstackstudio.fsvoip.core
 import java.time.Instant
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -130,6 +131,8 @@ data class ContactsInfo(
     @SerialName("internal") val hasInternal: Boolean,
     /** Number of customer contact lists in the portal. */
     val listsAvailable: Int,
+    /** Number of contacts in the address book of the customer (`GET /me`). */
+    val total: Int? = null,
 )
 
 @Serializable
@@ -174,7 +177,29 @@ data class MeResponse(
     val contacts: ContactsInfo,
     val push: PushStatus,
     @Serializable(with = InstantSerializer::class) val serverTime: Instant,
-)
+    /** What this pairing may do. `null` = a server from before roles existed: treat as `user`. */
+    val role: AppRole? = null,
+    /** What the app may show for that role. Informational: the server enforces every route. */
+    val capabilities: AppCapabilities? = null,
+    /** State of the PBX. `null` = an older server. */
+    val pbx: PbxStatus? = null,
+) {
+    /** Fail closed: anything but a role the server explicitly says is `admin` counts as `user`. */
+    val effectiveRole: AppRole
+        get() = if (role == AppRole.ADMIN) AppRole.ADMIN else AppRole.USER
+
+    /** Show the "Centrale" section? Needs the admin role AND the capability. */
+    val canManagePbx: Boolean
+        get() = effectiveRole == AppRole.ADMIN && (capabilities?.pbxManage ?: true)
+
+    /** Show "Mijn toestel" (`/me/extension`)? Only when the server says so. */
+    val canEditOwnExtension: Boolean
+        get() = capabilities?.selfExtension ?: false
+
+    /** Show the park button and the "On hold" tab? */
+    val canPark: Boolean
+        get() = capabilities?.park ?: false
+}
 
 /** `PATCH /me`. The key is always sent; `null` clears the alias. */
 data class MePatchRequest(val labelOverride: String?) {
@@ -226,4 +251,17 @@ data class ApiErrorBody(
     val error: String,
     val message: String? = null,
     val retryable: Boolean? = null,
+    /** Detail of `invalid_request` (`invalid_phone`, `resync`, `greeting_required`) and `conflict` (`limit_reached`). */
+    val code: String? = null,
+    /** The offending request field of an `invalid_request`, or the extension field a `user` may not change (`403`). */
+    val field: String? = null,
+    /** `forbidden`: the role that is needed (`admin`). */
+    val required: String? = null,
+    /** `stale`: the current version of the object. */
+    val version: Int? = null,
+    /** `in_use`, `cost_not_accepted`, `stale` + `chain`, `blocked_destination`: typed in part 2, kept raw here. */
+    val places: JsonElement? = null,
+    val blocked: JsonElement? = null,
+    val cost: JsonElement? = null,
+    val chain: JsonElement? = null,
 )

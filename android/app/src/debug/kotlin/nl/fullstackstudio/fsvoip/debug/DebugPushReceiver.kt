@@ -23,7 +23,7 @@ class DebugPushReceiver : BroadcastReceiver() {
                 CallService.startForIncoming(context)
                 services.phone.handleRingPush(message)
             }
-            is PushMessage.Revoked, is PushMessage.Refresh -> services.model.handleNotice(message)
+            is PushMessage.Revoked, is PushMessage.Refresh, is PushMessage.Notice -> services.model.handleNotice(message)
         }
     }
 }

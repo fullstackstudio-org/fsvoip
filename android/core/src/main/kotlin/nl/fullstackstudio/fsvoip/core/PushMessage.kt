@@ -44,7 +44,18 @@ data class RefreshPush(
     val accountId: String,
 )
 
+/** A message from the customer portal (a new order, a missed call, ...). `href` is an absolute portal link; see [NoticeRoute]. */
+@Serializable
+data class NoticePush(
+    val accountId: String,
+    val title: String,
+    val body: String,
+    val href: String,
+)
+
 sealed interface PushMessage {
+    data class Notice(val notice: NoticePush) : PushMessage
+
     data class Ring(val ring: RingPush) : PushMessage
 
     data class Revoked(val revoked: RevokedPush) : PushMessage
@@ -77,6 +88,7 @@ sealed interface PushMessage {
                     "ring" -> Ring(FsJson.default.decodeFromJsonElement(RingPush.serializer(), element))
                     "revoked" -> Revoked(FsJson.default.decodeFromJsonElement(RevokedPush.serializer(), element))
                     "refresh" -> Refresh(FsJson.default.decodeFromJsonElement(RefreshPush.serializer(), element))
+                    "notice" -> Notice(FsJson.default.decodeFromJsonElement(NoticePush.serializer(), element))
                     else -> throw PushMessageException.UnknownType(type)
                 }
             } catch (error: SerializationException) {

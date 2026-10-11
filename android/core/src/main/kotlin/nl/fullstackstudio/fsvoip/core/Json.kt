@@ -21,6 +21,9 @@ object FsJson {
         ignoreUnknownKeys = true
         explicitNulls = false
         encodeDefaults = true
+        // A value this app version does not know (a new enum entry) becomes the property's default instead of failing the whole
+        // answer: responses are decoded leniently, requests are built by hand.
+        coerceInputValues = true
     }
 
     fun parseTimestamp(text: String): Instant? = try {

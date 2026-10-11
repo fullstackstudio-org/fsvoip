@@ -2,6 +2,7 @@
 package nl.fullstackstudio.fsvoip.core
 
 import java.io.IOException
+import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -22,8 +23,26 @@ sealed class ApiException(message: String) : Exception(message) {
 
     class RateLimited(val retryAfterSeconds: Int?) : ApiException("rate_limited")
 
-    /** 400: the app sent something the server does not accept (a bug in the app). */
-    class InvalidRequest(val detail: String?) : ApiException("invalid_request")
+    /** 400: the app sent something the server does not accept (a bug in the app). `code`: `resync`, `invalid_phone`, ... */
+    class InvalidRequest(val detail: String?, val code: String? = null, val field: String? = null) : ApiException("invalid_request")
+
+    /** 403: this pairing may not do that. `required` = the role that is needed, `field` = the extension field a `user` may not change. */
+    class Forbidden(val required: String?, val field: String?) : ApiException("forbidden")
+
+    /** 404 `call_not_found`: no running call of this extension has that Call-ID. */
+    class CallNotFound : ApiException("call_not_found")
+
+    /** 409: `stale`, `read_only`, `no_free_slot`, `park_unavailable`, `park_busy`, `in_use`, `conflict` (`code`), ... */
+    class Conflict(val error: String, val code: String?, val version: Int?) : ApiException(error)
+
+    /** 410: the audio is past its retention period (recordings 90 days, voicemail 30 days). */
+    class Gone : ApiException("gone")
+
+    /** 416: the `Range` of a media request does not fit the audio. */
+    class RangeNotSatisfiable : ApiException("range_not_satisfiable")
+
+    /** 503 `park_uncertain`: the call MAY be parked. Never park again; look at the list. */
+    class ParkUncertain : ApiException("park_uncertain")
 
     class PayloadTooLarge : ApiException("payload_too_large")
 
@@ -37,6 +56,11 @@ sealed class ApiException(message: String) : Exception(message) {
     class Decoding(detail: String) : ApiException(detail)
 
     class UnexpectedStatus(val status: Int) : ApiException("status $status")
+}
+
+/** Where a media player fetches audio from, and the headers it must send. Never print it: the headers hold the device token. */
+class MediaSource(val url: String, val headers: Map<String, String>) {
+    override fun toString(): String = "MediaSource(•••)"
 }
 
 /** One HTTP exchange, without any client library in the way (tests use a fake). */
@@ -71,7 +95,9 @@ class OkHttpTransport(
         .build(),
 ) : HttpTransport {
     override suspend fun send(request: HttpRequest): HttpResponse = withContext(Dispatchers.IO) {
-        val body = request.body?.toRequestBody("application/json".toMediaType())
+        // POST, PUT and PATCH need a body even when there is nothing to send (`POST /unpair`).
+        val body = (request.body ?: if (request.method in setOf("POST", "PUT", "PATCH")) ByteArray(0) else null)
+            ?.toRequestBody("application/json".toMediaType())
         val builder = Request.Builder().url(request.url).method(request.method, body)
         request.headers.forEach { (name, value) -> builder.header(name, value) }
 
@@ -114,18 +140,123 @@ class FsVoipApiClient(
 
     suspend fun unpair(): OkResponse = perform("POST", "unpair", null, authenticated = true, OkResponse.serializer())
 
+    // MARK: The own extension
+
+    suspend fun selfExtension(): SelfExtension = perform("GET", "me/extension", null, authenticated = true, SelfExtension.serializer())
+
+    suspend fun patchSelfExtension(patch: SelfExtensionPatch): SelfExtensionPatchResponse =
+        perform("PATCH", "me/extension", patch.toJson(), authenticated = true, SelfExtensionPatchResponse.serializer())
+
+    // MARK: Calls, voicemail, parking
+
+    /** `GET /calls?month=YYYY-MM&locale=nl`. */
+    suspend fun calls(month: String? = null, locale: String = "nl"): PbxCallsPage =
+        perform("GET", "calls" + query("month" to month, "locale" to locale), null, authenticated = true, PbxCallsPage.serializer())
+
+    suspend fun voicemail(boxId: String? = null, locale: String = "nl"): VoicemailPage =
+        perform("GET", "voicemail" + query("box" to boxId, "locale" to locale), null, authenticated = true, VoicemailPage.serializer())
+
+    suspend fun deleteVoicemail(boxId: String, ref: String): OkResponse =
+        perform("DELETE", "voicemail/${segment(boxId)}/${segment(ref)}", null, authenticated = true, OkResponse.serializer())
+
+    /** `POST /calls/park` with the SIP Call-ID of the running call. 🚨 `ParkUncertain`: look at the list, never repeat. */
+    suspend fun park(callId: String): ParkedCall =
+        perform("POST", "calls/park", ParkRequest(callId).toJson(), authenticated = true, ParkedCall.serializer())
+
+    suspend fun parked(): ParkedCallsPage = perform("GET", "parked", null, authenticated = true, ParkedCallsPage.serializer())
+
+    suspend fun hangupParked(id: String): OkResponse =
+        perform("DELETE", "parked/${segment(id)}", null, authenticated = true, OkResponse.serializer())
+
+    // MARK: Media
+
+    /**
+     * What a player needs to fetch the audio of a voicemail message: the URL and the headers. The token only ever goes in
+     * the `Authorization` header (never in the URL); the player adds its own `Range`.
+     */
+    fun voicemailAudio(boxId: String, ref: String): MediaSource {
+        val token = deviceToken ?: throw ApiException.MissingDeviceToken()
+
+        return MediaSource(
+            url = "${baseUrl.trimEnd('/')}/voicemail/${segment(boxId)}/${segment(ref)}/audio",
+            headers = mapOf("Authorization" to "Bearer ${token.reveal()}", "User-Agent" to userAgent, "Accept" to "audio/*"),
+        )
+    }
+
+    // MARK: Contacts
+
+    /** One page of the sync. Without [since] the complete set. */
+    suspend fun contacts(since: String? = null, cursor: String? = null, limit: Int? = null): ContactsPage =
+        perform("GET", "contacts" + query("since" to since, "cursor" to cursor, "limit" to limit?.toString()), null, authenticated = true, ContactsPage.serializer())
+
+    suspend fun contact(id: String): Contact =
+        perform("GET", "contacts/${segment(id)}", null, authenticated = true, ContactSingleResponse.serializer()).contact
+
+    suspend fun createContact(create: ContactCreate): Contact =
+        perform("POST", "contacts", create.toJson(), authenticated = true, ContactSingleResponse.serializer()).contact
+
+    suspend fun updateContact(id: String, update: ContactUpdate): ContactUpdateResponse =
+        perform("PATCH", "contacts/${segment(id)}", update.toJson(), authenticated = true, ContactUpdateResponse.serializer())
+
+    suspend fun deleteContact(id: String): ContactDeleteResponse =
+        perform("DELETE", "contacts/${segment(id)}", null, authenticated = true, ContactDeleteResponse.serializer())
+
+    /** Who is calling? Only for an external number; the app waits at most a second for this on an incoming call. */
+    suspend fun lookupContact(number: String): ContactLookup =
+        perform("GET", "contacts/lookup" + query("number" to number), null, authenticated = true, ContactLookup.serializer())
+
+    suspend fun contactTimeline(id: String, cursor: String? = null): ContactTimelinePage =
+        perform("GET", "contacts/${segment(id)}/timeline" + query("cursor" to cursor), null, authenticated = true, ContactTimelinePage.serializer())
+
+    suspend fun contactLists(): ContactListsResponse =
+        perform("GET", "contact-lists", null, authenticated = true, ContactListsResponse.serializer())
+
+    /**
+     * The snapshot of a list. With [etag] (the version in quotes, [ContactListETag.make]) a list that did not change answers
+     * `304`: [ContactListSnapshotOutcome.NotModified]. The `If-None-Match` is ignored by the server on a cursor page.
+     */
+    suspend fun contactListSnapshot(id: String, cursor: String? = null, etag: String? = null): ContactListSnapshotOutcome {
+        val extra = if (etag != null && cursor == null) mapOf("If-None-Match" to etag) else emptyMap()
+        val response = execute("GET", "contact-lists/${segment(id)}/contacts" + query("cursor" to cursor), null, authenticated = true, extraHeaders = extra, accept = setOf(304))
+
+        if (response.status == 304) {
+            return ContactListSnapshotOutcome.NotModified(response.header("ETag"))
+        }
+
+        return ContactListSnapshotOutcome.Snapshot(decode("contact-lists", ContactListSnapshot.serializer(), response), response.header("ETag"))
+    }
+
     private suspend fun <T> perform(
         method: String,
         path: String,
         body: JsonElement?,
         authenticated: Boolean,
         deserializer: DeserializationStrategy<T>,
-    ): T {
+    ): T = decode(path.substringBefore('?'), deserializer, execute(method, path, body, authenticated))
+
+    private fun <T> decode(path: String, deserializer: DeserializationStrategy<T>, response: HttpResponse): T = try {
+        FsJson.default.decodeFromString(deserializer, response.body.toString(Charsets.UTF_8))
+    } catch (error: SerializationException) {
+        throw ApiException.Decoding("$path: ${error.javaClass.simpleName}")
+    } catch (error: IllegalArgumentException) {
+        throw ApiException.Decoding("$path: ${error.javaClass.simpleName}")
+    }
+
+    /** One exchange. A non-2xx answer (other than the statuses in [accept]) becomes an [ApiException]. */
+    private suspend fun execute(
+        method: String,
+        path: String,
+        body: JsonElement?,
+        authenticated: Boolean,
+        extraHeaders: Map<String, String> = emptyMap(),
+        accept: Set<Int> = emptySet(),
+    ): HttpResponse {
         val headers = linkedMapOf(
             "Accept" to "application/json",
             "User-Agent" to userAgent,
             "Cache-Control" to "no-store",
         )
+        headers.putAll(extraHeaders)
 
         if (authenticated) {
             val token = deviceToken ?: throw ApiException.MissingDeviceToken()
@@ -137,8 +268,9 @@ class FsVoipApiClient(
             FsJson.default.encodeToString(JsonElement.serializer(), it).toByteArray(Charsets.UTF_8)
         }
 
-        // Never log bodies or headers: the pair response carries the SIP password.
-        logger.debug("$method /$path")
+        // Never log bodies, queries or headers: the pair response carries the SIP password, a path can hold a message reference.
+        val label = path.substringBefore('?').let { if (it.startsWith("voicemail/") || it.startsWith("parked/")) it.substringBefore('/') + "/…" else it }
+        logger.debug("$method /$label")
 
         val response = try {
             transport.send(HttpRequest(method, "${baseUrl.trimEnd('/')}/$path", headers, bytes))
@@ -148,22 +280,26 @@ class FsVoipApiClient(
             throw ApiException.Transport(error.javaClass.simpleName)
         }
 
-        logger.debug("$method /$path -> ${response.status}")
+        logger.debug("$method /$label -> ${response.status}")
 
-        if (response.status !in 200..299) {
+        if (response.status !in 200..299 && response.status !in accept) {
             throw errorFor(response)
         }
 
-        return try {
-            FsJson.default.decodeFromString(deserializer, response.body.toString(Charsets.UTF_8))
-        } catch (error: SerializationException) {
-            throw ApiException.Decoding("$path: ${error.javaClass.simpleName}")
-        } catch (error: IllegalArgumentException) {
-            throw ApiException.Decoding("$path: ${error.javaClass.simpleName}")
-        }
+        return response
     }
 
     companion object {
+        /** A path segment, percent-encoded (a voicemail `ref` and a parked `id` are opaque and may hold `.`, `-`, `_`). */
+        internal fun segment(value: String): String = URLEncoder.encode(value, "UTF-8").replace("+", "%20")
+
+        /** `?a=1&b=2` of the pairs that have a value, or an empty string. */
+        internal fun query(vararg pairs: Pair<String, String?>): String {
+            val parts = pairs.mapNotNull { (key, value) -> value?.let { "$key=${URLEncoder.encode(it, "UTF-8").replace("+", "%20")}" } }
+
+            return if (parts.isEmpty()) "" else "?" + parts.joinToString("&")
+        }
+
         const val PRODUCTION_BASE_URL = "https://fullstackstudio.nl/api/voip-app/v1"
 
         fun errorFor(response: HttpResponse): ApiException {
@@ -175,12 +311,16 @@ class FsVoipApiClient(
             val retryAfter = response.header("Retry-After")?.trim()?.toIntOrNull()
 
             return when (response.status) {
-                400 -> ApiException.InvalidRequest(body?.message)
+                400 -> ApiException.InvalidRequest(body?.message, body?.code, body?.field)
                 401 -> ApiException.Unauthorized()
-                404 -> ApiException.NotFound()
+                403 -> ApiException.Forbidden(body?.required, body?.field)
+                404 -> if (body?.error == "call_not_found") ApiException.CallNotFound() else ApiException.NotFound()
+                409 -> ApiException.Conflict(body?.error ?: "conflict", body?.code, body?.version)
+                410 -> ApiException.Gone()
                 413 -> ApiException.PayloadTooLarge()
+                416 -> ApiException.RangeNotSatisfiable()
                 429 -> ApiException.RateLimited(retryAfter)
-                503 -> ApiException.Unavailable(body?.retryable ?: true, retryAfter)
+                503 -> if (body?.error == "park_uncertain") ApiException.ParkUncertain() else ApiException.Unavailable(body?.retryable ?: true, retryAfter)
                 else -> ApiException.UnexpectedStatus(response.status)
             }
         }

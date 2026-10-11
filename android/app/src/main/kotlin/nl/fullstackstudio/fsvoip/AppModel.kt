@@ -295,6 +295,7 @@ class AppModel(
         when (message) {
             is PushMessage.Revoked -> removeRevoked(message.revoked.accountId)
             is PushMessage.Refresh -> scope.launch { refreshAccounts() }
+            is PushMessage.Notice -> logger.notice("A portal notice arrived: shown in part 2")
             is PushMessage.Ring -> logger.notice("A ring message arrived as a notice: ignored")
         }
     }
