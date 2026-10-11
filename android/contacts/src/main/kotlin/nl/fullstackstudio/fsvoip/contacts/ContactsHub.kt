@@ -228,6 +228,93 @@ class ContactsHub(
         withContext(Dispatchers.IO) { store.save(accountId, updated) }
     }
 
+    // MARK: Changes
+
+    /** One contact in full (notes and lists); the stored copy is refreshed with it. */
+    suspend fun detail(accountId: String, contactId: String): ContactWrite = write(accountId) { client ->
+        client.contact(contactId).also { upsert(accountId, it) }
+    }
+
+    suspend fun create(draft: ContactDraft, accountId: String): ContactWrite = write(accountId) { client ->
+        client.createContact(draft.createRequest()).also { upsert(accountId, it) }
+    }
+
+    /** [ContactFailure.STALE]: the contact changed in the meantime; the caller reloads it with [detail] and lets the user try again. */
+    suspend fun update(draft: ContactDraft, contactId: String, expectedUpdatedAt: String, accountId: String): ContactWrite = write(accountId) { client ->
+        client.updateContact(contactId, draft.updateRequest(expectedUpdatedAt)).also { upsert(accountId, it) }
+    }
+
+    /** Administrator pairings only ([ContactFailure.FORBIDDEN] otherwise). */
+    suspend fun delete(contactId: String, accountId: String): ContactFailure? {
+        val client = api(accountId) ?: return ContactFailure.OTHER
+
+        return try {
+            client.deleteContact(contactId)
+
+            val updated = lock.withLock {
+                val current = data[accountId] ?: return null
+                val next = current.copy(
+                    contacts = current.contacts.filterNot { it.id == contactId },
+                    lists = current.lists.map { list -> list.copy(memberIds = list.memberIds - contactId) },
+                )
+                data[accountId] = next
+                publish()
+                next
+            }
+
+            withContext(Dispatchers.IO) { store.save(accountId, updated) }
+            null
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            changeFailed(accountId, error)
+        }
+    }
+
+    private suspend fun write(accountId: String, action: suspend (ContactsApi) -> nl.fullstackstudio.fsvoip.core.Contact): ContactWrite {
+        val client = api(accountId) ?: return ContactWrite.Failed(ContactFailure.OTHER)
+
+        return try {
+            ContactWrite.Done(action(client))
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            ContactWrite.Failed(changeFailed(accountId, error))
+        }
+    }
+
+    private fun changeFailed(accountId: String, error: Exception): ContactFailure {
+        val failure = ContactFailure.of(error)
+
+        logger.notice("A contact change failed: ${failure.name}")
+        if (failure == ContactFailure.REVOKED) onUnauthorized(accountId)
+
+        return failure
+    }
+
+    /** Puts a contact the server just gave us into the stored copy (and its list memberships, when the answer carries them). */
+    private suspend fun upsert(accountId: String, contact: nl.fullstackstudio.fsvoip.core.Contact) {
+        val updated = lock.withLock {
+            val current = data[accountId] ?: AccountContactsData()
+            val stored = StoredContact(contact)
+            val contacts = if (current.contacts.any { it.id == contact.id }) current.contacts.map { if (it.id == contact.id) stored else it } else current.contacts + stored
+            // The detail carries `listIds`: the memberships follow it.
+            val lists = current.lists.map { list ->
+                when {
+                    list.id in contact.listIds && contact.id !in list.memberIds -> list.copy(memberIds = list.memberIds + contact.id)
+                    list.id !in contact.listIds && contact.id in list.memberIds -> list.copy(memberIds = list.memberIds - contact.id)
+                    else -> list
+                }
+            }
+            val next = current.copy(contacts = contacts, lists = lists)
+            data[accountId] = next
+            publish()
+            next
+        }
+
+        withContext(Dispatchers.IO) { store.save(accountId, updated) }
+    }
+
     // MARK: Publishing
 
     /** Rebuilds the entries and the number index from what is in memory. Called under [lock]. */

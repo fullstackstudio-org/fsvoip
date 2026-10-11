@@ -70,6 +70,7 @@ class AppModel(
     val mediaService: MediaServicing,
     val player: AudioPlayerModel,
     val contacts: ContactsHub,
+    val favorites: nl.fullstackstudio.fsvoip.contacts.FavoriteContacts,
     val deviceContacts: DeviceContactsReader,
     private val preferences: PreferencesStore,
     private val recentsStore: RecentCallsStore,
@@ -317,6 +318,12 @@ class AppModel(
 
     /** What this pairing may do. `null` until the first `GET /me` of the account has come back (then nothing extra is shown). */
     fun capabilities(accountId: String): AppCapabilities? = _me.value[accountId]?.capabilities
+
+    /** The accounts whose address book this pairing may add to (`capabilities.contacts.write`). */
+    fun writableContactAccounts(): List<StoredAccount> = _accounts.value.filter { capabilities(it.id)?.contacts?.write ?: false }
+
+    /** Deleting a contact is for administrator pairings (`capabilities.contacts.delete`). */
+    fun canDeleteContact(accountId: String): Boolean = capabilities(accountId)?.contacts?.delete ?: false
 
     fun meOf(accountId: String): MeResponse? = _me.value[accountId]
 

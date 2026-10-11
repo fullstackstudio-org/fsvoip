@@ -121,6 +121,7 @@ class AppServices private constructor(context: Context) {
             mediaService = media,
             player = AudioPlayerModel(ExoPlayerBackend(appContext, userAgent = "FSVoip/$version (Android)")),
             contacts = contactsHub,
+            favorites = nl.fullstackstudio.fsvoip.contacts.FavoriteContacts(plain),
             deviceContacts = deviceContactsReader,
             preferences = preferences,
             recentsStore = RecentCallsStore(plain),

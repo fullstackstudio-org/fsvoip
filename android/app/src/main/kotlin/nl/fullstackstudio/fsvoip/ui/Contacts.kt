@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // The "Contacten" tab: the address book of the customer (synced from the portal) with the colleagues of the PBX, and the phone's own
-// contacts (read only, with permission). Android port of the iOS `ContactsView`. Adding and editing contacts comes in part 2.
+// contacts (read only, with permission). Android port of the iOS `ContactsView`: adding, editing and (administrators) deleting contacts of the address book, favourites, and
+// copying a contact of the phone into the address book.
 
 package nl.fullstackstudio.fsvoip.ui
 
@@ -27,7 +28,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material.icons.filled.Contacts
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Phone
@@ -72,11 +79,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import nl.fullstackstudio.fsvoip.AppModel
 import nl.fullstackstudio.fsvoip.R
+import nl.fullstackstudio.fsvoip.contacts.ContactDraft
 import nl.fullstackstudio.fsvoip.contacts.ContactEntry
+import nl.fullstackstudio.fsvoip.contacts.ContactFailure
+import nl.fullstackstudio.fsvoip.contacts.ContactWrite
 import nl.fullstackstudio.fsvoip.contacts.ContactEntryPhone
 import nl.fullstackstudio.fsvoip.contacts.ContactSource
 import nl.fullstackstudio.fsvoip.contacts.ContactsBrowsing
 import nl.fullstackstudio.fsvoip.contacts.ContactsFilter
+import nl.fullstackstudio.fsvoip.core.Contact
 import nl.fullstackstudio.fsvoip.core.ContactPhoneLabel
 
 private enum class ContactsSegment { CENTRALE, PHONE }
@@ -97,6 +108,9 @@ fun ContactsScreen(model: AppModel) {
     var filter by remember { mutableStateOf<ContactsFilter>(ContactsFilter.All) }
     var selected by remember { mutableStateOf<ContactEntry?>(null) }
     var refreshing by remember { mutableStateOf(false) }
+    var adding by remember { mutableStateOf(false) }
+    val favorites by model.favorites.ids.collectAsStateWithLifecycle()
+    val writable = remember(accounts, states) { model.writableContactAccounts() }
 
     // The phone's own contacts: read when the permission is there AND the user switched it on; never stored.
     var deviceEntries by remember { mutableStateOf<List<ContactEntry>>(emptyList()) }
@@ -119,7 +133,7 @@ fun ContactsScreen(model: AppModel) {
         }
     }
 
-    val centrale = remember(entries, filter, query) { ContactsBrowsing.visible(entries, filter, query, model.contacts) }
+    val centrale = remember(entries, filter, query, favorites) { ContactsBrowsing.visible(entries, filter, query, model.contacts, favorites) }
     val phone = remember(deviceEntries, query) { ContactsBrowsing.visible(deviceEntries, ContactsFilter.All, query, model.contacts) }
     val shown = if (segment == ContactsSegment.CENTRALE) centrale else phone
     val isSyncing = syncing.isNotEmpty()
@@ -142,16 +156,22 @@ fun ContactsScreen(model: AppModel) {
             ) { Text(stringResource(R.string.contacts_segment_phone)) }
         }
 
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            placeholder = { Text(stringResource(R.string.contacts_search)) },
-            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-            trailingIcon = if (query.isNotEmpty()) ({ IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.contacts_search_clear)) } }) else null,
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("contacts-search"),
-        )
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                placeholder = { Text(stringResource(R.string.contacts_search)) },
+                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                trailingIcon = if (query.isNotEmpty()) ({ IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.contacts_search_clear)) } }) else null,
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                modifier = Modifier.weight(1f).testTag("contacts-search"),
+            )
+
+            if (writable.isNotEmpty()) {
+                IconButton(onClick = { adding = true }, modifier = Modifier.testTag("contacts-add")) { Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.contacts_add)) }
+            }
+        }
 
         if (segment == ContactsSegment.CENTRALE) {
             FilterRow(filter, allLists.map { (accountId, list) -> ContactsFilter.OfList(accountId, list.id) to list.name }, accounts.size > 1, { id -> accounts.firstOrNull { it.id == id }?.displayLabel.orEmpty() }) { filter = it }
@@ -181,11 +201,12 @@ fun ContactsScreen(model: AppModel) {
                     onOpenSettings = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) },
                 )
                 shown.isEmpty() && query.isNotEmpty() -> ContactsEmpty(stringResource(R.string.contacts_noResults_title), stringResource(R.string.contacts_noResults_body, query))
+                shown.isEmpty() && filter == ContactsFilter.Favorites -> ContactsEmpty(stringResource(R.string.contacts_filter_favorites), stringResource(R.string.contacts_favorites_empty))
                 shown.isEmpty() && isSyncing -> ContactsEmpty(stringResource(R.string.contacts_syncing), null)
                 shown.isEmpty() -> ContactsEmpty(stringResource(R.string.contacts_empty_title), stringResource(R.string.contacts_empty_body))
                 else -> LazyColumn(Modifier.fillMaxSize().testTag("contacts-list")) {
                     items(shown, key = { it.id }) { entry ->
-                        ContactRow(entry) { selected = entry }
+                        ContactRow(entry, isFavorite = entry.id in favorites) { selected = entry }
                         HorizontalDivider(Modifier.padding(start = 66.dp))
                     }
 
@@ -204,6 +225,10 @@ fun ContactsScreen(model: AppModel) {
     }
 
     selected?.let { entry -> ContactDetailSheet(model, entry, onDismiss = { selected = null }) }
+
+    if (adding) {
+        ContactEditSheet(model, writable.first().id, existing = null, initial = ContactDraft(), onDismiss = { adding = false }, onSaved = { adding = false })
+    }
 }
 
 @Composable
@@ -219,6 +244,7 @@ private fun FilterRow(
 
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         FilterChip(selected = filter == ContactsFilter.All, onClick = { select(ContactsFilter.All) }, label = { Text(stringResource(R.string.contacts_filter_pillAll)) })
+        FilterChip(selected = filter == ContactsFilter.Favorites, onClick = { select(ContactsFilter.Favorites) }, label = { Text(stringResource(R.string.contacts_filter_favorites)) }, modifier = Modifier.testTag("contacts-filter-favorites"))
         FilterChip(selected = filter == ContactsFilter.AddressBook, onClick = { select(ContactsFilter.AddressBook) }, label = { Text(stringResource(R.string.contacts_filter_customer)) })
         FilterChip(selected = filter == ContactsFilter.Colleagues, onClick = { select(ContactsFilter.Colleagues) }, label = { Text(stringResource(R.string.contacts_filter_internal)) })
 
@@ -276,7 +302,7 @@ private fun DevicePrompt(denied: Boolean, onEnable: () -> Unit, onOpenSettings: 
 }
 
 @Composable
-private fun ContactRow(entry: ContactEntry, onClick: () -> Unit) {
+private fun ContactRow(entry: ContactEntry, isFavorite: Boolean = false, onClick: () -> Unit) {
     val subtitle = entry.company?.takeIf { it.isNotBlank() } ?: entry.phones.firstOrNull()?.number.orEmpty()
     val tag = when (entry.source) {
         ContactSource.InternalExtensions -> stringResource(R.string.contacts_source_colleague)
@@ -296,6 +322,10 @@ private fun ContactRow(entry: ContactEntry, onClick: () -> Unit) {
             if (subtitle.isNotEmpty() && entry.name.isNotBlank()) {
                 Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+        }
+
+        if (isFavorite) {
+            Icon(Icons.Filled.Star, contentDescription = stringResource(R.string.contacts_favorite_label), tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
         }
 
         if (tag != null) {
@@ -320,21 +350,52 @@ fun contactLabel(label: ContactPhoneLabel): String = stringResource(
 @Composable
 private fun ContactDetailSheet(model: AppModel, entry: ContactEntry, onDismiss: () -> Unit) {
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
     val states by model.contacts.accountStates.collectAsStateWithLifecycle()
+    val favorites by model.favorites.ids.collectAsStateWithLifecycle()
     val contactId = entry.id.substringAfter('/')
-    val listNames = entry.accountId?.let { accountId ->
-        states[accountId]?.lists.orEmpty().filter { it.isEnabled && contactId in it.memberIds }.map { it.name }
+    val accountId = entry.accountId
+    val isBook = entry.source == ContactSource.AddressBook && accountId != null
+    val listNames = accountId?.let { id ->
+        states[id]?.lists.orEmpty().filter { it.isEnabled && contactId in it.memberIds }.map { it.name }
     }.orEmpty()
+
+    // Notes and list memberships only come with the detail of one contact; it is fetched when the sheet opens.
+    var detail by remember { mutableStateOf<Contact?>(null) }
+    var editing by remember { mutableStateOf(false) }
+    var importing by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
+    var failure by remember { mutableStateOf<ContactFailure?>(null) }
+
+    LaunchedEffect(entry.id) {
+        if (isBook && accountId != null) {
+            (model.contacts.detail(accountId, contactId) as? ContactWrite.Done)?.let { detail = it.contact }
+        }
+    }
+
+    val canEdit = isBook && accountId != null && (model.capabilities(accountId)?.contacts?.write ?: false)
+    val canDelete = isBook && accountId != null && model.canDeleteContact(accountId)
+    val canImport = entry.source == ContactSource.Device && model.writableContactAccounts().isNotEmpty()
+    val favorite = entry.id in favorites
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet) {
         Column(Modifier.padding(bottom = 24.dp).verticalScroll(rememberScrollState()).testTag("contact-detail")) {
             Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 InitialsAvatar(entry.name, size = 56.dp)
-                Column {
+                Column(Modifier.weight(1f)) {
                     Text(entry.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                     entry.company?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
+                IconButton(onClick = { model.favorites.toggle(entry.id) }, modifier = Modifier.testTag("contact-favorite")) {
+                    Icon(
+                        if (favorite) Icons.Filled.Star else Icons.Filled.StarBorder,
+                        contentDescription = stringResource(if (favorite) R.string.contacts_favorite_remove else R.string.contacts_favorite_add),
+                        tint = if (favorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
+
+            failure?.let { NoteCard(contactFailureText(it), isError = true) }
 
             section(stringResource(R.string.contacts_detail_numbers), null) {
                 if (entry.phones.isEmpty()) {
@@ -354,8 +415,20 @@ private fun ContactDetailSheet(model: AppModel, entry: ContactEntry, onDismiss: 
                 section(stringResource(R.string.contacts_detail_email), null) { ValueRow(stringResource(R.string.contacts_detail_email), email) }
             }
 
+            detail?.notes?.takeIf { it.isNotBlank() }?.let { notes ->
+                section(stringResource(R.string.contacts_detail_notes), null) { InfoRow(notes) }
+            }
+
             if (listNames.isNotEmpty()) {
                 section(stringResource(R.string.contacts_detail_lists), null) { InfoRow(listNames.joinToString(", ")) }
+            }
+
+            if (canEdit || canDelete || canImport) {
+                section(null, if (canImport) stringResource(R.string.contacts_import_note) else null) {
+                    if (canEdit) ActionRow(stringResource(R.string.contacts_detail_edit), Icons.Filled.Edit, Modifier.testTag("contact-edit-action")) { editing = true }
+                    if (canImport) ActionRow(stringResource(R.string.contacts_import_action), Icons.Filled.Add, Modifier.testTag("contact-import")) { importing = true }
+                    if (canDelete) ActionRow(stringResource(R.string.contacts_detail_delete), Icons.Filled.Delete, Modifier.testTag("contact-delete"), color = Brand.hangUp) { confirmDelete = true }
+                }
             }
 
             when (entry.source) {
@@ -364,6 +437,41 @@ private fun ContactDetailSheet(model: AppModel, entry: ContactEntry, onDismiss: 
                 else -> Unit
             }
         }
+    }
+
+    if (editing && accountId != null) {
+        // Edit what the server last said (the detail), else what the list holds.
+        val current = detail ?: model.contacts.contact(accountId, contactId)?.let { Contact(it.id, it.name, it.firstName, it.lastName, it.company, it.email, it.phones, it.tags, it.updatedAt) }
+
+        if (current != null) {
+            ContactEditSheet(model, accountId, existing = current, initial = ContactDraft.from(current), onDismiss = { editing = false }, onSaved = { detail = it; editing = false })
+        }
+    }
+
+    if (importing) {
+        val target = model.writableContactAccounts().first().id
+
+        ContactEditSheet(model, target, existing = null, initial = ContactDraft.from(entry), onDismiss = { importing = false }, onSaved = { importing = false; onDismiss() })
+    }
+
+    if (confirmDelete && accountId != null) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text(stringResource(R.string.contacts_detail_delete_title, entry.name)) },
+            text = { Text(stringResource(R.string.contacts_detail_delete_message)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDelete = false
+
+                    scope.launch {
+                        val result = model.contacts.delete(contactId, accountId)
+
+                        if (result == null) onDismiss() else failure = result
+                    }
+                }) { Text(stringResource(R.string.contacts_detail_delete_confirm), color = Brand.hangUp) }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(stringResource(R.string.action_cancel)) } },
+        )
     }
 }
 

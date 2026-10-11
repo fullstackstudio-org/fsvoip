@@ -7,6 +7,8 @@ package nl.fullstackstudio.fsvoip.contacts
 import kotlinx.coroutines.CancellationException
 import nl.fullstackstudio.fsvoip.core.ApiException
 import nl.fullstackstudio.fsvoip.core.Contact
+import nl.fullstackstudio.fsvoip.core.ContactCreate
+import nl.fullstackstudio.fsvoip.core.ContactUpdate
 import nl.fullstackstudio.fsvoip.core.ContactListETag
 import nl.fullstackstudio.fsvoip.core.ContactListInfo
 import nl.fullstackstudio.fsvoip.core.ContactListSnapshotOutcome
@@ -20,6 +22,15 @@ interface ContactsApi {
     suspend fun contactLists(): ContactListsResponse
 
     suspend fun contactListSnapshot(listId: String, cursor: String?, etag: String?): ContactListSnapshotOutcome
+
+    // Changes: only the real API client does these (the sync fakes of the tests do not).
+    suspend fun contact(id: String): Contact = throw UnsupportedOperationException()
+
+    suspend fun createContact(request: ContactCreate): Contact = throw UnsupportedOperationException()
+
+    suspend fun updateContact(id: String, request: ContactUpdate): Contact = throw UnsupportedOperationException()
+
+    suspend fun deleteContact(id: String): Unit = throw UnsupportedOperationException()
 }
 
 /** The result of a whole sync run (all pages of `GET /contacts`). */
@@ -164,4 +175,14 @@ class LiveContactsApi(private val client: nl.fullstackstudio.fsvoip.core.FsVoipA
 
     override suspend fun contactListSnapshot(listId: String, cursor: String?, etag: String?): ContactListSnapshotOutcome =
         client.contactListSnapshot(listId, cursor, etag)
+
+    override suspend fun contact(id: String): Contact = client.contact(id)
+
+    override suspend fun createContact(request: ContactCreate): Contact = client.createContact(request)
+
+    override suspend fun updateContact(id: String, request: ContactUpdate): Contact = client.updateContact(id, request).contact
+
+    override suspend fun deleteContact(id: String) {
+        client.deleteContact(id)
+    }
 }
