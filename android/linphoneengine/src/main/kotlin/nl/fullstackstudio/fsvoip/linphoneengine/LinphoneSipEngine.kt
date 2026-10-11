@@ -26,6 +26,7 @@ import nl.fullstackstudio.fsvoip.sipengine.CallDirection
 import nl.fullstackstudio.fsvoip.sipengine.CallEndReason
 import nl.fullstackstudio.fsvoip.sipengine.CallId
 import nl.fullstackstudio.fsvoip.sipengine.CallInfo
+import nl.fullstackstudio.fsvoip.sipengine.CallOptions
 import nl.fullstackstudio.fsvoip.sipengine.CallState
 import nl.fullstackstudio.fsvoip.sipengine.DeclineReason
 import nl.fullstackstudio.fsvoip.sipengine.DtmfDigit
@@ -261,7 +262,7 @@ class LinphoneSipEngine(
 
     // MARK: Calls
 
-    override fun call(number: String, account: SipAccountId): CallId {
+    override fun call(number: String, account: SipAccountId, options: CallOptions): CallId {
         val core = requireCore()
         val existing = accounts[account] ?: throw SipEngineException.UnknownAccount(account)
         val config = accountConfigs[account] ?: throw SipEngineException.UnknownAccount(account)
@@ -275,12 +276,19 @@ class LinphoneSipEngine(
         params.account = existing
         params.isVideoEnabled = false
 
+        // Exactly the headers `CallOptions.headers` lists (a plain number, at most one), on the INVITE of this call only.
+        for (header in options.headers) {
+            params.addCustomHeader(header.name, header.value)
+        }
+
         val call = core.inviteAddressWithParams(address, params) ?: throw SipEngineException.Engine("The call could not be started")
         val id = track(call)
         callAccounts[id] = account
 
         return id
     }
+
+    override fun sipCallId(call: CallId): String? = callsById[call]?.callLog?.callId?.takeIf { it.isNotEmpty() }
 
     override fun answer(call: CallId) {
         val linphoneCall = requireCall(call)

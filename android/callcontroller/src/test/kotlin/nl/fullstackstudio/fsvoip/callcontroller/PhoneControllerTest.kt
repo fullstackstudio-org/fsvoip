@@ -8,6 +8,7 @@ import nl.fullstackstudio.fsvoip.core.RecentCall
 import nl.fullstackstudio.fsvoip.core.ServerTransport
 import nl.fullstackstudio.fsvoip.sipengine.CallDirection
 import nl.fullstackstudio.fsvoip.sipengine.CallEndReason
+import nl.fullstackstudio.fsvoip.sipengine.CallOptions
 import nl.fullstackstudio.fsvoip.sipengine.CallState
 import nl.fullstackstudio.fsvoip.sipengine.RegistrationState
 import nl.fullstackstudio.fsvoip.sipengine.SipAccountId
@@ -260,5 +261,36 @@ class PhoneControllerTest {
         } catch (error: Throwable) {
             if (error !is T) throw AssertionError("Expected ${T::class.simpleName}, got $error")
         }
+    }
+
+    @Test
+    fun theChosenNumberRidesAlongOnTheOutgoingCallOnly() {
+        val h = Harness()
+        h.registerAll()
+        h.phone.startCall("0701234567", ACCOUNT, CallOptions(fromNumber = "0850607849"))
+
+        assertEquals("0850607849", h.engine.callOptions.single().fromNumber)
+        assertEquals("0850607849", h.phone.activeSession!!.viaNumber)
+
+        h.engine.emitState(CallState.Ended(CallEndReason.RemoteHangup), "out-1", CallDirection.OUTGOING, ACCOUNT)
+
+        // A call without a choice sends no header at all.
+        h.phone.startCall("0701234567", ACCOUNT)
+        assertNull(h.engine.callOptions.last().fromNumber)
+        assertTrue(h.engine.callOptions.last().headers.isEmpty())
+    }
+
+    @Test
+    fun parkingUsesTheLiveSipCallIdNotTheEngineId() {
+        val h = Harness()
+        h.registerAll()
+        h.phone.startCall("0701234567", ACCOUNT)
+        val session = h.phone.activeSession!!
+
+        // The INVITE has not left yet: there is nothing to park with.
+        assertNull(h.phone.sipCallId(session))
+
+        h.engine.sipCallIds[session.engineCallId!!] = "HSzuSitbTA"
+        assertEquals("HSzuSitbTA", h.phone.sipCallId(h.phone.activeSession!!))
     }
 }

@@ -27,6 +27,7 @@ import nl.fullstackstudio.fsvoip.core.StoredAccount
 import nl.fullstackstudio.fsvoip.sipengine.CallDirection
 import nl.fullstackstudio.fsvoip.sipengine.CallEndReason
 import nl.fullstackstudio.fsvoip.sipengine.CallInfo
+import nl.fullstackstudio.fsvoip.sipengine.CallOptions
 import nl.fullstackstudio.fsvoip.sipengine.CallState
 import nl.fullstackstudio.fsvoip.sipengine.DeclineReason
 import nl.fullstackstudio.fsvoip.sipengine.DtmfDigit
@@ -242,7 +243,7 @@ class PhoneController(
     // MARK: Calls (asked by the UI)
 
     /** Start an outgoing call through the system call framework. */
-    fun startCall(rawNumber: String, accountId: String) {
+    fun startCall(rawNumber: String, accountId: String, options: CallOptions = CallOptions.NONE) {
         val number = DialNumber.sanitize(rawNumber)
 
         if (!DialNumber.isDialable(number)) throw PhoneException.InvalidNumber()
@@ -263,6 +264,7 @@ class PhoneController(
                 remoteName = name,
                 phase = CallSession.Phase.Starting,
                 createdAt = now(),
+                viaNumber = options.headers.firstOrNull()?.value,
             ),
         )
 
@@ -576,6 +578,9 @@ class PhoneController(
 
     // MARK: Helpers
 
+    /** The live SIP Call-ID of this call (never the engine's own id): what `POST /calls/park` needs. `null` while it is not known. */
+    fun sipCallId(session: CallSession): String? = session.engineCallId?.let { engine.sipCallId(it) }?.takeIf { it.isNotEmpty() }
+
     fun session(uuid: UUID): CallSession? = _sessions.value.firstOrNull { it.id == uuid }
 
     private fun append(session: CallSession) {
@@ -638,7 +643,8 @@ class PhoneController(
 
         val engineId = try {
             engine.audio.configure()
-            number?.let { engine.call(it, session.accountId) }
+            // The options ride along on the INVITE of an OUTGOING call only; an incoming call never has them.
+            number?.let { engine.call(it, session.accountId, CallOptions(fromNumber = session.viaNumber)) }
         } catch (error: Exception) {
             logger.error("Outgoing call failed to start: ${error.message}")
             null

@@ -14,6 +14,7 @@ import nl.fullstackstudio.fsvoip.core.StoredAccount
 import nl.fullstackstudio.fsvoip.sipengine.CallDirection
 import nl.fullstackstudio.fsvoip.sipengine.CallId
 import nl.fullstackstudio.fsvoip.sipengine.CallInfo
+import nl.fullstackstudio.fsvoip.sipengine.CallOptions
 import nl.fullstackstudio.fsvoip.sipengine.CallState
 import nl.fullstackstudio.fsvoip.sipengine.DeclineReason
 import nl.fullstackstudio.fsvoip.sipengine.DtmfDigit
@@ -89,12 +90,21 @@ class FakeSipEngine : SipEngine {
         log += "refresh $account"
     }
 
-    override fun call(number: String, account: SipAccountId): CallId {
+    /** The options of every outgoing call, in order. */
+    val callOptions = mutableListOf<CallOptions>()
+
+    /** The live SIP Call-IDs; without an entry the engine has none yet. */
+    val sipCallIds = mutableMapOf<CallId, String>()
+
+    override fun sipCallId(call: CallId): String? = sipCallIds[call]
+
+    override fun call(number: String, account: SipAccountId, options: CallOptions): CallId {
         if (failNextCall) {
             failNextCall = false
             throw SipEngineException.Engine("boom")
         }
 
+        callOptions += options
         log += "call $number from $account"
         return CallId("out-1")
     }

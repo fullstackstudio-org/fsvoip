@@ -12,9 +12,11 @@ class ShellTest {
     fun theDotFollowsTheLineAndDoNotDisturb() {
         assertEquals(AvailabilityDot.AVAILABLE, AvailabilityDot.of(RegistrationState.Registered, doNotDisturb = false))
         assertEquals(AvailabilityDot.DO_NOT_DISTURB, AvailabilityDot.of(RegistrationState.Registered, doNotDisturb = true))
-        assertEquals(AvailabilityDot.CONNECTING, AvailabilityDot.of(RegistrationState.Registering, doNotDisturb = true))
+        assertEquals(AvailabilityDot.CONNECTING, AvailabilityDot.of(RegistrationState.Registering, doNotDisturb = false))
         assertEquals(AvailabilityDot.OFFLINE, AvailabilityDot.of(RegistrationState.Unregistered, doNotDisturb = false))
-        assertEquals(AvailabilityDot.OFFLINE, AvailabilityDot.of(RegistrationState.Failed(RegistrationFailure.Network), doNotDisturb = true))
+        // Do not disturb is the user's own choice: it shows whatever the line does.
+        assertEquals(AvailabilityDot.DO_NOT_DISTURB, AvailabilityDot.of(RegistrationState.Failed(RegistrationFailure.Network), doNotDisturb = true))
+        assertEquals(AvailabilityDot.DO_NOT_DISTURB, AvailabilityDot.of(RegistrationState.Registering, doNotDisturb = true))
     }
 
     @Test

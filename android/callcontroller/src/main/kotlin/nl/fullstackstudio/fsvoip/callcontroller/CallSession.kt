@@ -32,6 +32,8 @@ data class CallSession(
     /** The user ended (or declined) the call on the call UI: the system must not be told again. */
     val endedByUser: Boolean = false,
     val reportedConnected: Boolean = false,
+    /** Outgoing: the number of the PBX this call goes out with (`X-FSS-From`), national. `null` = the default of the extension. */
+    val viaNumber: String? = null,
 ) {
     sealed interface Phase {
         /** Outgoing, waiting for the system to start the call. */

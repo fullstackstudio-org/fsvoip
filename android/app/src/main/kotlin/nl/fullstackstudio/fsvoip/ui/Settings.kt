@@ -71,6 +71,7 @@ fun SettingsNavigation(model: AppModel, stack: SnapshotStateList<SettingsPage>, 
     when (val page = stack.lastOrNull()) {
         null -> SettingsScreen(model, open = { stack.add(it) }, close = close)
         is SettingsPage.Account -> AccountDetailScreen(model, page.id, back = { stack.removeAt(stack.lastIndex) })
+        is SettingsPage.CallPreferences -> CallPreferencesScreen(model, page.id, back = { stack.removeAt(stack.lastIndex) })
         SettingsPage.Licenses -> LicensesScreen(back = { stack.removeAt(stack.lastIndex) })
     }
 }
@@ -104,6 +105,8 @@ private fun SettingsScreen(model: AppModel, open: (SettingsPage) -> Unit, close:
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())) {
+            OwnExtensionSection(model, open)
+
             section(stringResource(R.string.settings_lines), stringResource(R.string.settings_lines_footer)) {
                 for (account in accounts) {
                     AccountRow(account, registrations[account.id] ?: RegistrationState.Unregistered) { open(SettingsPage.Account(account.id)) }
@@ -159,6 +162,34 @@ private fun SettingsScreen(model: AppModel, open: (SettingsPage) -> Unit, close:
                 LinkRow(stringResource(R.string.settings_licenses), null) { open(SettingsPage.Licenses) }
             }
         }
+    }
+}
+
+/** "Beschikbaar" (do not disturb) and "Oproepvoorkeuren" of the extension shown on the avatar; only when the server offers them. */
+@Composable
+private fun OwnExtensionSection(model: AppModel, open: (SettingsPage) -> Unit) {
+    val accounts by model.accounts.collectAsStateWithLifecycle()
+    model.me.collectAsStateWithLifecycle().value
+    model.selfExtension.states.collectAsStateWithLifecycle().value
+    val account = model.defaultOutgoingAccountId?.let { id -> accounts.firstOrNull { it.id == id } } ?: accounts.firstOrNull() ?: return
+
+    if (model.meOf(account.id)?.canEditOwnExtension != true) {
+        return
+    }
+
+    val dnd = model.doNotDisturb(account.id)
+
+    section(account.displayLabel, null) {
+        if (dnd != null) {
+            SwitchRow(
+                stringResource(R.string.settings_available),
+                stringResource(if (dnd) R.string.settings_available_off else R.string.settings_available_on),
+                checked = !dnd,
+                modifier = Modifier.testTag("available-toggle"),
+            ) { model.setAvailable(it, account.id) }
+        }
+
+        LinkRow(stringResource(R.string.settings_callPreferences), null) { open(SettingsPage.CallPreferences(account.id)) }
     }
 }
 
@@ -243,8 +274,8 @@ fun InfoRow(text: String) {
 }
 
 @Composable
-fun CheckRow(title: String, checked: Boolean, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+fun CheckRow(title: String, checked: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).then(modifier).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (checked) Icon(Icons.Filled.Check, contentDescription = null)
     }

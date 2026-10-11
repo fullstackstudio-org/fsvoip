@@ -171,6 +171,30 @@ value class DtmfDigit private constructor(val character: Char) {
     }
 }
 
+/** One extra SIP header on the INVITE of an outgoing call. */
+data class CallHeader(val name: String, val value: String)
+
+/** What the app asks of ONE outgoing call besides the number. */
+data class CallOptions(
+    /** A national number of the PBX (`0850607848`) to call out with (`X-FSS-From`); `null` = the extension's own default. */
+    val fromNumber: String? = null,
+) {
+    /**
+     * The headers the engine puts on the INVITE: at most one `X-FSS-From`, only for a plain number (never a value that could carry a
+     * second header or SIP syntax).
+     */
+    val headers: List<CallHeader>
+        get() = fromNumber?.takeIf(::isPlainNumber)?.let { listOf(CallHeader(FROM_HEADER_NAME, it)) } ?: emptyList()
+
+    companion object {
+        const val FROM_HEADER_NAME = "X-FSS-From"
+
+        val NONE = CallOptions()
+
+        fun isPlainNumber(value: String): Boolean = value.isNotEmpty() && value.length <= 32 && value.all { it in '0'..'9' }
+    }
+}
+
 /** An incoming call as the engine reports it. */
 data class IncomingCall(
     val id: CallId,

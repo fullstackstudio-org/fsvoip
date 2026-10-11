@@ -127,9 +127,10 @@ fun ShellTopBar(model: AppModel, title: String) {
     val accounts by model.accounts.collectAsStateWithLifecycle()
     val registrations by model.phone.registrations.collectAsStateWithLifecycle()
     model.settingsRevision.collectAsStateWithLifecycle().value
+    val own by model.selfExtension.states.collectAsStateWithLifecycle()
     val account = model.defaultOutgoingAccountId?.let { id -> accounts.firstOrNull { it.id == id } } ?: accounts.firstOrNull()
     val state = account?.let { registrations[it.id] } ?: RegistrationState.Unregistered
-    val dot = AvailabilityDot.of(state, doNotDisturb = false)
+    val dot = AvailabilityDot.of(state, doNotDisturb = account?.let { own[it.id]?.dnd } == true)
     val avatarLabel = stringResource(R.string.settings_avatar_label, account?.extensionName ?: "")
     val dotLabel = stringResource(dot.label)
 
@@ -168,12 +169,12 @@ enum class AvailabilityDot(val color: Color, val label: Int) {
     ;
 
     companion object {
-        /** Do not disturb wins over everything but a line that is not connected: nobody reaches you then either way. */
+        /** Do not disturb is the user's own choice and always shows; then the state of the line (same order as iOS). */
         fun of(state: RegistrationState, doNotDisturb: Boolean): AvailabilityDot = when {
-            state == RegistrationState.Registering -> CONNECTING
-            state != RegistrationState.Registered -> OFFLINE
             doNotDisturb -> DO_NOT_DISTURB
-            else -> AVAILABLE
+            state == RegistrationState.Registered -> AVAILABLE
+            state == RegistrationState.Registering -> CONNECTING
+            else -> OFFLINE
         }
     }
 }

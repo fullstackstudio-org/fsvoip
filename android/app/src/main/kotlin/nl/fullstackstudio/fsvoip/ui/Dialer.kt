@@ -27,6 +27,15 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.semantics.stateDescription
+import nl.fullstackstudio.fsvoip.core.PbxVocabulary
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -67,6 +76,7 @@ fun DialerScreen(model: AppModel) {
     model.settingsRevision.collectAsStateWithLifecycle().value
     var input by remember { mutableStateOf(DialerInput()) }
     var chosenAccountId by remember { mutableStateOf<String?>(null) }
+    var showsChooser by remember { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
 
     val accountId = chosenAccountId?.takeIf { id -> accounts.any { it.id == id } } ?: model.defaultOutgoingAccountId
@@ -89,15 +99,14 @@ fun DialerScreen(model: AppModel) {
         val key = keySize(maxWidth, maxHeight)
 
         Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Spacer(Modifier.height(12.dp))
-            LineSelector(accounts, registrations, accountId) { chosenAccountId = it }
+            accountId?.let { UnavailableBanner(model, it) }
             Spacer(Modifier.weight(1f))
             NumberDisplay(model, input, height = key * 1.15f) { input = it }
             Spacer(Modifier.weight(1f))
             Keypad(keySize = key, onKey = { input = input.press(it) }, onLongPressZero = { input = input.longPressZero() })
 
             Row(
-                Modifier.padding(top = key * 0.28f, bottom = 28.dp).size(width = key * 3 + key * 0.56f, height = key),
+                Modifier.padding(top = key * 0.28f, bottom = 16.dp).size(width = key * 3 + key * 0.56f, height = key),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
@@ -105,13 +114,25 @@ fun DialerScreen(model: AppModel) {
                 CallButton(size = key, enabled = accountId != null, onClick = ::placeCall)
                 DeleteButton(size = key, visible = !input.isEmpty, onDelete = { input = input.deleteLast() }, onClear = { input = input.clear() })
             }
+
+            // The line and the number this call goes out with; the bar opens the chooser when there is something to choose.
+            accountId?.let { id ->
+                accounts.firstOrNull { it.id == id }?.let { account ->
+                    OutboundBar(model, account, registrations[id] ?: RegistrationState.Unregistered, opensChooser = { showsChooser = true })
+                    Spacer(Modifier.height(16.dp))
+                }
+            }
         }
+    }
+
+    if (showsChooser) {
+        OutboundChooserSheet(model, accountId, onAccount = { chosenAccountId = it }, onDismiss = { showsChooser = false })
     }
 }
 
 private fun keySize(width: Dp, height: Dp): Dp {
     // Fit four rows of keys plus the call row and the display into the height; never wider than the screen.
-    val byHeight = (height - 120.dp) / 6.4f
+    val byHeight = (height - 190.dp) / 6.4f
     val byWidth = (width - 96.dp) / 3
 
     return maxOf(56.dp, minOf(84.dp, byHeight, byWidth))
@@ -165,51 +186,117 @@ private fun NumberDisplay(model: AppModel, input: DialerInput, height: Dp, onCha
 fun clipboardText(context: Context): String? =
     context.getSystemService(ClipboardManager::class.java)?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString()
 
-/** Which line (paired account) the call goes out on, with its light. */
+/** The bar under the keypad: which line (paired account) and which number the call goes out with. */
 @Composable
-private fun LineSelector(accounts: List<StoredAccount>, registrations: Map<String, RegistrationState>, selectedId: String?, select: (String) -> Unit) {
-    val account = accounts.firstOrNull { it.id == selectedId } ?: return
-    val state = registrations[account.id] ?: RegistrationState.Unregistered
-    var open by remember { mutableStateOf(false) }
-    val several = accounts.size > 1
-    val description = stringResource(R.string.dialer_lineAccessibility, account.displayLabel, state.label())
+private fun OutboundBar(model: AppModel, account: StoredAccount, state: RegistrationState, opensChooser: () -> Unit) {
+    model.settingsRevision.collectAsStateWithLifecycle().value
+    model.selfExtension.states.collectAsStateWithLifecycle().value
+    model.me.collectAsStateWithLifecycle().value
+    val accounts by model.accounts.collectAsStateWithLifecycle()
+    val choosable = model.canChooseOutbound(account.id) || accounts.size > 1
+    val label = model.outboundLabel(account.id)
+    val description = stringResource(R.string.outbound_bar_accessibility, label)
+    val hint = stringResource(R.string.outbound_bar_hint)
 
-    Box {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 24.dp)) {
         Row(
             Modifier
-                .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
-                .combinedClickableIf(several) { open = true }
-                .padding(horizontal = 14.dp, vertical = 9.dp)
-                .testTag("line-selector")
-                .semantics(mergeDescendants = true) { contentDescription = description },
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(14.dp))
+                .combinedClickableIf(choosable, opensChooser)
+                .padding(horizontal = 14.dp, vertical = 10.dp)
+                .testTag("outbound-bar")
+                .semantics(mergeDescendants = true) {
+                    contentDescription = description
+                    if (choosable) stateDescription = hint
+                },
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             StatusLight(state)
-            Text(account.displayLabel, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Column(Modifier.weight(1f)) {
+                if (accounts.size > 1) {
+                    Text(account.displayLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
 
-            if (state != RegistrationState.Registered) {
-                Text(state.label(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                Text(label, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
 
-            if (several) {
-                Icon(Icons.Filled.UnfoldMore, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            for (option in accounts) {
-                val optionState = registrations[option.id] ?: RegistrationState.Unregistered
-                DropdownMenuItem(
-                    text = { Text("${option.displayLabel} · ${optionState.label()}") },
-                    leadingIcon = { Icon(if (option.id == selectedId) Icons.Filled.Check else Icons.Filled.Phone, contentDescription = null) },
-                    onClick = {
-                        open = false
-                        select(option.id)
-                    },
-                )
+            if (choosable) {
+                Icon(Icons.Filled.UnfoldMore, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+
+        if (state != RegistrationState.Registered) {
+            Text(state.label(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+        }
+    }
+}
+
+/** The sheet behind the bar: with several accounts first the account, then the number. Choosing a number sets it for the next call. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun OutboundChooserSheet(model: AppModel, accountId: String?, onAccount: (String) -> Unit, onDismiss: () -> Unit) {
+    val accounts by model.accounts.collectAsStateWithLifecycle()
+    val registrations by model.phone.registrations.collectAsStateWithLifecycle()
+    model.settingsRevision.collectAsStateWithLifecycle().value
+    model.selfExtension.states.collectAsStateWithLifecycle().value
+    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet) {
+        Column(Modifier.padding(bottom = 24.dp).verticalScroll(rememberScrollState()).testTag("outbound-sheet")) {
+            Text(stringResource(R.string.outbound_sheet_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+
+            if (accounts.size > 1) {
+                section(stringResource(R.string.outbound_sheet_account), null) {
+                    for (account in accounts) {
+                        val state = registrations[account.id] ?: RegistrationState.Unregistered
+                        CheckRow("${account.displayLabel} · ${state.label()}", checked = account.id == accountId) { onAccount(account.id) }
+                    }
+                }
+            }
+
+            if (accountId != null && model.canChooseOutbound(accountId)) {
+                val selected = model.selectedOutbound(accountId)
+
+                section(stringResource(R.string.outbound_sheet_number), stringResource(R.string.outbound_sheet_footer)) {
+                    for (number in model.outboundNumbers(accountId)) {
+                        CheckRow(PbxVocabulary.numberTitle(number), checked = selected?.number == number.number, modifier = Modifier.testTag("outbound-number-${number.number}")) {
+                            model.selectOutbound(accountId, number.number)
+                            onDismiss()
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** "Niet storen staat aan": the dialler says so, with the way out. */
+@Composable
+private fun UnavailableBanner(model: AppModel, accountId: String) {
+    model.selfExtension.states.collectAsStateWithLifecycle().value
+
+    if (model.doNotDisturb(accountId) != true) {
+        return
+    }
+
+    Row(
+        Modifier
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .fillMaxWidth()
+            .background(Brand.hangUp.copy(alpha = 0.12f), RoundedCornerShape(14.dp))
+            .padding(horizontal = 14.dp, vertical = 10.dp)
+            .testTag("unavailable-banner"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(stringResource(R.string.dialer_unavailable_title), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.dialer_unavailable_message), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+
+        TextButton(onClick = { model.setAvailable(true, accountId) }) { Text(stringResource(R.string.dialer_unavailable_action)) }
     }
 }
 

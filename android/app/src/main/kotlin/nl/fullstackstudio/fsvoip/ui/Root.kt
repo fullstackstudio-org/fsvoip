@@ -123,6 +123,8 @@ sealed interface SettingsPage {
     data class Account(val id: String) : SettingsPage
 
     data object Licenses : SettingsPage
+
+    data class CallPreferences(val id: String) : SettingsPage
 }
 
 @Composable

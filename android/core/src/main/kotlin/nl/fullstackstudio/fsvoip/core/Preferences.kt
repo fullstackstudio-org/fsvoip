@@ -11,6 +11,11 @@ data class AccountPreferences(
      * applies (on when several accounts are paired, plan D10).
      */
     val showCalledAccount: Boolean? = null,
+    /**
+     * The number of the PBX the user chose to call out with ("Bellen met"), national, e.g. `0850607848`. `null` = the default of the
+     * extension. Only used when the PBX supports the choice (`capabilities.callerChoice`) and still lists the number.
+     */
+    val outboundNumber: String? = null,
 ) {
     fun effectiveShowCalledAccount(accountCount: Int): Boolean = showCalledAccount ?: (accountCount > 1)
 }

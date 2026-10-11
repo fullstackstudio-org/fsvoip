@@ -49,4 +49,15 @@ class TypesTest {
         assertTrue(CallState.Ended(CallEndReason.Busy).isEnded)
         assertFalse(CallState.Active.isEnded)
     }
+
+    @Test
+    fun callOptionsPutAtMostOnePlainNumberOnTheInvite() {
+        assertEquals(emptyList<CallHeader>(), CallOptions.NONE.headers)
+        assertEquals(listOf(CallHeader("X-FSS-From", "0850607848")), CallOptions(fromNumber = "0850607848").headers)
+        // Never a value that could carry a second header or SIP syntax.
+        assertEquals(emptyList<CallHeader>(), CallOptions(fromNumber = "0850607848\r\nX-Evil: 1").headers)
+        assertEquals(emptyList<CallHeader>(), CallOptions(fromNumber = "").headers)
+        assertEquals(emptyList<CallHeader>(), CallOptions(fromNumber = "+31850607848").headers)
+        assertEquals(emptyList<CallHeader>(), CallOptions(fromNumber = "1".repeat(33)).headers)
+    }
 }

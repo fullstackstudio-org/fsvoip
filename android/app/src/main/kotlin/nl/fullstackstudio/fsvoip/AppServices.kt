@@ -23,6 +23,8 @@ import nl.fullstackstudio.fsvoip.core.InstallIdentity
 import nl.fullstackstudio.fsvoip.core.InstallIdentity.Companion.toHex
 import nl.fullstackstudio.fsvoip.core.KeyValuePreferencesStore
 import nl.fullstackstudio.fsvoip.core.KeystoreSecretStore
+import nl.fullstackstudio.fsvoip.core.LiveSelfExtensionService
+import nl.fullstackstudio.fsvoip.core.SelfExtensionHub
 import nl.fullstackstudio.fsvoip.core.OkHttpTransport
 import nl.fullstackstudio.fsvoip.core.RecentCallsStore
 import nl.fullstackstudio.fsvoip.core.SharedPreferencesStore
@@ -95,6 +97,7 @@ class AppServices private constructor(context: Context) {
             phone = phone,
             accountStore = accounts,
             service = AccountService(api, accounts),
+            selfExtension = SelfExtensionHub(LiveSelfExtensionService(api)),
             preferences = preferences,
             recentsStore = RecentCallsStore(plain),
             device = {

@@ -20,10 +20,15 @@ import nl.fullstackstudio.fsvoip.core.AppCapabilities
 import nl.fullstackstudio.fsvoip.core.FsLogger
 import nl.fullstackstudio.fsvoip.core.InternalContact
 import nl.fullstackstudio.fsvoip.core.MeResponse
+import nl.fullstackstudio.fsvoip.core.OutboundChoice
+import nl.fullstackstudio.fsvoip.core.PbxVocabulary
 import nl.fullstackstudio.fsvoip.core.PreferencesStore
 import nl.fullstackstudio.fsvoip.core.PushMessage
 import nl.fullstackstudio.fsvoip.core.RecentCall
 import nl.fullstackstudio.fsvoip.core.RecentCallsStore
+import nl.fullstackstudio.fsvoip.core.SelfExtension
+import nl.fullstackstudio.fsvoip.core.SelfExtensionHub
+import nl.fullstackstudio.fsvoip.core.SelfNumber
 import nl.fullstackstudio.fsvoip.core.StoredAccount
 import nl.fullstackstudio.fsvoip.pairing.AccountRefreshResult
 import nl.fullstackstudio.fsvoip.pairing.AccountServicing
@@ -33,6 +38,7 @@ import nl.fullstackstudio.fsvoip.pairing.PairingLink
 import nl.fullstackstudio.fsvoip.pairing.PairingLinkException
 import nl.fullstackstudio.fsvoip.pairing.PairingLinkParser
 import nl.fullstackstudio.fsvoip.pairing.PushTokenReporting
+import nl.fullstackstudio.fsvoip.sipengine.CallOptions
 import nl.fullstackstudio.fsvoip.sipengine.RegistrationState
 
 /** Runtime permissions the model asks for at the right moment; the activity implements them. */
@@ -46,6 +52,7 @@ class AppModel(
     val phone: PhoneController,
     private val accountStore: nl.fullstackstudio.fsvoip.core.AccountStore,
     private val service: AccountServicing,
+    val selfExtension: SelfExtensionHub,
     private val preferences: PreferencesStore,
     private val recentsStore: RecentCallsStore,
     private val device: () -> DeviceDescriptor,
@@ -126,6 +133,9 @@ class AppModel(
             _recents.value = recentsStore.all()
         }
 
+        // A 401/403 on the own extension: the pairing or the role is gone; `GET /me` removes or updates the account.
+        selfExtension.onRevoked = { scope.launch { refreshAccounts() } }
+
         reloadAccounts()
         _recents.value = recentsStore.all()
     }
@@ -155,6 +165,13 @@ class AppModel(
                     is AccountRefreshResult.Updated -> {
                         _internalContacts.value = _internalContacts.value + (result.account.id to result.internalContacts)
                         _me.value = _me.value + (result.account.id to result.me)
+
+                        if (result.me.canEditOwnExtension) {
+                            // Availability (the dot on the avatar), the numbers to call out with and "Oproepvoorkeuren".
+                            selfExtension.load(result.account)
+                        } else {
+                            selfExtension.forget(result.account.id)
+                        }
                     }
                     AccountRefreshResult.Revoked -> {
                         cleanUp(account.id)
@@ -269,7 +286,7 @@ class AppModel(
         }
 
         return try {
-            phone.startCall(number, id)
+            phone.startCall(number, id, CallOptions(fromNumber = OutboundChoice.headerNumber(preferences.preferences(id).outboundNumber, capabilities(id), selfExtension.state(id))))
             scope.launch { permissions?.requestMicrophone() }
             true
         } catch (error: PhoneException) {
@@ -284,6 +301,49 @@ class AppModel(
     fun clearRecents() {
         recentsStore.clear()
         _recents.value = emptyList()
+    }
+
+    // MARK: Availability and the number to call out with
+
+    /** Do not disturb on the own extension; `null` = not known (the server has no `/me/extension` or it has not loaded yet). */
+    fun doNotDisturb(accountId: String): Boolean? = selfExtension.state(accountId)?.dnd
+
+    /** Switch availability. Optimistic; a failure puts the switch back and shows a notice. */
+    fun setAvailable(available: Boolean, accountId: String) {
+        val account = account(accountId) ?: return
+
+        scope.launch {
+            selfExtension.setAvailable(available, account)
+
+            if (selfExtension.failedFor.value == accountId) {
+                selfExtension.clearFailure()
+                _notice.value = Notice(string(R.string.self_error_other), isError = true)
+            }
+        }
+    }
+
+    /** "Bellen met" only exists when the server says the PBX understands `X-FSS-From`. */
+    fun offersOutboundChoice(accountId: String): Boolean = capabilities(accountId)?.callerChoice == true
+
+    fun outboundNumbers(accountId: String): List<SelfNumber> =
+        if (offersOutboundChoice(accountId)) selfExtension.state(accountId)?.numbers.orEmpty() else emptyList()
+
+    /** The chooser is only worth opening with something to choose from. */
+    fun canChooseOutbound(accountId: String): Boolean = OutboundChoice.canChoose(capabilities(accountId), selfExtension.state(accountId))
+
+    fun selectedOutbound(accountId: String): SelfNumber? =
+        if (offersOutboundChoice(accountId)) OutboundChoice.selected(preferences.preferences(accountId).outboundNumber, selfExtension.state(accountId)) else null
+
+    /** "Hoofdnummer · 085 060 7848", or "Standaardnummer" when there is nothing to show. */
+    fun outboundLabel(accountId: String): String =
+        selectedOutbound(accountId)?.let(PbxVocabulary::numberTitle) ?: string(R.string.outbound_default)
+
+    /** Remember the choice. No request: the number rides along with the next call. */
+    fun selectOutbound(accountId: String, number: String) {
+        if (outboundNumbers(accountId).none { it.number == number }) return
+
+        preferences.setPreferences(preferences.preferences(accountId).copy(outboundNumber = number), accountId)
+        _settingsRevision.value++
     }
 
     /** Name of a contact (internal extensions; the phone's contacts when switched on) for a number. */
@@ -447,6 +507,7 @@ class AppModel(
         preferences.removePreferences(accountId)
         _internalContacts.value = _internalContacts.value - accountId
         _me.value = _me.value - accountId
+        selfExtension.forget(accountId)
         _settingsRevision.value++
     }
 
