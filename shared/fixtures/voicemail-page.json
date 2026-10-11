@@ -1,0 +1,48 @@
+{
+  "boxes": [
+    {
+      "id": "2f4a6c8e-1b3d-4f5a-8c7e-9a0b1c2d3e4f",
+      "name": "Algemeen",
+      "number": "900",
+      "shared": true
+    },
+    {
+      "id": "7a1d9c3e-5b2f-4e8a-9c01-6d3e8f2a4b57",
+      "name": "Jan de Vries",
+      "number": "102",
+      "shared": false
+    }
+  ],
+  "boxId": null,
+  "available": true,
+  "messages": [
+    {
+      "ref": "v1.Zm9vYmFyYmF6cXV4",
+      "boxId": "7a1d9c3e-5b2f-4e8a-9c01-6d3e8f2a4b57",
+      "boxName": "Jan de Vries",
+      "boxNumber": "102",
+      "caller": "070 123 45 67",
+      "callerName": "Bakkerij Smit",
+      "receivedLabel": "9 okt 08:55",
+      "receivedSort": "2026-10-09T06:55:00.000Z",
+      "durationLabel": "0:21",
+      "isNew": true,
+      "transcription": null,
+      "daysLeft": 29
+    },
+    {
+      "ref": "v1.cXV1eGNvcmdlZ3JhdWx0",
+      "boxId": "2f4a6c8e-1b3d-4f5a-8c7e-9a0b1c2d3e4f",
+      "boxName": "Algemeen",
+      "boxNumber": "900",
+      "caller": null,
+      "callerName": null,
+      "receivedLabel": "2 okt 17:20",
+      "receivedSort": "2026-10-02T15:20:00.000Z",
+      "durationLabel": "1:02",
+      "isNew": false,
+      "transcription": "Bel mij even terug.",
+      "daysLeft": 22
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import CallController
 import Core
+import FSContacts
 import Foundation
 import LinphoneEngine
 import Pairing
@@ -53,6 +54,8 @@ final class AppServices {
         let engine = LinphoneSipEngine(appVersion: version, installId: identity.installId)
         let phone = PhoneController(engine: engine, system: CallKitSystem(), preferences: preferences)
         let api = FSVoipAPIClient(userAgent: "FSVoip/\(version) (iOS)")
+        // One local check (Face ID / passcode, valid for five minutes) for the "Centrale" section and the recordings.
+        let gate = LocalAccessGate(authenticator: SystemLocalAuth())
         let reporter = PushTokenReporter(api: api, accounts: accounts, ledger: UserDefaultsPushTokenLedger(), environment: Self.pushEnvironment)
 
         // Launched in the background by a VoIP push: the accounts stay un-registered until the push wakes the one
@@ -60,6 +63,22 @@ final class AppServices {
         if UIApplication.shared.applicationState == .background {
             phone.enterBackground()
         }
+
+        // The address books, the lists and the phone's own contacts. 🚨 Without this the app model falls back to an empty in-memory hub
+        // that never syncs and pretends the phone's contacts were refused (TestFlight: "0 contacten · nog niet opgehaald", and no
+        // Contacts permission prompt at all).
+        let contacts = ContactsHub(
+            store: ContactsFileStore(),
+            api: { accountId in
+                guard let account = try? accounts.account(id: accountId) else {
+                    return nil
+                }
+
+                return api.authenticated(with: account.deviceToken)
+            },
+            device: SystemDeviceContacts(),
+            settings: UserDefaultsContactsSettings()
+        )
 
         pushTokens = reporter
         voipPush = VoipPushRegistry()
@@ -80,7 +99,15 @@ final class AppServices {
                 )
             },
             pushTokens: reporter,
-            requestNotifications: { await Self.requestNotificationPermission() }
+            requestNotifications: { await Self.requestNotificationPermission() },
+            contacts: contacts,
+            pbx: PbxHub(service: LivePbxService(api: api), gate: gate),
+            media: MediaHub(service: LiveMediaService(api: api), gate: gate),
+            availability: AvailabilityHub(service: LiveAvailabilityService(api: api)),
+            selfExtension: SelfExtensionHub(service: LiveSelfExtensionService(api: api)),
+            park: LiveParkService(api: api),
+            outboundNumbers: LiveOutboundNumbersService(api: api),
+            customerCards: LiveCustomerCardService(api: api)
         )
     }
 

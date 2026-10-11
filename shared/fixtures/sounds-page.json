@@ -1,0 +1,39 @@
+{
+  "sounds": [
+    {
+      "id": "a1b2c3d4-1111-4a2b-8c3d-4e5f6a7b8c9d",
+      "name": "Welkom",
+      "durationSeconds": null,
+      "playable": true,
+      "uses": [
+        {
+          "kind": "menu_greeting",
+          "name": "Keuzemenu Support"
+        }
+      ],
+      "contentType": "audio/mpeg",
+      "byteSize": 184320,
+      "sync": "ok"
+    },
+    {
+      "id": "a1b2c3d4-2222-4a2b-8c3d-4e5f6a7b8c9d",
+      "name": "Buiten kantoortijd",
+      "durationSeconds": null,
+      "playable": true,
+      "uses": [],
+      "contentType": "audio/wav",
+      "byteSize": 512044,
+      "sync": "pending"
+    },
+    {
+      "id": "a1b2c3d4-3333-4a2b-8c3d-4e5f6a7b8c9d",
+      "name": "Oud bericht",
+      "durationSeconds": null,
+      "playable": false,
+      "uses": [],
+      "contentType": null,
+      "byteSize": null,
+      "sync": "ok"
+    }
+  ]
+}

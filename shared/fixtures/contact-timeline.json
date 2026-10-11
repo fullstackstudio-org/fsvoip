@@ -1,0 +1,21 @@
+{
+  "items": [
+    {
+      "id": "e1",
+      "kind": "order",
+      "title": "Bestelling geplaatst",
+      "summary": "3 producten, € 84,50",
+      "occurredAt": "2026-10-09T14:02:11.000Z",
+      "ref": "W-1042"
+    },
+    {
+      "id": "e2",
+      "kind": "ticket",
+      "title": "Verzoek ontvangen",
+      "summary": "Vraag over de levertijd",
+      "occurredAt": "2026-10-08T09:15:00.000Z",
+      "ref": "#12"
+    }
+  ],
+  "nextCursor": "MjAyNi0xMC0wOFQwOToxNTowMC4wMDBafGUy"
+}

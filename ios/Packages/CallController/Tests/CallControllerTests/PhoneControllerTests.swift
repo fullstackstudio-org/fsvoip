@@ -99,6 +99,45 @@ final class PhoneControllerTests: XCTestCase {
         XCTAssertEqual(finished.first?.direction, .outgoing)
     }
 
+    func testTheSipCallIdIsReadLiveFromTheEngine() throws {
+        registered("a")
+        try phone.startCall(number: "101", accountId: "a")
+        let session = try XCTUnwrap(phone.activeSession)
+
+        // The engine id was fixed before the INVITE existed; the dialog's Call-ID is known only later.
+        engine.sipCallIDs[CallID("out-1")] = "HSzuSitbTA"
+        XCTAssertEqual(phone.sipCallID(for: session), "HSzuSitbTA")
+    }
+
+    func testTheChosenNumberTravelsWithTheOutgoingCallOnly() throws {
+        registered("a")
+
+        try phone.startCall(number: "0612345678", accountId: "a", options: CallOptions(fromNumber: "0850607848"))
+
+        XCTAssertEqual(engine.callOptions, [CallOptions(fromNumber: "0850607848")])
+        XCTAssertEqual(engine.callOptions.first?.headers.filter { $0.name == "X-FSS-From" }.count, 1)
+        XCTAssertEqual(phone.activeSession?.viaNumber, "0850607848", "the call screen says which number it goes out with")
+
+        let uuid = try XCTUnwrap(phone.activeSession?.id)
+        phone.hangUp(uuid)
+        engine.emitState(.ended(.localHangup), id: "out-1", direction: .outgoing, account: "a")
+
+        // The next call without a choice carries nothing: the choice is never remembered by the controller.
+        try phone.startCall(number: "0612345678", accountId: "a")
+
+        XCTAssertEqual(engine.callOptions.last, CallOptions.none)
+        XCTAssertNil(phone.activeSession?.viaNumber)
+    }
+
+    func testAnIncomingCallNeverGetsTheCallerChoice() {
+        registered("a")
+
+        engine.emitIncoming(id: "in-1", from: "0701234567", name: nil, account: "a")
+
+        XCTAssertTrue(engine.callOptions.isEmpty)
+        XCTAssertNil(phone.activeSession?.viaNumber)
+    }
+
     func testUserHangUpIsNotReportedBackToTheSystem() throws {
         registered("a")
         try phone.startCall(number: "0612345678", accountId: "a")
@@ -160,6 +199,36 @@ final class PhoneControllerTests: XCTestCase {
         XCTAssertEqual(system.events.last, .ended(uuid, .remoteEnded))
         XCTAssertEqual(finished.first?.outcome, .answered)
         XCTAssertEqual(finished.first?.name, "Bakkerij Smit")
+    }
+
+    /// TestFlight "Blijft op verbinden" (build 5): the engine reports the call active while `answer` runs; the phone
+    /// must not put it back on connecting afterwards.
+    func testIncomingCallAnsweredSynchronouslyActiveStaysActive() throws {
+        registered("a")
+        engine.emitIncoming(id: "in-1", from: "102", name: "Ipad test", account: "a")
+        let uuid = try XCTUnwrap(phone.activeSession?.id)
+
+        engine.onAnswer = { [unowned self] _ in
+            engine.emitState(.connecting, id: "in-1", direction: .incoming, account: "a")
+            engine.emitState(.active, id: "in-1", direction: .incoming, account: "a")
+        }
+
+        phone.answer(uuid)
+
+        XCTAssertEqual(phone.activeSession?.phase, .active)
+        XCTAssertEqual(phone.activeSession?.connectedAt, clock)
+    }
+
+    func testIncomingCallAnsweredMovesToConnectingUntilTheEngineReports() throws {
+        registered("a")
+        engine.emitIncoming(id: "in-1", from: "102", name: nil, account: "a")
+        let uuid = try XCTUnwrap(phone.activeSession?.id)
+
+        phone.answer(uuid)
+        XCTAssertEqual(phone.activeSession?.phase, .connecting)
+
+        engine.emitState(.active, id: "in-1", direction: .incoming, account: "a")
+        XCTAssertEqual(phone.activeSession?.phase, .active)
     }
 
     func testCalledAccountIsHiddenWithOneAccountByDefault() throws {

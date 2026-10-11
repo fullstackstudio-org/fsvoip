@@ -1,0 +1,7 @@
+{
+  "error": "cost_not_accepted",
+  "cost": {
+    "priceE4": 20000,
+    "vatIncluded": false
+  }
+}

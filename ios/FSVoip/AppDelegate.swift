@@ -44,26 +44,32 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 
     // MARK: Notification center
 
-    /// In the foreground the app shows its own notice, not the banner.
+    /// In the foreground the app shows its own notice, not the banner. A notice from the portal is the exception: it is shown as a
+    /// normal banner (a new order should not go unseen because the app is open).
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         let payload = notification.request.content.userInfo
 
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
-                AppServices.shared.model.handleNotification(payload: payload)
+                let model = AppServices.shared.model
+
+                if model.showsBannerInForeground(payload: payload) {
+                    completionHandler([.banner, .list, .sound])
+                } else {
+                    model.handleNotification(payload: payload)
+                    completionHandler([])
+                }
             }
         }
-
-        completionHandler([])
     }
 
-    /// The user tapped the notice.
+    /// The user tapped the notice: a portal notice opens the screen its link maps to, "unpaired" / "refresh" are handled as usual.
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
         let payload = response.notification.request.content.userInfo
 
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
-                AppServices.shared.model.handleNotification(payload: payload)
+                AppServices.shared.model.openNotification(payload: payload)
             }
 
             completionHandler()

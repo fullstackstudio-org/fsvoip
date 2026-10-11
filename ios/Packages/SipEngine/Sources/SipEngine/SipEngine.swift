@@ -48,7 +48,8 @@ public protocol SipEngine: AnyObject {
     func refreshRegistration(of account: SipAccountID)
 
     // Calls
-    func call(number: String, from account: SipAccountID) throws -> CallID
+    /// Start an outgoing call. `options` ride along on the INVITE (`CallOptions.headers`); an incoming call never has them.
+    func call(number: String, from account: SipAccountID, options: CallOptions) throws -> CallID
     func answer(_ call: CallID) throws
     /// Reject an incoming call that was not answered: `.declined` = 603 Decline (the user said no), `.busy` = 486 Busy
     /// Here (the app already has a call, or the call it belonged to is over).
@@ -60,9 +61,23 @@ public protocol SipEngine: AnyObject {
     func sendDTMF(_ digit: DTMFDigit, on call: CallID) throws
     func transfer(_ call: CallID, to number: String) throws
     func calls() -> [CallInfo]
+
+    /// The SIP `Call-ID` of this call's dialog as the PBX sees it, read from the stack NOW (not cached at call creation: for an outgoing
+    /// call the stack may only know it once the INVITE left). `nil` when the stack has none (yet). The default returns the engine id itself,
+    /// for engines whose ids already are the SIP Call-ID (fakes, the null engine).
+    func sipCallID(of call: CallID) -> String?
 }
 
 extension SipEngine {
+    public func sipCallID(of call: CallID) -> String? {
+        call.rawValue.isEmpty ? nil : call.rawValue
+    }
+
+    /// An outgoing call without options.
+    public func call(number: String, from account: SipAccountID) throws -> CallID {
+        try call(number: number, from: account, options: .none)
+    }
+
     /// Decline with 603 (the user said no).
     public func decline(_ call: CallID) throws {
         try decline(call, reason: .declined)
