@@ -32,6 +32,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -67,9 +68,17 @@ fun DialerScreen(model: AppModel) {
     model.settingsRevision.collectAsStateWithLifecycle().value
     var input by remember { mutableStateOf(DialerInput()) }
     var chosenAccountId by remember { mutableStateOf<String?>(null) }
+    var showsChooser by remember { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
+    val meByAccount by model.meByAccount.collectAsStateWithLifecycle()
 
     val accountId = chosenAccountId?.takeIf { id -> accounts.any { it.id == id } } ?: model.defaultOutgoingAccountId
+
+    // Names and the default of the numbers; only asked when the PBX supports the choice, and never while dialling.
+    val choiceKey = accountId?.let { "$it/${meByAccount[it]?.capabilities?.callerChoice == true}" }
+    LaunchedEffect(choiceKey) {
+        accountId?.let { id -> model.account(id)?.let { model.outbound.load(it) } }
+    }
 
     fun placeCall() {
         if (input.isEmpty) {
@@ -90,14 +99,13 @@ fun DialerScreen(model: AppModel) {
 
         Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { ShellActions(model) }
-            LineSelector(accounts, registrations, accountId) { chosenAccountId = it }
             Spacer(Modifier.weight(1f))
             NumberDisplay(model, input, height = key * 1.15f) { input = it }
             Spacer(Modifier.weight(1f))
             Keypad(keySize = key, onKey = { input = input.press(it) }, onLongPressZero = { input = input.longPressZero() })
 
             Row(
-                Modifier.padding(top = key * 0.28f, bottom = 28.dp).size(width = key * 3 + key * 0.56f, height = key),
+                Modifier.padding(top = key * 0.28f, bottom = 14.dp).size(width = key * 3 + key * 0.56f, height = key),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
@@ -105,13 +113,23 @@ fun DialerScreen(model: AppModel) {
                 CallButton(size = key, enabled = accountId != null, onClick = ::placeCall)
                 DeleteButton(size = key, visible = !input.isEmpty, onDelete = { input = input.deleteLast() }, onClear = { input = input.clear() })
             }
+
+            // Under the call button, always there: the number this call goes out with.
+            accounts.firstOrNull { it.id == accountId }?.let { account ->
+                OutboundBar(model, account, registrations[account.id] ?: RegistrationState.Unregistered, opensChooser = { showsChooser = true })
+                Spacer(Modifier.height(20.dp))
+            }
         }
+    }
+
+    if (showsChooser) {
+        OutboundChooserSheet(model, accountId, onSelectAccount = { chosenAccountId = it }, onDismiss = { showsChooser = false })
     }
 }
 
 private fun keySize(width: Dp, height: Dp): Dp {
     // Fit four rows of keys plus the call row and the display into the height; never wider than the screen.
-    val byHeight = (height - 120.dp) / 6.4f
+    val byHeight = (height - 190.dp) / 6.4f
     val byWidth = (width - 96.dp) / 3
 
     return maxOf(56.dp, minOf(84.dp, byHeight, byWidth))
@@ -164,54 +182,6 @@ private fun NumberDisplay(model: AppModel, input: DialerInput, height: Dp, onCha
 
 fun clipboardText(context: Context): String? =
     context.getSystemService(ClipboardManager::class.java)?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString()
-
-/** Which line (paired account) the call goes out on, with its light. */
-@Composable
-private fun LineSelector(accounts: List<StoredAccount>, registrations: Map<String, RegistrationState>, selectedId: String?, select: (String) -> Unit) {
-    val account = accounts.firstOrNull { it.id == selectedId } ?: return
-    val state = registrations[account.id] ?: RegistrationState.Unregistered
-    var open by remember { mutableStateOf(false) }
-    val several = accounts.size > 1
-    val description = stringResource(R.string.dialer_lineAccessibility, account.displayLabel, state.label())
-
-    Box {
-        Row(
-            Modifier
-                .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
-                .combinedClickableIf(several) { open = true }
-                .padding(horizontal = 14.dp, vertical = 9.dp)
-                .testTag("line-selector")
-                .semantics(mergeDescendants = true) { contentDescription = description },
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            StatusLight(state)
-            Text(account.displayLabel, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-
-            if (state != RegistrationState.Registered) {
-                Text(state.label(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-            }
-
-            if (several) {
-                Icon(Icons.Filled.UnfoldMore, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            for (option in accounts) {
-                val optionState = registrations[option.id] ?: RegistrationState.Unregistered
-                DropdownMenuItem(
-                    text = { Text("${option.displayLabel} · ${optionState.label()}") },
-                    leadingIcon = { Icon(if (option.id == selectedId) Icons.Filled.Check else Icons.Filled.Phone, contentDescription = null) },
-                    onClick = {
-                        open = false
-                        select(option.id)
-                    },
-                )
-            }
-        }
-    }
-}
 
 @OptIn(ExperimentalFoundationApi::class)
 private fun Modifier.combinedClickableIf(enabled: Boolean, onClick: () -> Unit): Modifier =

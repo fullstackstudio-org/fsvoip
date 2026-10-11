@@ -49,4 +49,18 @@ class TypesTest {
         assertTrue(CallState.Ended(CallEndReason.Busy).isEnded)
         assertFalse(CallState.Active.isEnded)
     }
+
+    @Test
+    fun callOptionsListAtMostOneFromHeader() {
+        assertEquals(emptyList<CallHeader>(), CallOptions.NONE.headers)
+        assertEquals(listOf(CallHeader("X-FSS-From", "0850607848")), CallOptions(fromNumber = "0850607848").headers)
+        assertEquals(emptyList<CallHeader>(), CallOptions(fromNumber = "0850607848\r\nX-Evil: 1").headers)
+        assertEquals(emptyList<CallHeader>(), CallOptions(fromNumber = "").headers)
+        assertEquals("X-FSS-From", CallOptions.FROM_HEADER_NAME)
+    }
+
+    @Test
+    fun theNullEngineSipCallIdIsTheEngineId() {
+        assertEquals("abc", NullSipEngine().sipCallId(CallId("abc")))
+    }
 }

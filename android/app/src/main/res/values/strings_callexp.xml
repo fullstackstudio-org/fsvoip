@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!-- Gesprekservaring: parkeren, In de wacht, Bellen via, klantkaart, melding openen. -->
+<resources>
+    <!-- Parkeren in het gesprek -->
+    <string name="call_park">Parkeren</string>
+    <string name="call_park_hint">Zet het gesprek op een plek waar iedereen het kan ophalen.</string>
+    <string name="park_notice_parked">Geparkeerd op %1$s</string>
+    <string name="park_error_callNotFound">Dit gesprek kan nu niet worden geparkeerd.</string>
+    <string name="park_error_noFreeSlot">Alle parkeerplekken zijn bezet. Probeer het zo opnieuw.</string>
+    <string name="park_error_uncertain">Niet zeker of het gesprek is geparkeerd. Kijk bij In de wacht voordat je iets anders doet.</string>
+    <string name="park_error_forbidden">Je kunt alleen gesprekken ophangen die jij hebt geparkeerd.</string>
+    <string name="park_error_revoked">Dit toestel is niet meer gekoppeld.</string>
+    <string name="park_error_readOnly">De centrale staat nu vergrendeld. Er kan niets worden gewijzigd.</string>
+    <string name="park_error_rateLimited">Je hebt veel opgevraagd. Probeer het over een minuutje opnieuw.</string>
+    <string name="park_error_rateLimited_seconds">Je hebt veel opgevraagd. Probeer het over %1$d seconden opnieuw.</string>
+    <string name="park_error_offline">Geen verbinding. Controleer je internet en probeer het opnieuw.</string>
+
+    <!-- Tab In de wacht -->
+    <string name="onHold_empty_title">Geen oproepen in de wacht</string>
+    <string name="onHold_empty_message">Tijd voor een koffiepauze?</string>
+    <string name="onHold_unavailable_title">Parkeren niet beschikbaar</string>
+    <string name="onHold_unavailable_message">Parkeren is op deze centrale niet beschikbaar.</string>
+    <string name="onHold_error_title">In de wacht kon niet worden geladen</string>
+    <string name="onHold_loading">In de wacht laden</string>
+    <string name="onHold_scope_all">Alle oproepen</string>
+    <string name="onHold_scope_mine">Mijn oproepen (%1$d)</string>
+    <string name="onHold_account">Account</string>
+    <string name="onHold_slot">Plek %1$s</string>
+    <string name="onHold_since">sinds %1$s</string>
+    <string name="onHold_rings">Belt je terug over %1$s</string>
+    <string name="onHold_parkedBy">geparkeerd door %1$s</string>
+    <string name="onHold_row_hint">Tik om het gesprek op te halen.</string>
+    <string name="onHold_pickUp">Ophalen</string>
+    <string name="onHold_hangUp">Ophangen</string>
+    <string name="onHold_hangUp_title">Gesprek ophangen?</string>
+    <string name="onHold_hangUp_message">Het gesprek met %1$s wordt beëindigd.</string>
+    <string name="onHold_more">Meer voor %1$s</string>
+    <string name="onHold_notice_gone">Niet meer geparkeerd</string>
+
+    <!-- Bellen via -->
+    <string name="outbound_default">Standaardnummer</string>
+    <string name="outbound_bar_hint">Kies het nummer waarmee je belt</string>
+    <string name="outbound_bar_accessibility">Bellen met %1$s</string>
+    <string name="outbound_sheet_title">Bellen met</string>
+    <string name="outbound_sheet_account">Lijn</string>
+    <string name="outbound_sheet_number">Nummer</string>
+    <string name="outbound_sheet_footer">Dit nummer ziet de ander op zijn scherm. Je keuze geldt voor je volgende gesprekken, tot je een ander nummer kiest.</string>
+    <string name="call_via">via %1$s</string>
+
+    <!-- Klantkaart -->
+    <string name="callcard_prefix">Klant in website: %1$s</string>
+    <string name="callcard_known">Klant in website</string>
+    <string name="callcard_orders_one">%1$d open bestelling</string>
+    <string name="callcard_orders_other">%1$d open bestellingen</string>
+    <string name="callcard_requests_one">%1$d open verzoek</string>
+    <string name="callcard_requests_other">%1$d open verzoeken</string>
+
+    <!-- Melding van het portaal -->
+    <string name="notice_open">Openen</string>
+</resources>

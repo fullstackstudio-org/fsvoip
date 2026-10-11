@@ -51,7 +51,7 @@ data class ContactDraft(
 
     private fun text(value: String): String? = value.trim().takeIf { it.isNotEmpty() }
 
-    private fun keepOrSet(value: String): Change<String> = text(value)?.let { Change.To(it) } ?: Change.Keep
+    private fun keepOrSet(value: String): Change<String> = text(value)?.let { Change.Set(it) } ?: Change.Keep
 
     fun createRequest(): ContactCreate = ContactCreate(
         name = displayName,

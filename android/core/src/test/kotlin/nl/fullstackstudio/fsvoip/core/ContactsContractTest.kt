@@ -84,8 +84,8 @@ class ContactsContractTest {
     fun requests() {
         val create = ContactCreate(
             name = "Bakkerij Smit",
-            company = Change.To("Bakkerij Smit"),
-            email = Change.To("info@bakkerijsmit.nl"),
+            company = Change.Set("Bakkerij Smit"),
+            email = Change.Set("info@bakkerijsmit.nl"),
             phones = listOf(ContactPhone("+31701234567", ContactPhoneLabel.WORK, true)),
             tags = listOf("klant"),
             listIds = listOf("0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"),
@@ -95,7 +95,7 @@ class ContactsContractTest {
         val update = ContactUpdate(
             expectedUpdatedAt = "2026-10-07T09:30:12.345Z",
             firstName = Change.Clear,
-            notes = Change.To("Nieuw nummer van de eigenaar."),
+            notes = Change.Set("Nieuw nummer van de eigenaar."),
             phones = listOf(ContactPhone("+31701234567", ContactPhoneLabel.WORK, true), ContactPhone("+31612345678", ContactPhoneLabel.MOBILE, false)),
         )
         assertEquals(Fixtures.json("contact-update-request.json").also { fixture("contact-update-request.json") }, update.toJson())

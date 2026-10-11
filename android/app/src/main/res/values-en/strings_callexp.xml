@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<resources>
+    <!-- Parking in the call -->
+    <string name="call_park">Park</string>
+    <string name="call_park_hint">Puts the call on a spot anyone on the team can pick up.</string>
+    <string name="park_notice_parked">Parked on %1$s</string>
+    <string name="park_error_callNotFound">This call can\'t be parked right now.</string>
+    <string name="park_error_noFreeSlot">All parking spots are taken. Try again in a moment.</string>
+    <string name="park_error_uncertain">Not sure the call was parked. Check On hold before doing anything else.</string>
+    <string name="park_error_forbidden">You can only hang up calls that you parked.</string>
+    <string name="park_error_revoked">This phone is no longer paired.</string>
+    <string name="park_error_readOnly">The phone system is locked right now. Nothing can be changed.</string>
+    <string name="park_error_rateLimited">You have asked for a lot. Try again in a minute.</string>
+    <string name="park_error_rateLimited_seconds">You have asked for a lot. Try again in %1$d seconds.</string>
+    <string name="park_error_offline">No connection. Check your internet and try again.</string>
+
+    <!-- On hold tab -->
+    <string name="onHold_empty_title">No calls on hold</string>
+    <string name="onHold_empty_message">Time for a coffee break?</string>
+    <string name="onHold_unavailable_title">Parking not available</string>
+    <string name="onHold_unavailable_message">Parking is not available on this phone system.</string>
+    <string name="onHold_error_title">On hold could not be loaded</string>
+    <string name="onHold_loading">Loading on hold</string>
+    <string name="onHold_scope_all">All calls</string>
+    <string name="onHold_scope_mine">My calls (%1$d)</string>
+    <string name="onHold_account">Account</string>
+    <string name="onHold_slot">Spot %1$s</string>
+    <string name="onHold_since">for %1$s</string>
+    <string name="onHold_rings">Rings you back in %1$s</string>
+    <string name="onHold_parkedBy">parked by %1$s</string>
+    <string name="onHold_row_hint">Tap to pick the call up.</string>
+    <string name="onHold_pickUp">Pick up</string>
+    <string name="onHold_hangUp">Hang up</string>
+    <string name="onHold_hangUp_title">Hang up this call?</string>
+    <string name="onHold_hangUp_message">The call with %1$s will end.</string>
+    <string name="onHold_more">More for %1$s</string>
+    <string name="onHold_notice_gone">No longer parked</string>
+
+    <!-- Calling out via -->
+    <string name="outbound_default">Default number</string>
+    <string name="outbound_bar_hint">Choose the number you call with</string>
+    <string name="outbound_bar_accessibility">Calling with %1$s</string>
+    <string name="outbound_sheet_title">Call with</string>
+    <string name="outbound_sheet_account">Line</string>
+    <string name="outbound_sheet_number">Number</string>
+    <string name="outbound_sheet_footer">This is the number the other person sees. Your choice applies to your next calls, until you pick another number.</string>
+    <string name="call_via">via %1$s</string>
+
+    <!-- Customer card -->
+    <string name="callcard_prefix">Customer on website: %1$s</string>
+    <string name="callcard_known">Customer on website</string>
+    <string name="callcard_orders_one">%1$d open order</string>
+    <string name="callcard_orders_other">%1$d open orders</string>
+    <string name="callcard_requests_one">%1$d open request</string>
+    <string name="callcard_requests_other">%1$d open requests</string>
+
+    <!-- Notice from the portal -->
+    <string name="notice_open">Open</string>
+</resources>

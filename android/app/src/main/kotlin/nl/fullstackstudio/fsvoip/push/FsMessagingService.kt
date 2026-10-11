@@ -5,6 +5,7 @@
 //               (a fresh REGISTER the gate waits for); the INVITE with X-FSS-Call joins the call.
 //   `revoked` : remove the account.
 //   `refresh` : re-read `GET /me`.
+//   `notice`  : a notification from the customer portal; a tap opens the screen of its link.
 // The payload never contains a secret; it is never logged.
 
 package nl.fullstackstudio.fsvoip.push
@@ -42,6 +43,8 @@ class FsMessagingService : FirebaseMessagingService() {
                 main.post { AppServices.get(this).phone.handleRingPush(decoded) }
             }
             is PushMessage.Revoked, is PushMessage.Refresh -> main.post { AppServices.get(this).model.handleNotice(decoded) }
+            // A message from the portal: an FCM data message, so the notification is ours to show.
+            is PushMessage.Notice -> main.post { NoticeNotifications.show(this, decoded.notice) }
         }
     }
 }

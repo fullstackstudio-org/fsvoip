@@ -102,6 +102,31 @@ sealed interface RegistrationState {
     data class Failed(val failure: RegistrationFailure) : RegistrationState
 }
 
+/** One extra SIP header on an outgoing INVITE. */
+data class CallHeader(val name: String, val value: String)
+
+/** What the app asks of ONE outgoing call besides the number (plan `fsvoip-app-v2`, D5). */
+data class CallOptions(
+    /** A national number of the PBX (`0850607848`) to call out with; `null` = the extension's own default. */
+    val fromNumber: String? = null,
+) {
+    /**
+     * The headers the engine puts on the INVITE: at most one `X-FSS-From`, only for a plain number (never a value that could
+     * carry a second header or SIP syntax).
+     */
+    val headers: List<CallHeader>
+        get() = if (fromNumber != null && isPlainNumber(fromNumber)) listOf(CallHeader(FROM_HEADER_NAME, fromNumber)) else emptyList()
+
+    companion object {
+        /** The header that tells the PBX which of its numbers this call goes out with. */
+        const val FROM_HEADER_NAME = "X-FSS-From"
+
+        val NONE = CallOptions()
+
+        internal fun isPlainNumber(value: String): Boolean = value.isNotEmpty() && value.length <= 32 && value.all { it in '0'..'9' }
+    }
+}
+
 @JvmInline
 value class CallId(val raw: String = UUID.randomUUID().toString()) {
     override fun toString(): String = raw

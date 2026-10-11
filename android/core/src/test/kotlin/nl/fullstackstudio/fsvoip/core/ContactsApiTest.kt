@@ -174,8 +174,13 @@ class ContactsApiTest {
     fun theTimelineLimitIsClampedAndTheIdStaysOneSegment() = runTest {
         val (api, transport) = client(fixtureResponse(200, "contact-timeline-last.json"), fixtureResponse(200, "contact-timeline-last.json"))
 
-        api.contactTimeline("../admin/x", limit = 5000)
+        api.contactTimeline(id, limit = 5000)
         api.contactTimeline(id, limit = 0)
+        try {
+            api.contactTimeline("../admin/x")
+            fail("a slash cannot leave the segment")
+        } catch (_: ApiException.NotFound) {
+        }
 
         val url = java.net.URI(transport.requests[0].url)
         assertEquals("100", query(transport.requests[0])["limit"])

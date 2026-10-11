@@ -15,9 +15,17 @@ package nl.fullstackstudio.fsvoip.callcontroller
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import nl.fullstackstudio.fsvoip.core.CallerContext
+import nl.fullstackstudio.fsvoip.core.CallerLookupTimeout
 import nl.fullstackstudio.fsvoip.core.FsLogger
 import nl.fullstackstudio.fsvoip.core.PreferencesStore
 import nl.fullstackstudio.fsvoip.core.PushMessage
@@ -26,7 +34,9 @@ import nl.fullstackstudio.fsvoip.core.RingPush
 import nl.fullstackstudio.fsvoip.core.StoredAccount
 import nl.fullstackstudio.fsvoip.sipengine.CallDirection
 import nl.fullstackstudio.fsvoip.sipengine.CallEndReason
+import nl.fullstackstudio.fsvoip.sipengine.CallId
 import nl.fullstackstudio.fsvoip.sipengine.CallInfo
+import nl.fullstackstudio.fsvoip.sipengine.CallOptions
 import nl.fullstackstudio.fsvoip.sipengine.CallState
 import nl.fullstackstudio.fsvoip.sipengine.DeclineReason
 import nl.fullstackstudio.fsvoip.sipengine.DtmfDigit
@@ -59,6 +69,8 @@ class PhoneController(
     private val pushPolicy: IncomingPushPolicy = IncomingPushPolicy(),
     private val scheduler: CallScheduler,
     private val mainExecutor: MainExecutor,
+    /** Where the customer-card lookups run; the answer is always applied through [mainExecutor]. */
+    private val lookupScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) : CallSystemActionHandler {
     private val _registrations = MutableStateFlow<Map<String, RegistrationState>>(emptyMap())
     private val _sessions = MutableStateFlow<List<CallSession>>(emptyList())
@@ -85,6 +97,19 @@ class PhoneController(
 
     /** Text for an anonymous caller (localised by the app). */
     var anonymousCallerText = "Onbekend"
+
+    /**
+     * The customer card: who is this caller according to the website of the customer (name, open orders and requests). Asked for
+     * an INCOMING call after it was reported to the system; it never delays the call ([callerLookupTimeoutMillis]), and `null` =
+     * nothing to add.
+     */
+    var lookupCaller: (suspend (number: String, account: StoredAccount) -> CallerContext?)? = null
+
+    /** How long an incoming call waits for [lookupCaller]. */
+    var callerLookupTimeoutMillis: Long = CallerLookupTimeout.INCOMING_CALL_MILLIS
+
+    /** The running customer-card lookups, by call. */
+    private val callerLookups = mutableMapOf<UUID, Job>()
 
     private var accounts: Map<String, StoredAccount> = emptyMap()
     private val registeredConfigs = mutableMapOf<String, SipAccountConfig>()
@@ -241,8 +266,21 @@ class PhoneController(
 
     // MARK: Calls (asked by the UI)
 
-    /** Start an outgoing call through the system call framework. */
-    fun startCall(rawNumber: String, accountId: String) {
+    /**
+     * The SIP `Call-ID` of a running call, as the PBX knows it (for parking). Read from the engine each time; `null` before the SIP
+     * side of the call exists.
+     */
+    fun sipCallId(session: CallSession): String? {
+        val engineId = session(session.id)?.engineCallId ?: session.engineCallId ?: return null
+
+        return engine.sipCallId(engineId)
+    }
+
+    /**
+     * Start an outgoing call through the system call framework. [options] (the number to call out with) belong to this outgoing
+     * call only.
+     */
+    fun startCall(rawNumber: String, accountId: String, options: CallOptions = CallOptions.NONE) {
         val number = DialNumber.sanitize(rawNumber)
 
         if (!DialNumber.isDialable(number)) throw PhoneException.InvalidNumber()
@@ -263,6 +301,8 @@ class PhoneController(
                 remoteName = name,
                 phase = CallSession.Phase.Starting,
                 createdAt = now(),
+                callOptions = options,
+                viaNumber = options.headers.firstOrNull()?.value,
             ),
         )
 
@@ -372,6 +412,7 @@ class PhoneController(
 
         // The PBX waits for a FRESH registration of this account before it sends the INVITE.
         wakeRegistration(account.id)
+        startCallerLookup(uuid)
 
         val delay = Duration.between(now(), inviteDeadline).toMillis().coerceAtLeast(0)
         inviteTimers[uuid] = scheduler.schedule(delay) { inviteDidNotArrive(uuid) }
@@ -437,6 +478,11 @@ class PhoneController(
         val uuid = waiting.id
         inviteTimers.remove(uuid)?.invoke()
         update(uuid) { it.copy(engineCallId = call.id, awaitingInvite = false, remoteNumber = it.remoteNumber ?: call.from) }
+
+        // The push had no number (anonymous or unreadable) but the INVITE has one: ask for the card now.
+        if (waiting.remoteNumber == null) {
+            startCallerLookup(uuid)
+        }
 
         logger.notice("INVITE joined to call ${waiting.fssCallRef ?: "?"}")
 
@@ -546,6 +592,8 @@ class PhoneController(
                 finish(uuid, CallEndReason.Declined, tellSystem = false)
             }
         }
+
+        startCallerLookup(uuid)
     }
 
     private fun engineCallChanged(info: CallInfo) {
@@ -574,6 +622,66 @@ class PhoneController(
         }
     }
 
+    // MARK: Customer card
+
+    /**
+     * Ask for the card of the caller of [uuid]. Once per call. Does nothing without [lookupCaller], for an outgoing call, an
+     * anonymous caller or an internal number (a colleague is not a customer). Strictly best effort: the call is already reported to
+     * the system and ringing when this starts, a slow or failed lookup changes nothing, and an answer that comes after the call
+     * ended is dropped.
+     */
+    private fun startCallerLookup(uuid: UUID) {
+        val lookup = lookupCaller ?: return
+        val session = session(uuid) ?: return
+        val number = nonEmpty(session.remoteNumber) ?: return
+        val account = accounts[session.accountId.raw] ?: return
+
+        if (callerLookups.containsKey(uuid) || session.direction != CallDirection.INCOMING || !looksLikeExternalNumber(number)) {
+            return
+        }
+
+        val timeout = callerLookupTimeoutMillis
+
+        // Lazy: the job is in the map before it can possibly finish and remove itself.
+        val job = lookupScope.launch(start = CoroutineStart.LAZY) {
+            val context = CallerLookupTimeout.run(timeout) { lookup(number, account) }
+
+            mainExecutor.execute {
+                callerLookups.remove(uuid)
+                applyCallerContext(context, uuid)
+            }
+        }
+        callerLookups[uuid] = job
+        job.start()
+    }
+
+    /** For tests: wait until the lookup of a call is done and applied. */
+    internal fun finishCallerLookup(uuid: UUID) {
+        val job = callerLookups[uuid] ?: return
+
+        kotlinx.coroutines.runBlocking { job.join() }
+    }
+
+    private fun applyCallerContext(context: CallerContext?, uuid: UUID) {
+        val current = session(uuid) ?: return
+        val account = accounts[current.accountId.raw] ?: return
+
+        if (context == null || current.phase.isEnded) {
+            return
+        }
+
+        // A name from the contacts of the phone or the address book wins over the card; the card fills the gap (and replaces the bare
+        // caller-id text of the PBX).
+        val localName = current.remoteNumber?.let(lookupName)
+        val newName = localName ?: context.displayName ?: current.remoteName
+
+        update(uuid) { it.copy(callerContext = context, remoteName = newName) }
+
+        if (newName != current.remoteName) {
+            system.reportCallUpdated(uuid, display(newName, current.remoteNumber, account))
+        }
+    }
+
     // MARK: Helpers
 
     fun session(uuid: UUID): CallSession? = _sessions.value.firstOrNull { it.id == uuid }
@@ -593,6 +701,7 @@ class PhoneController(
         val ended = session.copy(phase = CallSession.Phase.Ended(reason))
         _sessions.value = _sessions.value.filter { it.id != uuid }
         inviteTimers.remove(uuid)?.invoke()
+        callerLookups.remove(uuid)?.cancel()
 
         // A late INVITE (or a repeated push) for this call must not ring again.
         session.fssCallRef?.let { rememberClosed(it, if (reason == CallEndReason.Declined) DeclineReason.DECLINED else DeclineReason.BUSY) }
@@ -638,7 +747,7 @@ class PhoneController(
 
         val engineId = try {
             engine.audio.configure()
-            number?.let { engine.call(it, session.accountId) }
+            number?.let { engine.call(it, session.accountId, if (session.direction == CallDirection.OUTGOING) session.callOptions else CallOptions.NONE) }
         } catch (error: Exception) {
             logger.error("Outgoing call failed to start: ${error.message}")
             null
@@ -674,7 +783,10 @@ class PhoneController(
 
         return try {
             engine.answer(engineId)
-            update(uuid) { it.copy(phase = CallSession.Phase.Connecting) }
+            // liblinphone reports Connected and StreamsRunning synchronously inside `answer` (the callee does not wait for the ACK),
+            // so the call can already be active here. Only a call that is still ringing moves to connecting; overwriting an
+            // active call left the screen on "Verbinden..." for the whole call.
+            update(uuid) { if (it.phase == CallSession.Phase.Incoming) it.copy(phase = CallSession.Phase.Connecting) else it }
             true
         } catch (error: Exception) {
             logger.error("Answer failed: ${error.message}")
@@ -785,5 +897,8 @@ class PhoneController(
         }
 
         private fun nonEmpty(text: String?): String? = text?.trim()?.takeIf { it.isNotEmpty() }
+
+        /** Internal extension numbers (2-4 digits) are colleagues; the website knows customers. */
+        fun looksLikeExternalNumber(number: String): Boolean = number.count { it.isDigit() } >= 6
     }
 }

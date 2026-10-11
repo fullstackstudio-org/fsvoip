@@ -191,27 +191,8 @@ object ContactListETag {
 
 // MARK: Requests
 
-/** A field of a request: not mentioned, cleared (`null`) or set. */
-sealed interface Change<out T> {
-    data object Keep : Change<Nothing>
-
-    data object Clear : Change<Nothing>
-
-    data class To<T>(val value: T) : Change<T>
-
-    companion object {
-        /** `null` clears, a value sets. */
-        fun <T : Any> of(value: T?): Change<T> = if (value == null) Clear else To(value)
-    }
-}
-
-private fun putChange(builder: kotlinx.serialization.json.JsonObjectBuilder, key: String, change: Change<String>) {
-    when (change) {
-        Change.Keep -> Unit
-        Change.Clear -> builder.put(key, JsonNull)
-        is Change.To -> builder.put(key, JsonPrimitive(change.value))
-    }
-}
+private fun putChange(builder: kotlinx.serialization.json.JsonObjectBuilder, key: String, change: Change<String>) =
+    builder.putChange(key, change) { JsonPrimitive(it) }
 
 private fun phonesJson(phones: List<ContactPhone>): JsonArray =
     JsonArray(phones.map { FsJson.default.encodeToJsonElement(ContactPhone.serializer(), it) })

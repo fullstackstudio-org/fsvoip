@@ -3,9 +3,11 @@ package nl.fullstackstudio.fsvoip.callcontroller
 
 import java.time.Instant
 import java.util.UUID
+import nl.fullstackstudio.fsvoip.core.CallerContext
 import nl.fullstackstudio.fsvoip.sipengine.CallDirection
 import nl.fullstackstudio.fsvoip.sipengine.CallEndReason
 import nl.fullstackstudio.fsvoip.sipengine.CallId
+import nl.fullstackstudio.fsvoip.sipengine.CallOptions
 import nl.fullstackstudio.fsvoip.sipengine.CallState
 import nl.fullstackstudio.fsvoip.sipengine.SipAccountId
 
@@ -25,6 +27,12 @@ data class CallSession(
     val connectedAt: Instant? = null,
     /** `callRef` of the push that announced this call (= the `X-FSS-Call` header of its INVITE). */
     val fssCallRef: String? = null,
+    /** What the website of the customer says about the caller (incoming calls only); `null` = unknown or not asked / not answered in time. */
+    val callerContext: CallerContext? = null,
+    /** The number of the PBX this OUTGOING call goes out with, when the user chose one ("via 085 060 7848"). Never set on an incoming call. */
+    val viaNumber: String? = null,
+    /** What the engine gets with this outgoing call. */
+    val callOptions: CallOptions = CallOptions.NONE,
     /** Reported to the system from a push; the SIP INVITE has not arrived yet (`engineCallId == null`). */
     val awaitingInvite: Boolean = false,
     /** The user answered before the INVITE arrived: answer it as soon as it does. */

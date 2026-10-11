@@ -24,6 +24,7 @@ class DebugPushReceiver : BroadcastReceiver() {
                 services.phone.handleRingPush(message)
             }
             is PushMessage.Revoked, is PushMessage.Refresh -> services.model.handleNotice(message)
+            is PushMessage.Notice -> nl.fullstackstudio.fsvoip.push.NoticeNotifications.show(context, message.notice)
         }
     }
 }

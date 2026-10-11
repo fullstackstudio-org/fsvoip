@@ -44,12 +44,29 @@ data class RefreshPush(
     val accountId: String,
 )
 
+/**
+ * A message from the customer portal (a new order, a missed call, ...). A regular notification, never a ring, and it carries no
+ * personal data or secret: a short title, one sentence and the portal link to open. The app only reads the PATH of [href]
+ * ([NoticeRoute]), it never opens the link. Android carries it as an FCM data message (`data.fsvoip` is this object) and shows the
+ * notification itself.
+ */
+@Serializable
+data class NoticePush(
+    val accountId: String,
+    val title: String,
+    val body: String,
+    val href: String,
+)
+
 sealed interface PushMessage {
     data class Ring(val ring: RingPush) : PushMessage
 
     data class Revoked(val revoked: RevokedPush) : PushMessage
 
     data class Refresh(val refresh: RefreshPush) : PushMessage
+
+    /** A message from the portal; shown as a notification, a tap opens the screen of its link ([NoticeRoute]). */
+    data class Notice(val notice: NoticePush) : PushMessage
 
     companion object {
         /** Decode the `fsvoip` object itself (JSON text). */
@@ -77,6 +94,7 @@ sealed interface PushMessage {
                     "ring" -> Ring(FsJson.default.decodeFromJsonElement(RingPush.serializer(), element))
                     "revoked" -> Revoked(FsJson.default.decodeFromJsonElement(RevokedPush.serializer(), element))
                     "refresh" -> Refresh(FsJson.default.decodeFromJsonElement(RefreshPush.serializer(), element))
+                    "notice" -> Notice(FsJson.default.decodeFromJsonElement(NoticePush.serializer(), element))
                     else -> throw PushMessageException.UnknownType(type)
                 }
             } catch (error: SerializationException) {

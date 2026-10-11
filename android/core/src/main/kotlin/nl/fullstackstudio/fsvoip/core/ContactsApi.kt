@@ -57,9 +57,10 @@ suspend fun FsVoipApiClient.syncContacts(since: String? = null, pageSize: Int? =
 
 /** An id comes from the server, but it still goes in the URL as one segment: nothing that could climb out of `contacts/`. */
 private fun pathSegment(id: String): String {
-    if (id.isEmpty() || id == "." || id == "..") throw ApiException.NotFound()
+    // A contact id comes from the server and never holds a slash: refuse anything that could leave the one path segment.
+    if (id.isEmpty() || id == "." || id == ".." || id.contains('/') || id.contains('\\')) throw ApiException.NotFound()
 
-    return id.replace("/", "%2F").replace("\\", "%5C")
+    return id
 }
 
 suspend fun FsVoipApiClient.contact(id: String): ContactDetail =

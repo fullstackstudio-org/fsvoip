@@ -39,6 +39,7 @@ object DemoMode {
         pbxHandler,
         CoreDemoHandler(),
         MediaDemoHandler(),
+        CallExpDemoHandler(),
         // slice handlers are added here
         ContactsDemoHandler(),
     )
@@ -105,7 +106,27 @@ object DemoMode {
             }
             "contacts" -> model.select(AppModel.Tab.CONTACTS)
             "contactdetail", "contactedit", "contactnew", "contactsources", "contactphone" -> openContactsDemoScreen(model, screen.removePrefix("contact"))
-            "onhold" -> model.select(AppModel.Tab.ON_HOLD)
+            // The tab only exists once `GET /me` said parking works: open it after that.
+            "onhold" -> main.postDelayed({ model.select(AppModel.Tab.ON_HOLD) }, 1500)
+            "onhold-empty", "onhold-unavailable", "onhold-user" -> {
+                CallExpDemoHandler.mode = when (screen) {
+                    "onhold-empty" -> CallExpDemoHandler.Mode.EMPTY
+                    "onhold-unavailable" -> CallExpDemoHandler.Mode.UNAVAILABLE
+                    else -> CallExpDemoHandler.Mode.NORMAL
+                }
+                if (screen == "onhold-user") model.chooseParkAccount(USER_ID)
+                main.postDelayed({ model.select(AppModel.Tab.ON_HOLD) }, 1500)
+            }
+            "chooser" -> model.select(AppModel.Tab.DIALER)
+            "notice", "notice-contacts", "notice-home" -> main.postDelayed({
+                val href = when (screen) {
+                    "notice-contacts" -> "https://fullstackstudio.nl/portal/contacts"
+                    "notice-home" -> "https://fullstackstudio.nl/portal/content/11111111-2222-4333-8444-555555555555/orders/aaaaaaaa"
+                    else -> "https://fullstackstudio.nl/portal/voip/99999999-8888-4777-8666-555555555555/voicemail"
+                }
+                // What a tap on a portal notification does (the notification itself: DebugPushReceiver with a `notice` push).
+                model.openNotification(ADMIN_ID, href)
+            }, 800)
             "voicemail" -> model.select(AppModel.Tab.VOICEMAIL)
             "settings" -> model.openSettings()
             "scanner" -> model.presentScanner()
