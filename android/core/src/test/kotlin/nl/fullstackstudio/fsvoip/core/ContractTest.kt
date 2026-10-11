@@ -31,6 +31,7 @@ class ContractTest {
         tests.pairRequests()
         tests.pairResponses()
         tests.meResponses()
+        tests.meV2()
         tests.mePatch()
         tests.pushTokenRequests()
         tests.okResponse()
@@ -102,6 +103,66 @@ class ContractTest {
         assertNull(noSip.push.kind)
         assertNull(noSip.account.labelOverride)
         assertTrue(noSip.internalContacts.isEmpty())
+    }
+
+    @Test
+    fun meV2() {
+        // Roles and capabilities: every missing or unknown value is the restrictive choice.
+        val old = json.decodeFromString(MeResponse.serializer(), fixture("me-response.json"))
+        assertNull(old.role)
+        assertNull(old.capabilities)
+        assertEquals(AppRole.USER, old.effectiveRole)
+        assertFalse(old.canManagePbx)
+
+        val admin = json.decodeFromString(MeResponse.serializer(), fixture("me-response-admin-v2.json"))
+        assertEquals(AppRole.ADMIN, admin.effectiveRole)
+        assertTrue(admin.canManagePbx)
+        assertTrue(admin.canPark)
+        assertTrue(admin.canEditOwnExtension)
+        assertEquals(SoundsAccess.MANAGE, admin.capabilities!!.sounds)
+        assertEquals(CallsAccess.ALL, admin.capabilities!!.calls)
+        assertEquals(VoicemailAccess.ALL, admin.capabilities!!.voicemail)
+        assertTrue(admin.capabilities!!.callerChoice)
+        assertTrue(admin.capabilities!!.contacts.delete)
+        assertEquals(PbxState.ACTIVE, admin.pbx!!.state)
+        assertFalse(admin.pbx!!.readOnly)
+
+        val user = json.decodeFromString(MeResponse.serializer(), fixture("me-response-user-v2.json"))
+        assertEquals(AppRole.USER, user.effectiveRole)
+        assertFalse(user.canManagePbx)
+        assertFalse(user.canPark)
+        assertEquals(CallsAccess.TEAM, user.capabilities!!.calls)
+        assertEquals(VoicemailAccess.OWN, user.capabilities!!.voicemail)
+        assertFalse(user.capabilities!!.contacts.delete)
+
+        // Older shapes of the same fixtures (v1 of the capabilities).
+        for (name in listOf("me-response-admin.json", "me-response-user.json")) {
+            val me = json.decodeFromString(MeResponse.serializer(), fixture(name))
+            assertTrue(me.role != null && me.capabilities != null)
+        }
+
+        val frozen = json.decodeFromString(MeResponse.serializer(), fixture("me-response-admin-frozen.json"))
+        assertEquals(PbxState.FROZEN, frozen.pbx!!.state)
+        assertTrue(frozen.pbx!!.readOnly)
+
+        // Unknown values fall back to the restrictive choice and never fail the answer.
+        val text = Fixtures.text("me-response-admin-v2.json")
+            .replace("\"role\": \"admin\"", "\"role\": \"owner\"")
+            .replace("\"voicemail\": \"all\"", "\"voicemail\": \"everything\"")
+            .replace("\"calls\": \"all\"", "\"calls\": \"galaxy\"")
+            .replace("\"sounds\": \"manage\"", "\"sounds\": \"wizard\"")
+            .replace("\"state\": \"active\"", "\"state\": \"hibernating\"")
+        val tolerant = json.decodeFromString(MeResponse.serializer(), text)
+        assertEquals(AppRole.USER, tolerant.effectiveRole)
+        assertFalse(tolerant.canManagePbx)
+        assertEquals(VoicemailAccess.NONE, tolerant.capabilities!!.voicemail)
+        assertEquals(CallsAccess.OWN, tolerant.capabilities!!.calls)
+        assertEquals(SoundsAccess.NONE, tolerant.capabilities!!.sounds)
+        assertEquals(PbxState.UNKNOWN, tolerant.pbx!!.state)
+
+        // A missing capabilities object or a missing pbx flag fails closed.
+        assertEquals(CallsAccess.OWN, json.decodeFromString(AppCapabilities.serializer(), "{}").calls)
+        assertTrue(json.decodeFromString(PbxStatus.serializer(), "{\"name\":\"x\",\"state\":\"active\"}").readOnly)
     }
 
     @Test
