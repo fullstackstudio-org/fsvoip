@@ -384,4 +384,25 @@
     <string name="contacts_phone_off_message">Laat FSVoip de contacten van deze telefoon lezen om hier namen en nummers te tonen. Ze blijven op je telefoon.</string>
     <string name="contacts_phone_off_enable">Contacten gebruiken</string>
     <string name="contacts_phone_denied_title">Geen toegang tot contacten</string>
+    <string name="park_button">Parkeren</string>
+    <string name="park_done">Gesprek geparkeerd op plek %1$d</string>
+    <string name="park_title">In de wacht</string>
+    <string name="park_empty_title">Geen geparkeerde gesprekken</string>
+    <string name="park_empty_body">Parkeer een gesprek om het later op elke telefoon van de centrale op te pakken.</string>
+    <string name="park_unavailable">Parkeren is nu niet beschikbaar.</string>
+    <string name="park_slot">Plek %1$d</string>
+    <string name="park_pickup">Oppakken</string>
+    <string name="park_hangup">Ophangen</string>
+    <string name="park_mine">Door jou geparkeerd</string>
+    <string name="park_by">Geparkeerd door %1$s</string>
+    <string name="park_expires">Belt terug om %1$s</string>
+    <string name="park_error_noCall">Dit gesprek kan niet worden geparkeerd.</string>
+    <string name="park_error_noFreeSlot">Alle parkeerplekken zijn bezet.</string>
+    <string name="park_error_unavailable">Parkeren is nu niet beschikbaar.</string>
+    <string name="park_error_uncertain">Het is onzeker of het gesprek is geparkeerd. Kijk bij In de wacht voordat je het opnieuw probeert.</string>
+    <string name="park_error_forbidden">Je mag dit niet.</string>
+    <string name="park_error_readOnly">De centrale is alleen-lezen.</string>
+    <string name="park_error_rateLimited">Te vaak geprobeerd. Probeer het later opnieuw.</string>
+    <string name="park_error_offline">Geen verbinding.</string>
+    <string name="park_error_other">Dat lukte niet.</string>
 </resources>

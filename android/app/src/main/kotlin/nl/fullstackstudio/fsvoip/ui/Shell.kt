@@ -89,7 +89,7 @@ fun MainTabs(model: AppModel) {
         Box(Modifier.padding(padding).fillMaxSize()) {
             when (tab) {
                 AppModel.Tab.DIALER -> DialerScreen(model)
-                AppModel.Tab.ON_HOLD -> ComingSoon(Icons.Filled.PauseCircle, stringResource(R.string.tab_onHold))
+                AppModel.Tab.ON_HOLD -> OnHoldScreen(model)
                 AppModel.Tab.RECENTS -> HistoryScreen(model)
                 AppModel.Tab.VOICEMAIL -> VoicemailScreen(model)
                 AppModel.Tab.CONTACTS -> ContactsScreen(model)

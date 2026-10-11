@@ -64,6 +64,7 @@ class AppModel(
     private val service: AccountServicing,
     val selfExtension: SelfExtensionHub,
     val history: HistoryModel,
+    val park: nl.fullstackstudio.fsvoip.core.ParkModel,
     val mediaService: MediaServicing,
     val player: AudioPlayerModel,
     val contacts: ContactsHub,
@@ -157,6 +158,7 @@ class AppModel(
         // A 401/403 on the own extension: the pairing or the role is gone; `GET /me` removes or updates the account.
         selfExtension.onRevoked = { scope.launch { refreshAccounts() } }
         history.onRevoked = { scope.launch { refreshAccounts() } }
+        park.onRevoked = { scope.launch { refreshAccounts() } }
         contacts.onUnauthorized = { scope.launch { refreshAccounts() } }
 
         // A call takes the speaker and the microphone: nothing else plays during it.
@@ -382,6 +384,65 @@ class AppModel(
         _settingsRevision.value++
     }
 
+    // MARK: Parking
+
+    /** Whether this pairing may park (the server says; an older server says nothing and parking stays hidden). */
+    fun canPark(accountId: String): Boolean = _me.value[accountId]?.canPark ?: false
+
+    fun refreshParked() {
+        scope.launch { for (account in _accounts.value) if (canPark(account.id)) park.refresh(account) }
+    }
+
+    /**
+     * Parks the running call with the SIP Call-ID of the phone's own leg (never the internal id).
+     * 🚨 `Uncertain` means the call may be parked: the list is refreshed and the request is not repeated.
+     */
+    fun parkCall(session: nl.fullstackstudio.fsvoip.callcontroller.CallSession) {
+        val account = account(session.accountId.raw) ?: return
+        val callId = phone.sipCallId(session)
+
+        if (callId == null) {
+            _notice.value = Notice(string(R.string.park_error_noCall), isError = true)
+            return
+        }
+
+        scope.launch {
+            when (val outcome = park.park(account, callId)) {
+                is nl.fullstackstudio.fsvoip.core.ParkOutcome.Parked -> {
+                    _notice.value = Notice(string(R.string.park_done, outcome.call.slot), isError = false)
+                    // The leg is released by the PBX; end the app's call so the screen closes.
+                    phone.hangUp(session.id)
+                }
+                nl.fullstackstudio.fsvoip.core.ParkOutcome.Uncertain -> _notice.value = Notice(string(R.string.park_error_uncertain), isError = true)
+                is nl.fullstackstudio.fsvoip.core.ParkOutcome.Failed -> _notice.value = Notice(string(parkErrorRes(outcome.failure)), isError = true)
+            }
+        }
+    }
+
+    fun hangupParked(accountId: String, call: nl.fullstackstudio.fsvoip.core.ParkedCall) {
+        val account = account(accountId) ?: return
+        scope.launch {
+            park.hangup(account, call)?.let { _notice.value = Notice(string(parkErrorRes(it)), isError = true) }
+        }
+    }
+
+    /** Picking up is dialling the retrieve number as a normal call. */
+    fun retrieveParked(accountId: String, call: nl.fullstackstudio.fsvoip.core.ParkedCall) {
+        val number = call.retrieveNumber ?: return
+        call(number, accountId)
+    }
+
+    private fun parkErrorRes(failure: nl.fullstackstudio.fsvoip.core.ParkFailure): Int = when (failure) {
+        nl.fullstackstudio.fsvoip.core.ParkFailure.NoFreeSlot -> R.string.park_error_noFreeSlot
+        nl.fullstackstudio.fsvoip.core.ParkFailure.Unavailable -> R.string.park_error_unavailable
+        nl.fullstackstudio.fsvoip.core.ParkFailure.CallNotFound -> R.string.park_error_noCall
+        nl.fullstackstudio.fsvoip.core.ParkFailure.Forbidden -> R.string.park_error_forbidden
+        nl.fullstackstudio.fsvoip.core.ParkFailure.ReadOnly -> R.string.park_error_readOnly
+        is nl.fullstackstudio.fsvoip.core.ParkFailure.RateLimited -> R.string.park_error_rateLimited
+        nl.fullstackstudio.fsvoip.core.ParkFailure.Offline -> R.string.park_error_offline
+        else -> R.string.park_error_other
+    }
+
     // MARK: History and voicemail
 
     /** The calls of this phone, as lines of "Geschiedenis" (shown while the PBX cannot say, and the ones it has not caught up with). */
@@ -589,6 +650,7 @@ class AppModel(
         _me.value = _me.value - accountId
         selfExtension.forget(accountId)
         history.forget(accountId)
+        park.forget(accountId)
         voicemailModels.remove(accountId)
         if (_nowPlaying.value?.id?.startsWith("$accountId/") == true) stopPlayer()
         _settingsRevision.value++

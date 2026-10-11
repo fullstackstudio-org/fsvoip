@@ -384,4 +384,25 @@
     <string name="contacts_phone_off_message">Let FSVoip read the contacts of this phone to show names and numbers here. They stay on your phone.</string>
     <string name="contacts_phone_off_enable">Use contacts</string>
     <string name="contacts_phone_denied_title">No access to contacts</string>
+    <string name="park_button">Park</string>
+    <string name="park_done">Call parked in slot %1$d</string>
+    <string name="park_title">On hold</string>
+    <string name="park_empty_title">No parked calls</string>
+    <string name="park_empty_body">Park a call to pick it up later on any phone of the PBX.</string>
+    <string name="park_unavailable">Park is nu niet beschikbaar.</string>
+    <string name="park_slot">Slot %1$d</string>
+    <string name="park_pickup">Pick up</string>
+    <string name="park_hangup">Hang up</string>
+    <string name="park_mine">Parked by you</string>
+    <string name="park_by">Parked by %1$s</string>
+    <string name="park_expires">Rings back at %1$s</string>
+    <string name="park_error_noCall">This call cannot be parked.</string>
+    <string name="park_error_noFreeSlot">All parking slots are taken.</string>
+    <string name="park_error_unavailable">Park is nu niet beschikbaar.</string>
+    <string name="park_error_uncertain">Het is onzeker of het gesprek is geparkeerd. Kijk bij On hold voordat je het opnieuw probeert.</string>
+    <string name="park_error_forbidden">You are not allowed to do this.</string>
+    <string name="park_error_readOnly">The PBX is read-only.</string>
+    <string name="park_error_rateLimited">Too many attempts. Try again later.</string>
+    <string name="park_error_offline">No connection.</string>
+    <string name="park_error_other">That did not work.</string>
 </resources>

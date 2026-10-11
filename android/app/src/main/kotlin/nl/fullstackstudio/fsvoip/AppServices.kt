@@ -113,6 +113,7 @@ class AppServices private constructor(context: Context) {
             service = AccountService(api, accounts),
             selfExtension = SelfExtensionHub(LiveSelfExtensionService(api)),
             history = HistoryModel(media),
+            park = nl.fullstackstudio.fsvoip.core.ParkModel(nl.fullstackstudio.fsvoip.core.LiveParkService(api)),
             mediaService = media,
             player = AudioPlayerModel(ExoPlayerBackend(appContext, userAgent = "FSVoip/$version (Android)")),
             contacts = contactsHub,

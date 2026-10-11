@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Dialpad
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.LocalParking
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material3.Icon
@@ -205,6 +206,12 @@ private fun Controls(session: CallSession, speaker: Boolean, ended: Boolean, onK
             }
             ControlButton(Icons.Filled.Pause, stringResource(R.string.call_hold), session.isOnHold, enabled = !ended && session.phase.isConnected, tag = "hold-button") {
                 phone.setHeld(session.id, !session.isOnHold)
+            }
+            if (model.canPark(session.accountId.raw)) {
+                val parking by model.park.isParking.collectAsStateWithLifecycle()
+                ControlButton(Icons.Filled.LocalParking, stringResource(R.string.park_button), parking, enabled = !ended && session.phase.isConnected && !parking, tag = "park-button") {
+                    model.parkCall(session)
+                }
             }
         }
     }
