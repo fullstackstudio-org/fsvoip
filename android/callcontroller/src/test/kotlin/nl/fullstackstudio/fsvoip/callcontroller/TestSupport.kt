@@ -14,6 +14,7 @@ import nl.fullstackstudio.fsvoip.core.StoredAccount
 import nl.fullstackstudio.fsvoip.sipengine.CallDirection
 import nl.fullstackstudio.fsvoip.sipengine.CallId
 import nl.fullstackstudio.fsvoip.sipengine.CallInfo
+import nl.fullstackstudio.fsvoip.sipengine.CallOptions
 import nl.fullstackstudio.fsvoip.sipengine.CallState
 import nl.fullstackstudio.fsvoip.sipengine.DeclineReason
 import nl.fullstackstudio.fsvoip.sipengine.DtmfDigit
@@ -89,18 +90,31 @@ class FakeSipEngine : SipEngine {
         log += "refresh $account"
     }
 
-    override fun call(number: String, account: SipAccountId): CallId {
+    /** The options of every call started, in order. */
+    val callOptions = mutableListOf<CallOptions>()
+
+    /** Runs inside `answer`, like liblinphone, which reports Connected and StreamsRunning before `accept` returns. */
+    var onAnswer: ((CallId) -> Unit)? = null
+
+    /** The live SIP Call-IDs; without an entry the engine id itself. */
+    val sipCallIds = mutableMapOf<CallId, String>()
+
+    override fun sipCallId(call: CallId): String? = sipCallIds[call] ?: call.raw
+
+    override fun call(number: String, account: SipAccountId, options: CallOptions): CallId {
         if (failNextCall) {
             failNextCall = false
             throw SipEngineException.Engine("boom")
         }
 
         log += "call $number from $account"
+        callOptions += options
         return CallId("out-1")
     }
 
     override fun answer(call: CallId) {
         log += "answer $call"
+        onAnswer?.invoke(call)
     }
 
     override fun decline(call: CallId, reason: DeclineReason) {
