@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Contact sources for caller names (plan Task 7, mirrored from iOS):
-//   1. the phone's own contacts (read only, never uploaded; optional, needs the contacts permission),
-//   2. internal contacts (the other extensions of the PBX, from `GET /me`),
-//   3. customer contact lists from the portal (a later API route).
+// The contacts of the app: three sources, one list (mirrored from iOS).
+//   1. `Customer`: the customer's own address book from the portal (synced to this phone, editable, see ContactsHub),
+//   2. `Device`: the phone's own contacts (read only, never uploaded and never written to disk by FSVoip),
+//   3. `InternalExtensions`: the other extensions of the PBX (from `GET /me`),
+// plus number matching for caller names (PhoneNumberMatcher, ContactIndex).
 
 package nl.fullstackstudio.fsvoip.contacts
 
@@ -12,9 +13,14 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.ContactsContract
+import java.text.Normalizer
+import nl.fullstackstudio.fsvoip.core.ContactPhoneLabel
 import nl.fullstackstudio.fsvoip.core.InternalContact
 
 sealed interface ContactSource {
+    /** The customer's own address book (portal). */
+    data object Customer : ContactSource
+
     data object Device : ContactSource
 
     data object InternalExtensions : ContactSource
@@ -23,13 +29,96 @@ sealed interface ContactSource {
     data class ContactList(val id: String) : ContactSource
 }
 
+data class ContactPhoneEntry(
+    val number: String,
+    val label: ContactPhoneLabel = ContactPhoneLabel.OTHER,
+    val isPrimary: Boolean = false,
+)
+
 data class ContactEntry(
     val id: String,
     val name: String,
     val company: String? = null,
-    val numbers: List<String>,
+    val email: String? = null,
+    val phones: List<ContactPhoneEntry> = emptyList(),
     val source: ContactSource,
-)
+    /** Customer contacts: the accounts whose address book holds this contact (the same customer can have several extensions). */
+    val accountIds: List<String> = emptyList(),
+    /** Customer contacts: the server's id and `updatedAt` (needed to edit). */
+    val contactId: String? = null,
+    val updatedAt: String? = null,
+) {
+    val numbers: List<String> get() = phones.map { it.number }
+
+    /** What a list shows for this contact: the name, otherwise the company, otherwise the first number. */
+    val displayName: String
+        get() {
+            val trimmed = name.trim()
+
+            if (trimmed.isNotEmpty()) return trimmed
+            if (!company.isNullOrBlank()) return company
+
+            return phones.firstOrNull()?.number ?: ""
+        }
+
+    /** The letter a list files this contact under (`#` for digits and symbols). */
+    val sectionLetter: Char
+        get() {
+            val first = ContactText.fold(displayName).uppercase().firstOrNull()
+
+            return if (first != null && first.isLetter()) first else '#'
+        }
+
+    /** Search: name, company, e-mail and numbers (digits compared without spaces or punctuation). */
+    fun matches(query: String): Boolean {
+        val needle = query.trim()
+
+        if (needle.isEmpty()) return true
+
+        val folded = ContactText.fold(needle)
+
+        if (ContactText.fold(displayName).contains(folded)) return true
+        if (company != null && ContactText.fold(company).contains(folded)) return true
+        if (email != null && ContactText.fold(email).contains(folded)) return true
+
+        val digits = needle.filter { it in '0'..'9' }
+
+        if (digits.length >= 3) {
+            return phones.any { phone ->
+                val own = phone.number.filter { it in '0'..'9' }
+                // Typed the way people write it: `06 12...` finds `+31 6 12...`.
+                val national = if (own.startsWith("31") && phone.number.startsWith("+")) "0" + own.drop(2) else own
+
+                own.contains(digits) || national.contains(digits)
+            }
+        }
+
+        return false
+    }
+
+    companion object {
+        /** Entry for a source that only knows plain numbers (colleagues). */
+        fun withNumbers(id: String, name: String, numbers: List<String>, source: ContactSource, company: String? = null) =
+            ContactEntry(id = id, name = name, company = company, phones = numbers.map { ContactPhoneEntry(it) }, source = source)
+    }
+}
+
+/** Case- and accent-insensitive text handling, the way a person expects names to sort and match. */
+object ContactText {
+    private val marks = Regex("\\p{M}+")
+
+    /** Lower case without accents (`Zoë` becomes `zoe`). */
+    fun fold(text: String): String = Normalizer.normalize(text, Normalizer.Form.NFD).replace(marks, "").lowercase()
+
+    private val collator: java.text.Collator = java.text.Collator.getInstance().apply { strength = java.text.Collator.PRIMARY }
+
+    /** Name order for a list: case- and accent-insensitive, ties broken by the plain order so the result is stable. */
+    val nameOrder: Comparator<String> = Comparator { a, b ->
+        val primary = synchronized(collator) { collator.compare(a, b) }
+
+        if (primary != 0) primary else a.compareTo(b)
+    }
+}
 
 /** Looks up a caller name. Synchronous and cheap: called while a call is being put on the screen. */
 fun interface NameLookup {
@@ -37,28 +126,14 @@ fun interface NameLookup {
 }
 
 object PhoneNumbers {
-    /** Same number in another notation? Equal digits, or the same last 9 digits (`+31612345678` vs `0612345678`). */
-    fun same(a: String, b: String): Boolean {
-        val x = a.filter { it in '0'..'9' }
-        val y = b.filter { it in '0'..'9' }
-
-        if (x.isEmpty() || y.isEmpty()) {
-            return false
-        }
-
-        // Short internal numbers (extensions) must match exactly.
-        if (x.length < 9 || y.length < 9) {
-            return x == y
-        }
-
-        return x.takeLast(9) == y.takeLast(9)
-    }
+    /** Same number in another notation (`+31612345678` vs `06 12 34 56 78`)? Extensions only match exactly. */
+    fun same(a: String, b: String): Boolean = PhoneNumberMatcher.same(a, b)
 }
 
 /** Internal contacts straight from `GET /me`. */
 class InternalContactsProvider(internalContacts: List<InternalContact>) : NameLookup {
     val entries: List<ContactEntry> = internalContacts.map {
-        ContactEntry(id = "internal:${it.number}", name = it.name, numbers = listOf(it.number), source = ContactSource.InternalExtensions)
+        ContactEntry.withNumbers(id = "internal:${it.number}", name = it.name, numbers = listOf(it.number), source = ContactSource.InternalExtensions)
     }
 
     override fun name(number: String): String? = entries.firstOrNull { entry -> entry.numbers.any { it == number } }?.name

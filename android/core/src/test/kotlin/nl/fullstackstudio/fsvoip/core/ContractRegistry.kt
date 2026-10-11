@@ -9,6 +9,6 @@ object ContractRegistry {
     val features: List<() -> Set<String>> = listOf(
         { CallsContractTest().coverage() },
         // { PbxContractTest().coverage() },
-        // { ContactsContractTest().coverage() },
+        { ContactsContractTest().coverage() },
     )
 }

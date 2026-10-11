@@ -42,6 +42,7 @@ import nl.fullstackstudio.fsvoip.pairing.DeviceDescriptor
 import nl.fullstackstudio.fsvoip.pairing.PushTokenLedger
 import nl.fullstackstudio.fsvoip.pairing.PushTokenReporter
 import nl.fullstackstudio.fsvoip.push.PushSupport
+import nl.fullstackstudio.fsvoip.ui.contacts.contactsKit
 
 /**
  * Composition root. The only place that knows which `SipEngine` implementation is used (plan D3): swapping the SIP
@@ -144,13 +145,15 @@ class AppServices private constructor(context: Context) {
             api = api,
         )
 
+        // The contacts (address books of the lines, the phone's contacts, colleagues) answer first; the plain lookups stay as a fallback.
+        val contacts = model.contactsKit(appContext)
         val internal = { CompositeNameLookup { model.internalContacts.value.values.map { InternalContactsProvider(it) } } }
         phone.lookupName = { number ->
             val sources = buildList<NameLookup> {
                 if (preferences.useDeviceContacts) add(deviceContacts)
                 add(internal())
             }
-            CompositeNameLookup { sources }.name(number)
+            contacts.hub.name(number) ?: CompositeNameLookup { sources }.name(number)
         }
 
         telecom?.onSilenceRinger = { CallService.silence(appContext) }
