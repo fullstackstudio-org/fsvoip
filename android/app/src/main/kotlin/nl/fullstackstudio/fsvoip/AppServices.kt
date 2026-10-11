@@ -108,6 +108,7 @@ class AppServices private constructor(context: Context) {
                 )
             },
             pushTokens = pushTokens,
+            api = api,
         )
 
         val internal = { CompositeNameLookup { model.internalContacts.value.values.map { InternalContactsProvider(it) } } }

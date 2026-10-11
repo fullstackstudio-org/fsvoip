@@ -6,11 +6,16 @@ import nl.fullstackstudio.fsvoip.core.ApiException
 import nl.fullstackstudio.fsvoip.core.FsLogger
 import nl.fullstackstudio.fsvoip.core.FsVoipApiClient
 import nl.fullstackstudio.fsvoip.core.InternalContact
+import nl.fullstackstudio.fsvoip.core.MeResponse
 import nl.fullstackstudio.fsvoip.core.StoredAccount
 
 /** The result of `GET /me` for one account. */
 sealed interface AccountRefreshResult {
-    data class Updated(val account: StoredAccount, val internalContacts: List<InternalContact>) : AccountRefreshResult
+    /**
+     * [me] is the whole answer: the app hands it to everything that reads from `GET /me` (contacts, the "Centrale" section), so one
+     * refresh is one request. `null` only for a service that has no such answer (tests, the demo).
+     */
+    data class Updated(val account: StoredAccount, val internalContacts: List<InternalContact>, val me: MeResponse? = null) : AccountRefreshResult
 
     /** 401: the pairing was revoked. The account has been removed from this phone. */
     data object Revoked : AccountRefreshResult
@@ -50,7 +55,7 @@ class AccountService(
             accounts.save(updated)
         }
 
-        AccountRefreshResult.Updated(updated, me.internalContacts)
+        AccountRefreshResult.Updated(updated, me.internalContacts, me)
     } catch (_: ApiException.Unauthorized) {
         logger.notice("Account ${account.id} was revoked by the server")
         accounts.remove(account.id)

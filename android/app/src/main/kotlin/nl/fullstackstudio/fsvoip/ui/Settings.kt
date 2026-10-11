@@ -29,6 +29,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -93,7 +94,12 @@ private fun SettingsScreen(model: AppModel, open: (SettingsPage) -> Unit) {
         model.useDeviceContacts = granted
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.tab_settings)) }) }) { padding ->
+    Scaffold(topBar = {
+        TopAppBar(
+            title = { Text(stringResource(R.string.tab_settings)) },
+            navigationIcon = { IconButton(onClick = { model.closeSettings() }, modifier = Modifier.testTag("settings-close")) { Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.action_close)) } },
+        )
+    }) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())) {
             section(stringResource(R.string.settings_lines), stringResource(R.string.settings_lines_footer)) {
                 for (account in accounts) {

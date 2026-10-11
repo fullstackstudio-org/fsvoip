@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<resources>
+    <string name="tab_onHold">On hold</string>
+    <string name="tab_voicemail">Voicemail</string>
+    <string name="tab_contacts">Contacts</string>
+</resources>

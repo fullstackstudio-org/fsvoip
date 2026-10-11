@@ -89,7 +89,7 @@ fun DialerScreen(model: AppModel) {
         val key = keySize(maxWidth, maxHeight)
 
         Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { ShellActions(model) }
             LineSelector(accounts, registrations, accountId) { chosenAccountId = it }
             Spacer(Modifier.weight(1f))
             NumberDisplay(model, input, height = key * 1.15f) { input = it }

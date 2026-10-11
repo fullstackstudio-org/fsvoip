@@ -63,6 +63,7 @@ fun RecentsScreen(model: AppModel) {
                     if (recents.isNotEmpty()) {
                         TextButton(onClick = { confirmsClear = true }) { Text(stringResource(R.string.recents_clear)) }
                     }
+                    ShellActions(model)
                 },
             )
         },

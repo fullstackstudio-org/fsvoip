@@ -16,7 +16,11 @@ import kotlinx.coroutines.launch
 import nl.fullstackstudio.fsvoip.callcontroller.CallDisplay
 import nl.fullstackstudio.fsvoip.callcontroller.PhoneController
 import nl.fullstackstudio.fsvoip.callcontroller.PhoneException
+import nl.fullstackstudio.fsvoip.core.AppCapabilities
+import nl.fullstackstudio.fsvoip.core.AppRole
 import nl.fullstackstudio.fsvoip.core.FsLogger
+import nl.fullstackstudio.fsvoip.core.FsVoipApiClient
+import nl.fullstackstudio.fsvoip.core.MeResponse
 import nl.fullstackstudio.fsvoip.core.InternalContact
 import nl.fullstackstudio.fsvoip.core.PreferencesStore
 import nl.fullstackstudio.fsvoip.core.PushMessage
@@ -48,6 +52,8 @@ class AppModel(
     private val recentsStore: RecentCallsStore,
     private val device: () -> DeviceDescriptor,
     private val pushTokens: PushTokenReporting?,
+    /** Base API client; every feature builds its per-account client with [client]. The demo swaps its transport. */
+    val api: FsVoipApiClient = FsVoipApiClient(),
     private val logger: FsLogger = FsLogger("app"),
 ) {
     private val context = context.applicationContext
@@ -71,7 +77,7 @@ class AppModel(
             get() = this != Idle
     }
 
-    enum class Tab { DIALER, RECENTS, SETTINGS }
+    enum class Tab { DIALER, ON_HOLD, RECENTS, VOICEMAIL, CONTACTS }
 
     data class Notice(val message: String, val isError: Boolean, val id: UUID = UUID.randomUUID())
 
@@ -91,6 +97,8 @@ class AppModel(
     private val _notice = MutableStateFlow<Notice?>(null)
     private val _selectedTab = MutableStateFlow(Tab.DIALER)
     private val _settingsRevision = MutableStateFlow(0)
+    private val _meByAccount = MutableStateFlow<Map<String, MeResponse>>(emptyMap())
+    private val _isSettingsOpen = MutableStateFlow(false)
 
     val pairing: StateFlow<PairingPhase> = _pairing.asStateFlow()
     val isScannerPresented: StateFlow<Boolean> = _isScannerPresented.asStateFlow()
@@ -103,6 +111,12 @@ class AppModel(
     /** Internal contacts per account id (from `GET /me`). */
     val internalContacts: StateFlow<Map<String, List<InternalContact>>> = _internalContacts.asStateFlow()
     val notice: StateFlow<Notice?> = _notice.asStateFlow()
+
+    /** What `GET /me` said each pairing may do (role, capabilities, PBX state), from the last refresh. Not stored on the phone. */
+    val meByAccount: StateFlow<Map<String, MeResponse>> = _meByAccount.asStateFlow()
+
+    /** The settings overlay (the gear and the avatar in the top bar open it). */
+    val isSettingsOpen: StateFlow<Boolean> = _isSettingsOpen.asStateFlow()
     val selectedTab: StateFlow<Tab> = _selectedTab.asStateFlow()
 
     /** Bumped whenever a per-account setting changes, so the settings screens redraw. */
@@ -143,7 +157,13 @@ class AppModel(
         for (account in _accounts.value) {
             try {
                 when (val result = service.refresh(account)) {
-                    is AccountRefreshResult.Updated -> _internalContacts.value = _internalContacts.value + (result.account.id to result.internalContacts)
+                    is AccountRefreshResult.Updated -> {
+                        _internalContacts.value = _internalContacts.value + (result.account.id to result.internalContacts)
+                        result.me?.let { me ->
+                            _meByAccount.value = _meByAccount.value + (result.account.id to me)
+                            onMeRefreshed(result.account.id, me)
+                        }
+                    }
                     AccountRefreshResult.Revoked -> {
                         cleanUp(account.id)
                         _notice.value = Notice(string(R.string.notice_revoked, account.displayLabel), isError = true)
@@ -219,6 +239,49 @@ class AppModel(
             preferences.useDeviceContacts = value
             _settingsRevision.value++
         }
+
+    // MARK: Roles and capabilities
+
+    /** The API client of one account (the device token is part of it). */
+    fun client(accountId: String): FsVoipApiClient? = account(accountId)?.let { api.authenticated(it.deviceToken) }
+
+    fun capabilities(accountId: String): AppCapabilities? = _meByAccount.value[accountId]?.capabilities
+
+    /** Fail closed: only an explicit `admin` counts. */
+    fun isAdmin(accountId: String): Boolean = _meByAccount.value[accountId]?.effectiveRole == AppRole.ADMIN
+
+    /** The "Centrale" sections: admin AND the capability AND the PBX is not hidden/unknown. */
+    fun canManagePbx(accountId: String): Boolean = _meByAccount.value[accountId]?.canManagePbx ?: false
+
+    fun canManageSounds(accountId: String): Boolean = canManagePbx(accountId) && capabilities(accountId)?.sounds == nl.fullstackstudio.fsvoip.core.SoundsAccess.MANAGE
+
+    fun canInvite(accountId: String): Boolean = canManagePbx(accountId) && (capabilities(accountId)?.invite ?: false)
+
+    fun canPark(accountId: String): Boolean = _meByAccount.value[accountId]?.canPark ?: false
+
+    /** Any account that can park: the "On hold" tab shows when this is true. */
+    val anyCanPark: Boolean get() = _meByAccount.value.values.any { it.canPark }
+
+    /**
+     * Hook for features that read from `GET /me` (contacts capabilities, caller choice, ...). Features register here instead of
+     * editing [refreshAccounts]. Called on the main thread after every successful refresh.
+     */
+    val meListeners: MutableList<(accountId: String, me: MeResponse) -> Unit> = mutableListOf()
+
+    private fun onMeRefreshed(accountId: String, me: MeResponse) {
+        meListeners.toList().forEach { it(accountId, me) }
+    }
+
+    /** Called when an account goes away (revoked, unpaired, forgotten): features drop their per-account state. */
+    val accountRemovedListeners: MutableList<(accountId: String) -> Unit> = mutableListOf()
+
+    fun openSettings() {
+        _isSettingsOpen.value = true
+    }
+
+    fun closeSettings() {
+        _isSettingsOpen.value = false
+    }
 
     fun select(tab: Tab) {
         _selectedTab.value = tab
@@ -417,6 +480,8 @@ class AppModel(
     private fun cleanUp(accountId: String) {
         preferences.removePreferences(accountId)
         _internalContacts.value = _internalContacts.value - accountId
+        _meByAccount.value = _meByAccount.value - accountId
+        accountRemovedListeners.toList().forEach { it(accountId) }
         _settingsRevision.value++
     }
 

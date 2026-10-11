@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package nl.fullstackstudio.fsvoip.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -26,7 +27,9 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Laptop
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.QrCodeScanner
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.PauseCircle
+import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.Voicemail
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -53,6 +56,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import nl.fullstackstudio.fsvoip.AppModel
 import nl.fullstackstudio.fsvoip.R
+import nl.fullstackstudio.fsvoip.ui.contacts.ContactsTab
+import nl.fullstackstudio.fsvoip.ui.media.VoicemailTab
+import nl.fullstackstudio.fsvoip.ui.park.OnHoldTab
 
 @Composable
 fun RootScreen(model: AppModel) {
@@ -118,7 +124,7 @@ private fun NoticeBanner(notice: AppModel.Notice, dismiss: () -> Unit) {
     }
 }
 
-/** Settings has sub pages; a tiny back stack in state (no navigation library needed for three screens). */
+/** Settings has sub pages; a tiny back stack in state (no navigation library needed for a handful of screens). */
 sealed interface SettingsPage {
     data class Account(val id: String) : SettingsPage
 
@@ -128,22 +134,45 @@ sealed interface SettingsPage {
 @Composable
 private fun MainTabs(model: AppModel) {
     val tab by model.selectedTab.collectAsStateWithLifecycle()
+    val settingsOpen by model.isSettingsOpen.collectAsStateWithLifecycle()
+    val meByAccount by model.meByAccount.collectAsStateWithLifecycle()
     val settingsStack = remember { mutableStateListOf<SettingsPage>() }
+    val showsOnHold = meByAccount.values.any { it.canPark }
 
-    Scaffold(
-        bottomBar = {
-            NavigationBar {
-                TabItem(tab == AppModel.Tab.DIALER, Icons.Filled.Dialpad, stringResource(R.string.tab_dialer)) { model.select(AppModel.Tab.DIALER) }
-                TabItem(tab == AppModel.Tab.RECENTS, Icons.Filled.History, stringResource(R.string.tab_recents)) { model.select(AppModel.Tab.RECENTS) }
-                TabItem(tab == AppModel.Tab.SETTINGS, Icons.Filled.Settings, stringResource(R.string.tab_settings)) { model.select(AppModel.Tab.SETTINGS) }
+    // The "On hold" tab disappears when no account can park: do not stay on it.
+    LaunchedEffect(showsOnHold, tab) {
+        if (!showsOnHold && tab == AppModel.Tab.ON_HOLD) model.select(AppModel.Tab.DIALER)
+    }
+
+    Box(Modifier.fillMaxSize()) {
+        Scaffold(
+            bottomBar = {
+                NavigationBar {
+                    TabItem(tab == AppModel.Tab.DIALER, Icons.Filled.Dialpad, stringResource(R.string.tab_dialer)) { model.select(AppModel.Tab.DIALER) }
+                    if (showsOnHold) {
+                        TabItem(tab == AppModel.Tab.ON_HOLD, Icons.Filled.PauseCircle, stringResource(R.string.tab_onHold)) { model.select(AppModel.Tab.ON_HOLD) }
+                    }
+                    TabItem(tab == AppModel.Tab.RECENTS, Icons.Filled.History, stringResource(R.string.tab_recents)) { model.select(AppModel.Tab.RECENTS) }
+                    TabItem(tab == AppModel.Tab.VOICEMAIL, Icons.Filled.Voicemail, stringResource(R.string.tab_voicemail)) { model.select(AppModel.Tab.VOICEMAIL) }
+                    TabItem(tab == AppModel.Tab.CONTACTS, Icons.Filled.People, stringResource(R.string.tab_contacts)) { model.select(AppModel.Tab.CONTACTS) }
+                }
+            },
+        ) { padding ->
+            Box(Modifier.padding(padding).fillMaxSize()) {
+                when (tab) {
+                    AppModel.Tab.DIALER -> DialerScreen(model)
+                    AppModel.Tab.ON_HOLD -> OnHoldTab(model)
+                    AppModel.Tab.RECENTS -> RecentsScreen(model)
+                    AppModel.Tab.VOICEMAIL -> VoicemailTab(model)
+                    AppModel.Tab.CONTACTS -> ContactsTab(model)
+                }
             }
-        },
-    ) { padding ->
-        Box(Modifier.padding(padding).fillMaxSize()) {
-            when (tab) {
-                AppModel.Tab.DIALER -> DialerScreen(model)
-                AppModel.Tab.RECENTS -> RecentsScreen(model)
-                AppModel.Tab.SETTINGS -> SettingsNavigation(model, settingsStack)
+        }
+
+        AnimatedVisibility(visible = settingsOpen, enter = slideInVertically { it }, exit = slideOutVertically { it }) {
+            Surface(Modifier.fillMaxSize()) {
+                BackHandler(enabled = settingsOpen && settingsStack.isEmpty()) { model.closeSettings() }
+                SettingsNavigation(model, settingsStack)
             }
         }
     }
