@@ -16,7 +16,11 @@ import nl.fullstackstudio.fsvoip.contacts.CompositeNameLookup
 import nl.fullstackstudio.fsvoip.contacts.DeviceContactsProvider
 import nl.fullstackstudio.fsvoip.contacts.InternalContactsProvider
 import nl.fullstackstudio.fsvoip.contacts.NameLookup
+import nl.fullstackstudio.fsvoip.call.ExoPlayerBackend
 import nl.fullstackstudio.fsvoip.core.AccountStore
+import nl.fullstackstudio.fsvoip.core.AudioPlayerModel
+import nl.fullstackstudio.fsvoip.core.HistoryModel
+import nl.fullstackstudio.fsvoip.core.LiveMediaService
 import nl.fullstackstudio.fsvoip.core.FsLogger
 import nl.fullstackstudio.fsvoip.core.FsVoipApiClient
 import nl.fullstackstudio.fsvoip.core.InstallIdentity
@@ -91,6 +95,7 @@ class AppServices private constructor(context: Context) {
         phone.enterBackground()
 
         val deviceContacts = DeviceContactsProvider(appContext)
+        val media = LiveMediaService(api, locale = { if (java.util.Locale.getDefault().language == "nl") "nl" else "en" })
 
         model = AppModel(
             context = appContext,
@@ -98,6 +103,9 @@ class AppServices private constructor(context: Context) {
             accountStore = accounts,
             service = AccountService(api, accounts),
             selfExtension = SelfExtensionHub(LiveSelfExtensionService(api)),
+            history = HistoryModel(media),
+            mediaService = media,
+            player = AudioPlayerModel(ExoPlayerBackend(appContext, userAgent = "FSVoip/$version (Android)")),
             preferences = preferences,
             recentsStore = RecentCallsStore(plain),
             device = {

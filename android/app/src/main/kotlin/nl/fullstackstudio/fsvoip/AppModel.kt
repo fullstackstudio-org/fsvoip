@@ -17,6 +17,12 @@ import nl.fullstackstudio.fsvoip.callcontroller.CallDisplay
 import nl.fullstackstudio.fsvoip.callcontroller.PhoneController
 import nl.fullstackstudio.fsvoip.callcontroller.PhoneException
 import nl.fullstackstudio.fsvoip.core.AppCapabilities
+import nl.fullstackstudio.fsvoip.core.AudioPlayerModel
+import nl.fullstackstudio.fsvoip.core.HistoryModel
+import nl.fullstackstudio.fsvoip.core.MediaServicing
+import nl.fullstackstudio.fsvoip.core.VoicemailModel
+import nl.fullstackstudio.fsvoip.core.VoicemailMessage
+import nl.fullstackstudio.fsvoip.core.VoicemailAccess
 import nl.fullstackstudio.fsvoip.core.FsLogger
 import nl.fullstackstudio.fsvoip.core.InternalContact
 import nl.fullstackstudio.fsvoip.core.MeResponse
@@ -24,12 +30,14 @@ import nl.fullstackstudio.fsvoip.core.OutboundChoice
 import nl.fullstackstudio.fsvoip.core.PbxVocabulary
 import nl.fullstackstudio.fsvoip.core.PreferencesStore
 import nl.fullstackstudio.fsvoip.core.PushMessage
+import nl.fullstackstudio.fsvoip.core.HistoryEntry
 import nl.fullstackstudio.fsvoip.core.RecentCall
 import nl.fullstackstudio.fsvoip.core.RecentCallsStore
 import nl.fullstackstudio.fsvoip.core.SelfExtension
 import nl.fullstackstudio.fsvoip.core.SelfExtensionHub
 import nl.fullstackstudio.fsvoip.core.SelfNumber
 import nl.fullstackstudio.fsvoip.core.StoredAccount
+import nl.fullstackstudio.fsvoip.ui.RecentFormat
 import nl.fullstackstudio.fsvoip.pairing.AccountRefreshResult
 import nl.fullstackstudio.fsvoip.pairing.AccountServicing
 import nl.fullstackstudio.fsvoip.pairing.DeviceDescriptor
@@ -53,6 +61,9 @@ class AppModel(
     private val accountStore: nl.fullstackstudio.fsvoip.core.AccountStore,
     private val service: AccountServicing,
     val selfExtension: SelfExtensionHub,
+    val history: HistoryModel,
+    val mediaService: MediaServicing,
+    val player: AudioPlayerModel,
     private val preferences: PreferencesStore,
     private val recentsStore: RecentCallsStore,
     private val device: () -> DeviceDescriptor,
@@ -85,6 +96,9 @@ class AppModel(
 
     data class Notice(val message: String, val isError: Boolean, val id: UUID = UUID.randomUUID())
 
+    /** What the audio bar shows while something plays. */
+    data class NowPlaying(val id: String, val title: String, val subtitle: String)
+
     sealed interface UnpairResult {
         data object Done : UnpairResult
 
@@ -103,6 +117,8 @@ class AppModel(
     private val _settingsRevision = MutableStateFlow(0)
     private val _isSettingsPresented = MutableStateFlow(false)
     private val _me = MutableStateFlow<Map<String, MeResponse>>(emptyMap())
+    private val _nowPlaying = MutableStateFlow<NowPlaying?>(null)
+    private val voicemailModels = mutableMapOf<String, VoicemailModel>()
 
     val pairing: StateFlow<PairingPhase> = _pairing.asStateFlow()
     val isScannerPresented: StateFlow<Boolean> = _isScannerPresented.asStateFlow()
@@ -117,6 +133,7 @@ class AppModel(
     val notice: StateFlow<Notice?> = _notice.asStateFlow()
     val selectedTab: StateFlow<Tab> = _selectedTab.asStateFlow()
     val isSettingsPresented: StateFlow<Boolean> = _isSettingsPresented.asStateFlow()
+    val nowPlaying: StateFlow<NowPlaying?> = _nowPlaying.asStateFlow()
 
     /** The last `GET /me` per account id: role, capabilities and the state of the PBX. */
     val me: StateFlow<Map<String, MeResponse>> = _me.asStateFlow()
@@ -135,6 +152,14 @@ class AppModel(
 
         // A 401/403 on the own extension: the pairing or the role is gone; `GET /me` removes or updates the account.
         selfExtension.onRevoked = { scope.launch { refreshAccounts() } }
+        history.onRevoked = { scope.launch { refreshAccounts() } }
+
+        // A call takes the speaker and the microphone: nothing else plays during it.
+        scope.launch {
+            phone.sessions.collect { sessions ->
+                if (sessions.isNotEmpty()) stopPlayer()
+            }
+        }
 
         reloadAccounts()
         _recents.value = recentsStore.all()
@@ -346,6 +371,50 @@ class AppModel(
         _settingsRevision.value++
     }
 
+    // MARK: History and voicemail
+
+    /** The calls of this phone, as lines of "Geschiedenis" (shown while the PBX cannot say, and the ones it has not caught up with). */
+    fun localHistory(recents: List<RecentCall>): List<HistoryEntry> {
+        val yesterday = string(R.string.recents_yesterday)
+
+        return recents.map { call ->
+            HistoryEntry.of(
+                call,
+                extensionName = account(call.accountId)?.extensionName,
+                whenLabel = RecentFormat.`when`(java.time.Instant.ofEpochMilli(call.startedAtMillis), yesterday),
+                durationLabel = RecentFormat.duration(call.durationSeconds),
+            )
+        }
+    }
+
+    fun refreshHistory() {
+        scope.launch { for (account in _accounts.value) history.load(account) }
+    }
+
+    /** Whether this pairing may open voicemail at all (the server says; an older server says nothing and the PBX answers `403`). */
+    fun canSeeVoicemail(accountId: String): Boolean = capabilities(accountId)?.voicemail?.let { it != VoicemailAccess.NONE } ?: true
+
+    fun voicemailModel(account: StoredAccount): VoicemailModel = voicemailModels.getOrPut(account.id) {
+        VoicemailModel(account, mediaService) { canSeeVoicemail(account.id) }.also { model -> model.onRevoked = { scope.launch { refreshAccounts() } } }
+    }
+
+    /** Plays a message. Not during a call; the audio bar shows what plays. */
+    fun playVoicemail(account: StoredAccount, message: VoicemailMessage, title: String, subtitle: String) {
+        if (phone.sessions.value.isNotEmpty()) {
+            _notice.value = Notice(string(R.string.media_error_callInProgress), isError = true)
+            return
+        }
+
+        val source = voicemailModel(account).source(message)
+        _nowPlaying.value = NowPlaying("${account.id}/${message.key}", title, subtitle)
+        player.play("${account.id}/${message.key}", source)
+    }
+
+    fun stopPlayer() {
+        player.stop()
+        _nowPlaying.value = null
+    }
+
     /** Name of a contact (internal extensions; the phone's contacts when switched on) for a number. */
     fun name(number: String): String? = if (number.isEmpty()) null else phone.lookupName(number)
 
@@ -508,6 +577,9 @@ class AppModel(
         _internalContacts.value = _internalContacts.value - accountId
         _me.value = _me.value - accountId
         selfExtension.forget(accountId)
+        history.forget(accountId)
+        voicemailModels.remove(accountId)
+        if (_nowPlaying.value?.id?.startsWith("$accountId/") == true) stopPlayer()
         _settingsRevision.value++
     }
 

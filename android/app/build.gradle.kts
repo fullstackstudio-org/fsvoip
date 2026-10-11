@@ -103,6 +103,9 @@ dependencies {
     implementation(libs.androidx.lifecycle.process)
     implementation(libs.kotlinx.coroutines.android)
 
+    // Voicemail (and later recordings): ExoPlayer with the device token in the request headers, Range for seeking.
+    implementation(libs.androidx.media3.exoplayer)
+
     // FCM. Always compiled in; only active when google-services.json was present at build time.
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.messaging)

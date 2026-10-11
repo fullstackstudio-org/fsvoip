@@ -90,8 +90,8 @@ fun MainTabs(model: AppModel) {
             when (tab) {
                 AppModel.Tab.DIALER -> DialerScreen(model)
                 AppModel.Tab.ON_HOLD -> ComingSoon(Icons.Filled.PauseCircle, stringResource(R.string.tab_onHold))
-                AppModel.Tab.RECENTS -> RecentsScreen(model)
-                AppModel.Tab.VOICEMAIL -> ComingSoon(Icons.Filled.Voicemail, stringResource(R.string.tab_voicemail))
+                AppModel.Tab.RECENTS -> HistoryScreen(model)
+                AppModel.Tab.VOICEMAIL -> VoicemailScreen(model)
                 AppModel.Tab.CONTACTS -> ComingSoon(Icons.Filled.Contacts, stringResource(R.string.tab_contacts))
             }
         }
