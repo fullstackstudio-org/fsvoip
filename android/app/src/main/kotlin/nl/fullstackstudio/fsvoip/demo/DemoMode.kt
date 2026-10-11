@@ -13,6 +13,7 @@ import nl.fullstackstudio.fsvoip.core.Secret
 import nl.fullstackstudio.fsvoip.core.ServerTransport
 import nl.fullstackstudio.fsvoip.core.SipCredentials
 import nl.fullstackstudio.fsvoip.core.StoredAccount
+import nl.fullstackstudio.fsvoip.ui.contacts.openContactsDemoScreen
 
 /**
  * The demo content: two example accounts (the first an administrator, the second a plain user), example recents and the
@@ -31,6 +32,7 @@ object DemoMode {
     val handlers: MutableList<DemoHandler> = mutableListOf(
         CoreDemoHandler(),
         // slice handlers are added here
+        ContactsDemoHandler(),
     )
 
     fun exampleRecents(): List<RecentCall> {
@@ -53,6 +55,7 @@ object DemoMode {
         when (screen) {
             "recents" -> model.select(AppModel.Tab.RECENTS)
             "contacts" -> model.select(AppModel.Tab.CONTACTS)
+            "contactdetail", "contactedit", "contactnew", "contactsources", "contactphone" -> openContactsDemoScreen(model, screen.removePrefix("contact"))
             "onhold" -> model.select(AppModel.Tab.ON_HOLD)
             "voicemail" -> model.select(AppModel.Tab.VOICEMAIL)
             "settings" -> model.openSettings()
