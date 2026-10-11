@@ -36,9 +36,18 @@ class RecordingsModel(val accountId: String, private val hub: MediaHub) {
     private val ui: RecordingsUi get() = _state.value
     private var loadGeneration = 0
 
+    private val itemObserver: (String?) -> Unit = { id -> if (id == null) update { copy(nowPlaying = null) } }
+    private val stateObserver: (PlayerState) -> Unit = { state -> playerStateChanged(state) }
+
     init {
-        hub.player.itemObservers += { id -> if (id == null) update { copy(nowPlaying = null) } }
-        hub.player.stateObservers += { state -> playerStateChanged(state) }
+        hub.player.itemObservers += itemObserver
+        hub.player.stateObservers += stateObserver
+    }
+
+    /** The screen is gone: stop listening to the shared player. */
+    fun close() {
+        hub.player.itemObservers -= itemObserver
+        hub.player.stateObservers -= stateObserver
     }
 
     private fun update(change: RecordingsUi.() -> RecordingsUi) {

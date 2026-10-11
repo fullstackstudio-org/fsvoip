@@ -61,9 +61,18 @@ class VoicemailModel(
     private val gate get() = hub.gate
     private val player get() = hub.player
 
+    private val itemObserver: (String?) -> Unit = { id -> if (id == null) update { copy(nowPlaying = null) } }
+    private val stateObserver: (PlayerState) -> Unit = { state -> playerStateChanged(state) }
+
     init {
-        player.itemObservers += { id -> if (id == null) update { copy(nowPlaying = null) } }
-        player.stateObservers += { state -> playerStateChanged(state) }
+        player.itemObservers += itemObserver
+        player.stateObservers += stateObserver
+    }
+
+    /** The screen is gone: stop listening to the shared player. */
+    fun close() {
+        player.itemObservers -= itemObserver
+        player.stateObservers -= stateObserver
     }
 
     private fun update(change: VoicemailUi.() -> VoicemailUi) {

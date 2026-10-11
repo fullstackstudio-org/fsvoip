@@ -13,6 +13,8 @@ import nl.fullstackstudio.fsvoip.core.Secret
 import nl.fullstackstudio.fsvoip.core.ServerTransport
 import nl.fullstackstudio.fsvoip.core.SipCredentials
 import nl.fullstackstudio.fsvoip.core.StoredAccount
+import nl.fullstackstudio.fsvoip.ui.media.MediaDemoFlags
+import nl.fullstackstudio.fsvoip.ui.media.RecordingsScreen
 
 /**
  * The demo content: two example accounts (the first an administrator, the second a plain user), example recents and the
@@ -30,6 +32,7 @@ object DemoMode {
     /** In order; the first handler that answers wins. Slices append their own (one line each). */
     val handlers: MutableList<DemoHandler> = mutableListOf(
         CoreDemoHandler(),
+        MediaDemoHandler(),
         // slice handlers are added here
     )
 
@@ -52,6 +55,47 @@ object DemoMode {
 
         when (screen) {
             "recents" -> model.select(AppModel.Tab.RECENTS)
+            "recents-user" -> {
+                model.setDefaultOutgoing(USER_ID)
+                model.select(AppModel.Tab.RECENTS)
+            }
+            "recents-error" -> {
+                MediaDemoFlags.failCalls = true
+                model.select(AppModel.Tab.RECENTS)
+            }
+            "recents-empty" -> {
+                MediaDemoFlags.emptyCalls = true
+                model.select(AppModel.Tab.RECENTS)
+            }
+            "callrecording", "callrecording-gone" -> {
+                MediaDemoFlags.auto = screen
+                model.select(AppModel.Tab.RECENTS)
+            }
+            "recordings", "recordingplay" -> {
+                if (screen == "recordingplay") MediaDemoFlags.auto = screen
+                model.showOverlay { close -> RecordingsScreen(model, ADMIN_ID, close) }
+            }
+            "voicemail-user" -> {
+                model.setDefaultOutgoing(USER_ID)
+                model.select(AppModel.Tab.VOICEMAIL)
+            }
+            "voicemail-unavailable" -> {
+                MediaDemoFlags.voicemailUnavailable = true
+                model.setDefaultOutgoing(USER_ID)
+                model.select(AppModel.Tab.VOICEMAIL)
+            }
+            "voicemail-error" -> {
+                MediaDemoFlags.failVoicemail = true
+                model.select(AppModel.Tab.VOICEMAIL)
+            }
+            "voicemail-empty" -> {
+                MediaDemoFlags.emptyVoicemail = true
+                model.select(AppModel.Tab.VOICEMAIL)
+            }
+            "voicemailplay" -> {
+                MediaDemoFlags.auto = screen
+                model.select(AppModel.Tab.VOICEMAIL)
+            }
             "contacts" -> model.select(AppModel.Tab.CONTACTS)
             "onhold" -> model.select(AppModel.Tab.ON_HOLD)
             "voicemail" -> model.select(AppModel.Tab.VOICEMAIL)
