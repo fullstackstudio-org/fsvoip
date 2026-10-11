@@ -40,6 +40,7 @@ object DemoMode {
         CoreDemoHandler(),
         MediaDemoHandler(),
         CallExpDemoHandler(),
+        SoundsDemoHandler(),
         // slice handlers are added here
         ContactsDemoHandler(),
     )
@@ -129,6 +130,13 @@ object DemoMode {
             }, 800)
             "voicemail" -> model.select(AppModel.Tab.VOICEMAIL)
             "settings" -> model.openSettings()
+            "settings-user" -> {
+                model.setDefaultOutgoing(USER_ID)
+                model.openSettings()
+            }
+            // Pages of the sounds / own extension / invitation slice (the admin pages wait until `GET /me` has said what is allowed).
+            "profile", "callprefs", "link", "appearance", "notifications", "about", "sounds", "invite", "picker", "gate", "profile-user", "callprefs-user" ->
+                main.postDelayed({ SoundsDemoScreens.open(screen, model) }, 1500)
             "scanner" -> model.presentScanner()
             "pairing" -> model.handleIncoming(link)
             "incall", "parkcall" -> main.postDelayed({ model.call("0612345678", ADMIN_ID) }, 1200)

@@ -22,6 +22,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -58,7 +60,8 @@ object Brand {
 
 @Composable
 fun FsVoipTheme(content: @Composable () -> Unit) {
-    val dark = isSystemInDarkTheme()
+    val appearance by nl.fullstackstudio.fsvoip.ui.settings.Appearance.current.collectAsState()
+    val dark = appearance.resolveDark(isSystemInDarkTheme())
     val scheme = if (dark) {
         darkColorScheme(
             primary = Color.White,

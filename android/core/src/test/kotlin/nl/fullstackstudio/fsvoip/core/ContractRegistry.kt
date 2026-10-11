@@ -11,5 +11,6 @@ object ContractRegistry {
         { PbxContractTest().coverage() },
         { ContactsContractTest().coverage() },
         { CallExpContractTest().coverage() },
+        { SoundsContractTest().coverage() },
     )
 }

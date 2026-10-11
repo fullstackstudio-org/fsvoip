@@ -134,9 +134,32 @@ private fun NoticeBanner(notice: AppModel.Notice, dismiss: () -> Unit) {
 
 /** Settings has sub pages; a tiny back stack in state (no navigation library needed for a handful of screens). */
 sealed interface SettingsPage {
+    /** The old account detail: shows the profile of that account. */
     data class Account(val id: String) : SettingsPage
 
     data object Licenses : SettingsPage
+
+    data class Profile(val accountId: String) : SettingsPage
+
+    data class CallPreferences(val accountId: String) : SettingsPage
+
+    /** "Koppeling": the state of the line and the details of the pairing. */
+    data class Link(val accountId: String) : SettingsPage
+
+    /** A part of the "Centrale" section (admins). */
+    data class Centrale(val accountId: String, val part: nl.fullstackstudio.fsvoip.ui.pbx.PbxPart) : SettingsPage
+
+    data class Sounds(val accountId: String) : SettingsPage
+
+    data class Invite(val accountId: String) : SettingsPage
+
+    data class Recordings(val accountId: String) : SettingsPage
+
+    data object Appearance : SettingsPage
+
+    data object Notifications : SettingsPage
+
+    data object About : SettingsPage
 }
 
 @Composable
