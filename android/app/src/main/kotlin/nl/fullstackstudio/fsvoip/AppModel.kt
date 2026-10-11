@@ -14,10 +14,20 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import nl.fullstackstudio.fsvoip.callcontroller.CallDisplay
+import nl.fullstackstudio.fsvoip.callcontroller.CallSession
 import nl.fullstackstudio.fsvoip.callcontroller.PhoneController
 import nl.fullstackstudio.fsvoip.callcontroller.PhoneException
 import nl.fullstackstudio.fsvoip.core.AppCapabilities
 import nl.fullstackstudio.fsvoip.core.AppRole
+import nl.fullstackstudio.fsvoip.core.CallerChoice
+import nl.fullstackstudio.fsvoip.core.CallerContext
+import nl.fullstackstudio.fsvoip.core.CustomerCardServicing
+import nl.fullstackstudio.fsvoip.core.LiveCustomerCardService
+import nl.fullstackstudio.fsvoip.core.LiveOutboundNumbersService
+import nl.fullstackstudio.fsvoip.core.LiveParkService
+import nl.fullstackstudio.fsvoip.core.NoticeDestination
+import nl.fullstackstudio.fsvoip.core.NoticeRoute
+import nl.fullstackstudio.fsvoip.core.ParkFailure
 import nl.fullstackstudio.fsvoip.core.FsLogger
 import nl.fullstackstudio.fsvoip.core.FsVoipApiClient
 import nl.fullstackstudio.fsvoip.core.MeResponse
@@ -35,7 +45,11 @@ import nl.fullstackstudio.fsvoip.pairing.PairingLink
 import nl.fullstackstudio.fsvoip.pairing.PairingLinkException
 import nl.fullstackstudio.fsvoip.pairing.PairingLinkParser
 import nl.fullstackstudio.fsvoip.pairing.PushTokenReporting
+import nl.fullstackstudio.fsvoip.sipengine.CallOptions
 import nl.fullstackstudio.fsvoip.sipengine.RegistrationState
+import nl.fullstackstudio.fsvoip.ui.OutboundChoiceModel
+import nl.fullstackstudio.fsvoip.ui.park.ParkFormat
+import nl.fullstackstudio.fsvoip.ui.park.ParkModel
 
 /** Runtime permissions the model asks for at the right moment; the activity implements them. */
 interface PermissionRequester {
@@ -78,6 +92,7 @@ class AppModel(
     }
 
     enum class Tab { DIALER, ON_HOLD, RECENTS, VOICEMAIL, CONTACTS }
+
 
     data class Notice(val message: String, val isError: Boolean, val id: UUID = UUID.randomUUID())
 
@@ -124,12 +139,32 @@ class AppModel(
 
     var permissions: PermissionRequester? = null
 
+    // Call experience: parking ("In de wacht"), the number to call out with ("Bellen via") and the customer card.
+    val park: ParkModel = ParkModel(LiveParkService(api))
+    val outbound: OutboundChoiceModel = OutboundChoiceModel(LiveOutboundNumbersService(api), preferences) { capabilities(it) }
+    val customerCards: CustomerCardServicing = LiveCustomerCardService(api)
+    private val _chosenParkAccountId = MutableStateFlow<String?>(null)
+
+    /** The account the user picked in the "In de wacht" tab (several accounts can park); `null` = the default one. */
+    val chosenParkAccountId: StateFlow<String?> = _chosenParkAccountId.asStateFlow()
+
     init {
         phone.anonymousCallerText = string(R.string.call_anonymous)
         phone.onCallFinished = { call ->
             recentsStore.add(call)
             _recents.value = recentsStore.all()
+
+            // A pick-up from "In de wacht" that never connected: the slot was gone.
+            if (park.callFinished(call)) {
+                account(call.accountId)?.let { scope.launch { park.refresh(it) } }
+            }
         }
+        // Best effort and capped at one second by the phone: a failed or slow lookup never touches the call.
+        phone.lookupCaller = { number, account -> CallerContext.from(customerCards.lookup(number, account)) }
+        park.dial = { number, accountId -> call(number, accountId, useChosenNumber = false) }
+        park.notifyGone = { showGoneNotice() }
+        park.isAdmin = { accountId -> isAdmin(accountId) }
+        park.onRevoked = { scope.launch { refreshAccounts() } }
 
         reloadAccounts()
         _recents.value = recentsStore.all()
@@ -262,6 +297,64 @@ class AppModel(
     /** Any account that can park: the "On hold" tab shows when this is true. */
     val anyCanPark: Boolean get() = _meByAccount.value.values.any { it.canPark }
 
+    /** The accounts that can park, in the order of the accounts. */
+    fun parkAccounts(): List<StoredAccount> = _accounts.value.filter { canPark(it.id) }
+
+    /** The account the "In de wacht" tab shows: the one the user chose, else the default outgoing one if it can park, else the first. */
+    fun parkAccount(): StoredAccount? {
+        val candidates = parkAccounts()
+
+        _chosenParkAccountId.value?.let { chosen -> candidates.firstOrNull { it.id == chosen }?.let { return it } }
+        defaultOutgoingAccountId?.let { preferred -> candidates.firstOrNull { it.id == preferred }?.let { return it } }
+
+        return candidates.firstOrNull()
+    }
+
+    fun chooseParkAccount(accountId: String) {
+        _chosenParkAccountId.value = accountId
+    }
+
+    fun showGoneNotice() = showNotice(string(R.string.onHold_notice_gone), isError = true)
+
+    /**
+     * Parks the running call of [session] and says what happened. The PBX ends our leg of the call after a successful park; this
+     * never shows that as a failure.
+     */
+    suspend fun parkCall(session: CallSession) {
+        if (!canPark(session.accountId.raw)) return
+
+        val account = account(session.accountId.raw) ?: return
+
+        // The live SIP Call-ID, never the engine's own id (for an outgoing call that can be a UUID the PBX does not know).
+        val callId = phone.sipCallId(session)?.takeIf { it.isNotEmpty() }
+
+        if (callId == null) {
+            _notice.value = Notice(message(ParkFailure.CallNotFound), isError = true)
+            return
+        }
+
+        when (val result = park.park(callId, account)) {
+            is ParkModel.ParkResult.Parked -> _notice.value = Notice(string(R.string.park_notice_parked, ParkFormat.slot(result.slot)), isError = false)
+            is ParkModel.ParkResult.Failed -> _notice.value = Notice(message(result.failure), isError = true)
+            ParkModel.ParkResult.Ignored -> Unit
+        }
+    }
+
+    /** The sentence for the user. No server text, no telecom words. */
+    fun message(failure: ParkFailure): String = when (failure) {
+        ParkFailure.CallNotFound -> string(R.string.park_error_callNotFound)
+        ParkFailure.NoFreeSlot -> string(R.string.park_error_noFreeSlot)
+        ParkFailure.Unavailable -> string(R.string.onHold_unavailable_message)
+        ParkFailure.Uncertain -> string(R.string.park_error_uncertain)
+        ParkFailure.Forbidden -> string(R.string.park_error_forbidden)
+        ParkFailure.Revoked -> string(R.string.park_error_revoked)
+        ParkFailure.ReadOnly -> string(R.string.park_error_readOnly)
+        ParkFailure.NotFound -> string(R.string.onHold_notice_gone)
+        is ParkFailure.RateLimited -> failure.retryAfterSeconds?.takeIf { it > 0 }?.let { string(R.string.park_error_rateLimited_seconds, it) } ?: string(R.string.park_error_rateLimited)
+        ParkFailure.Offline -> string(R.string.park_error_offline)
+        ParkFailure.Other -> string(R.string.error_generic)
+    }
+
     /**
      * Hook for features that read from `GET /me` (contacts capabilities, caller choice, ...). Features register here instead of
      * editing [refreshAccounts]. Called on the main thread after every successful refresh.
@@ -274,6 +367,13 @@ class AppModel(
 
     /** Called when an account goes away (revoked, unpaired, forgotten): features drop their per-account state. */
     val accountRemovedListeners: MutableList<(accountId: String) -> Unit> = mutableListOf()
+
+    init {
+        accountRemovedListeners += { accountId ->
+            park.forget(accountId)
+            outbound.forget(accountId)
+        }
+    }
 
     private val features = mutableMapOf<kotlin.reflect.KClass<*>, Any>()
 
@@ -324,8 +424,11 @@ class AppModel(
 
     // MARK: Calls
 
-    /** Start a call. Returns `false` (with a notice) when it could not start. */
-    fun call(number: String, accountId: String?): Boolean {
+    /**
+     * Start a call. Returns `false` (with a notice) when it could not start. The number chosen in the dialler rides along with this one
+     * call ([useChosenNumber]), never for an emergency number; without the capability the options are empty.
+     */
+    fun call(number: String, accountId: String?, useChosenNumber: Boolean = true): Boolean {
         val id = accountId ?: defaultOutgoingAccountId
 
         if (id == null) {
@@ -334,7 +437,7 @@ class AppModel(
         }
 
         return try {
-            phone.startCall(number, id)
+            phone.startCall(number, id, if (useChosenNumber && CallerChoice.appliesTo(number)) outbound.options(id) else CallOptions.NONE)
             scope.launch { permissions?.requestMicrophone() }
             true
         } catch (error: PhoneException) {
@@ -380,13 +483,32 @@ class AppModel(
         }
     }
 
-    /** A `revoked` or `refresh` push (calls go to `phone.handleRingPush`, never here). */
+    /** A `revoked`, `refresh` or `notice` push (calls go to `phone.handleRingPush`, never here). */
     fun handleNotice(message: PushMessage) {
         when (message) {
             is PushMessage.Revoked -> removeRevoked(message.revoked.accountId)
             is PushMessage.Refresh -> scope.launch { refreshAccounts() }
+            // Showing it is the push service's job (a notification); opening the right screen happens when it is tapped.
+            is PushMessage.Notice -> Unit
             is PushMessage.Ring -> logger.notice("A ring message arrived as a notice: ignored")
         }
+    }
+
+    /** The user tapped a notice notification. A notice for an account that is no longer on this phone opens nothing. */
+    fun openNotification(accountId: String?, href: String?) {
+        if (accountId == null || href == null || account(accountId) == null) {
+            logger.notice("Notice for an account that is not on this phone: ignored")
+            return
+        }
+
+        open(NoticeRoute.destination(href))
+    }
+
+    /** Show the screen for a notice destination: any sheet closes, the tab opens. [NoticeDestination.HOME] is the dialler. */
+    fun open(destination: NoticeDestination) {
+        closeSettings()
+        closeOverlay()
+        select(destination.tab())
     }
 
     /** The server says this pairing was removed (portal, admin, or another phone took over the extension). */

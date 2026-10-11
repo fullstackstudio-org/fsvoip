@@ -7,6 +7,7 @@ import nl.fullstackstudio.fsvoip.sipengine.CallDirection
 import nl.fullstackstudio.fsvoip.sipengine.CallEndReason
 import nl.fullstackstudio.fsvoip.sipengine.CallId
 import nl.fullstackstudio.fsvoip.sipengine.CallInfo
+import nl.fullstackstudio.fsvoip.sipengine.CallOptions
 import nl.fullstackstudio.fsvoip.sipengine.CallState
 import nl.fullstackstudio.fsvoip.sipengine.DeclineReason
 import nl.fullstackstudio.fsvoip.sipengine.DtmfDigit
@@ -56,14 +57,34 @@ class DemoSipEngine : SipEngine {
     override fun setRegistrationEnabled(enabled: Boolean, account: SipAccountId) = Unit
     override fun refreshRegistration(account: SipAccountId) = Unit
 
-    override fun call(number: String, account: SipAccountId): CallId {
+    /** The options of every call started, newest last (screenshots and tests read the `X-FSS-From` header from it). */
+    val callOptions = mutableListOf<CallOptions>()
+
+    init {
+        CallExpDemoHandler.engine = this
+    }
+
+    override fun call(number: String, account: SipAccountId, options: CallOptions): CallId {
         val id = CallId()
         dialled += number
+        callOptions += options
         live[id] = CallInfo(id, CallDirection.OUTGOING, account, number, null, CallState.OutgoingInitiated)
         handler.postDelayed({ change(id, CallState.OutgoingRinging) }, 200)
         handler.postDelayed({ change(id, CallState.Active) }, 2000)
 
         return id
+    }
+
+    /** A SIP Call-ID of a pretend dialog, so parking works against the demo API. */
+    override fun sipCallId(call: CallId): String? = if (live.containsKey(call)) "demo-${call.raw.take(8)}@demo.local" else null
+
+    /** Does a running call have this SIP Call-ID? (The demo API checks it like the PBX does.) */
+    fun hasSipCallId(sipCallId: String): Boolean = live.keys.any { sipCallId(it) == sipCallId }
+
+    /** The PBX ends our leg of a call it parked (a BYE from the other side). */
+    fun endBecauseParked(sipCallId: String) {
+        val id = live.keys.firstOrNull { sipCallId(it) == sipCallId } ?: return
+        change(id, CallState.Ended(CallEndReason.RemoteHangup))
     }
 
     fun simulateIncoming(number: String, name: String?, account: String, fssCallRef: String? = null) {

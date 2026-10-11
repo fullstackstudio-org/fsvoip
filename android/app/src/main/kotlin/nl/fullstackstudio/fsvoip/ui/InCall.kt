@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Dialpad
+import androidx.compose.material.icons.filled.LocalParking
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Pause
@@ -55,6 +56,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.time.Duration
 import java.time.Instant
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import nl.fullstackstudio.fsvoip.AppModel
 import nl.fullstackstudio.fsvoip.R
 import nl.fullstackstudio.fsvoip.callcontroller.CallSession
@@ -144,7 +146,30 @@ private fun Header(session: CallSession, digits: String?) {
             Text(session.remoteNumber!!, color = Color.White.copy(alpha = 0.6f), style = MaterialTheme.typography.bodyLarge)
         }
 
+        // The customer card: what the website of the customer says about the caller (only what the server counted).
+        val android = androidx.compose.ui.platform.LocalContext.current
+        CallerLine.text(session.callerContext, android)?.let { line ->
+            Text(
+                line,
+                color = Color.White,
+                style = MaterialTheme.typography.labelLarge,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .padding(top = 10.dp)
+                    .background(Color.White.copy(alpha = 0.08f), CircleShape)
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                    .testTag("call-customer-card"),
+            )
+        }
+
         Text(statusText(session), color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 4.dp))
+
+        // The number this outgoing call goes out with, when the user chose one in the dialler.
+        val via = session.viaNumber
+
+        if (session.direction == CallDirection.OUTGOING && via != null) {
+            Text(stringResource(R.string.call_via, OutboundChoiceModel.formatNumber(via)), color = Color.White.copy(alpha = 0.6f), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("call-via"))
+        }
 
         if (digits != null) {
             Text(digits.takeLast(18), color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Light, maxLines = 1, modifier = Modifier.padding(top = 6.dp))
@@ -191,6 +216,10 @@ private fun timer(start: Instant): String {
 private fun Controls(session: CallSession, speaker: Boolean, ended: Boolean, onKeypad: () -> Unit, model: AppModel) {
     val phone = model.phone
     val connected = session.phase.isConnected || session.phase == CallSession.Phase.Connecting
+    val meByAccount by model.meByAccount.collectAsStateWithLifecycle()
+    var parking by remember(session.id) { mutableStateOf(false) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val canPark = meByAccount[session.accountId.raw]?.canPark == true
 
     Column(Modifier.alpha(if (ended) 0.4f else 1f), verticalArrangement = Arrangement.spacedBy(28.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(40.dp)) {
@@ -205,6 +234,21 @@ private fun Controls(session: CallSession, speaker: Boolean, ended: Boolean, onK
             }
             ControlButton(Icons.Filled.Pause, stringResource(R.string.call_hold), session.isOnHold, enabled = !ended && session.phase.isConnected, tag = "hold-button") {
                 phone.setHeld(session.id, !session.isOnHold)
+            }
+        }
+
+        // Parking: put the call on a numbered slot for the whole team. Only when the PBX offers it and the call is connected.
+        if (canPark) {
+            Row(horizontalArrangement = Arrangement.spacedBy(40.dp)) {
+                ControlButton(Icons.Filled.LocalParking, stringResource(R.string.call_park), parking, enabled = !ended && session.phase.isConnected && !parking, tag = "park-button") {
+                    if (!parking) {
+                        parking = true
+                        scope.launch {
+                            model.parkCall(session)
+                            parking = false
+                        }
+                    }
+                }
             }
         }
     }

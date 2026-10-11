@@ -1,0 +1,385 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+package nl.fullstackstudio.fsvoip.ui.park
+
+import java.time.Instant
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
+import nl.fullstackstudio.fsvoip.core.ApiException
+import nl.fullstackstudio.fsvoip.core.ParkFailure
+import nl.fullstackstudio.fsvoip.core.ParkServicing
+import nl.fullstackstudio.fsvoip.core.ParkedBy
+import nl.fullstackstudio.fsvoip.core.ParkedCall
+import nl.fullstackstudio.fsvoip.core.ParkedCallsPage
+import nl.fullstackstudio.fsvoip.core.RecentCall
+import nl.fullstackstudio.fsvoip.core.Secret
+import nl.fullstackstudio.fsvoip.core.ServerTransport
+import nl.fullstackstudio.fsvoip.core.SipCredentials
+import nl.fullstackstudio.fsvoip.core.StoredAccount
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+
+private class FakeParkService : ParkServicing {
+    val log = java.util.Collections.synchronizedList(mutableListOf<String>())
+    val parkRequests = mutableListOf<String>()
+    val hungUp = mutableListOf<String>()
+    var items = listOf<ParkedCall>()
+    var available = true
+    var parkResult: () -> ParkedCall = { ParkedCall("new", 1, "*5901", mine = true) }
+    var listError: Exception? = null
+    var hangupError: Exception? = null
+
+    fun count(name: String) = synchronized(log) { log.count { it == name } }
+
+    override suspend fun park(callId: String, account: StoredAccount): ParkedCall {
+        log += "park"
+        parkRequests += callId
+
+        return parkResult()
+    }
+
+    override suspend fun parked(account: StoredAccount): ParkedCallsPage {
+        log += "parked"
+        listError?.let { throw it }
+
+        return ParkedCallsPage(items, available)
+    }
+
+    override suspend fun hangup(id: String, account: StoredAccount) {
+        log += "hangup"
+        hungUp += id
+        hangupError?.let { throw it }
+        items = items.filter { it.id != id }
+    }
+}
+
+private fun account(id: String = "a") = StoredAccount(
+    id = id, label = "Jan", pbxName = "Voorbeeld Bouw", extensionName = "Jan de Vries", extensionNumber = "102", customerName = "Voorbeeld",
+    deviceToken = Secret("fss_vapp_x"), installId = "a1b2c3d4e5f60718",
+    sip = SipCredentials("102", Secret("pw"), "x.powervoip.nl", "sip.powervoip.nl", 5061, ServerTransport.TLS, true), pairedAtMillis = 1_790_000_000_000,
+)
+
+private fun parked(id: String, slot: Int, mine: Boolean = false, name: String? = "Bakkerij Smit", by: String = "Jan de Vries", seconds: Long = 100) = ParkedCall(
+    id = id, slot = slot, retrieveNumber = "*59" + slot.toString().padStart(2, '0'), callerNumber = "0701234567", callerName = name,
+    parkedAt = Instant.now().minusSeconds(seconds), expiresAt = Instant.now().plusSeconds(120 - seconds), parkedBy = ParkedBy(null, by), mine = mine,
+)
+
+class ParkModelTest {
+    private lateinit var service: FakeParkService
+    private lateinit var model: ParkModel
+    private val dialled = mutableListOf<Pair<String, String>>()
+    private var gone = 0
+
+    @Before
+    fun setUp() {
+        service = FakeParkService()
+        dialled.clear()
+        gone = 0
+        model = ParkModel(service)
+        model.dial = { number, account ->
+            dialled += number to account
+            true
+        }
+        model.notifyGone = { gone++ }
+    }
+
+    // MARK: Parking
+
+    @Test
+    fun parkingSendsTheCallIdAndAnswersWithTheSlot() = runBlocking {
+        service.parkResult = { parked("p", 3, mine = true) }
+        service.items = listOf(parked("p", 3, mine = true))
+
+        val result = model.park("sip-call-id-1", account())
+
+        assertEquals(ParkModel.ParkResult.Parked(3), result)
+        assertEquals(listOf("sip-call-id-1"), service.parkRequests)
+        assertEquals("the list is refreshed after parking", listOf(3), model.calls.value.map { it.slot })
+    }
+
+    @Test
+    fun noFreeSlotIsAMessageNotARetry() = runBlocking {
+        service.parkResult = { throw ApiException.NoFreeSlot() }
+
+        val result = model.park("c1", account())
+
+        assertEquals(ParkModel.ParkResult.Failed(ParkFailure.NoFreeSlot), result)
+        assertEquals(1, service.parkRequests.size)
+    }
+
+    @Test
+    fun parkUncertainRefreshesAndNeverParksTheSameCallAgain() = runBlocking {
+        service.parkResult = { throw ApiException.ParkUncertain() }
+        service.items = listOf(parked("p", 1, mine = true))
+
+        val first = model.park("c1", account())
+
+        assertEquals(ParkModel.ParkResult.Failed(ParkFailure.Uncertain), first)
+        assertEquals("it looks at the list instead", 1, service.count("parked"))
+        assertEquals(1, model.calls.value.size)
+
+        val second = model.park("c1", account())
+
+        assertEquals(ParkModel.ParkResult.Ignored, second)
+        assertEquals("no second request, ever", listOf("c1"), service.parkRequests)
+    }
+
+    @Test
+    fun aTimeOutOrAGatewayErrorIsUncertainAndNeverParksTheSameCallAgain() = runBlocking {
+        val errors = listOf<Exception>(ApiException.Transport("timed out"), ApiException.UnexpectedStatus(502), ApiException.UnexpectedStatus(504))
+
+        for ((index, error) in errors.withIndex()) {
+            service.parkResult = { throw error }
+            val callId = "call-$index"
+
+            val first = model.park(callId, account())
+            val second = model.park(callId, account())
+
+            assertEquals(ParkModel.ParkResult.Failed(ParkFailure.Uncertain), first)
+            assertEquals(ParkModel.ParkResult.Ignored, second)
+            assertEquals(1, service.parkRequests.count { it == callId })
+        }
+
+        assertTrue("the list is refreshed each time", service.count("parked") >= errors.size)
+    }
+
+    @Test
+    fun aClearRefusalIsNotUncertain() = runBlocking {
+        service.parkResult = { throw ApiException.CallNotFound() }
+
+        model.park("c9", account())
+        val again = model.park("c9", account())
+
+        assertEquals("a certain failure may be tried again", ParkModel.ParkResult.Failed(ParkFailure.CallNotFound), again)
+    }
+
+    @Test
+    fun parkingACallOfAnotherAccountDoesNotSwitchTheTabsList() = runBlocking {
+        service.items = listOf(parked("p", 1))
+        model.refresh(account("a"))
+        assertEquals(1, model.calls.value.size)
+        val listCalls = service.count("parked")
+
+        service.parkResult = { parked("q", 2) }
+        model.park("other", account("b"))
+
+        assertEquals("no refresh for another account", listCalls, service.count("parked"))
+        assertEquals("the list of account a stays", 1, model.calls.value.size)
+    }
+
+    // MARK: The list
+
+    @Test
+    fun allAndMineSegments() = runBlocking {
+        service.items = listOf(parked("1", 1, mine = true), parked("2", 2), parked("3", 3, mine = true))
+
+        model.refresh(account())
+
+        assertEquals(3, model.calls(ParkModel.Scope.ALL).size)
+        assertEquals(listOf("1", "3"), model.calls(ParkModel.Scope.MINE).map { it.id })
+        assertEquals(2, model.mineCount)
+        assertEquals(true, model.available.value)
+    }
+
+    @Test
+    fun theOldestParkedCallIsFirst() = runBlocking {
+        service.items = listOf(parked("new", 2, seconds = 10), parked("old", 1, seconds = 200), ParkedCall("unknown", 3))
+
+        model.refresh(account())
+
+        assertEquals(listOf("unknown", "old", "new"), model.calls.value.map { it.id })
+    }
+
+    @Test
+    fun anUnavailablePbxIsExplainedNotListed() = runBlocking {
+        service.available = false
+
+        model.refresh(account())
+
+        assertEquals(false, model.available.value)
+        assertTrue(model.calls.value.isEmpty())
+    }
+
+    @Test
+    fun aFailedRefreshKeepsTheOldList() = runBlocking {
+        service.items = listOf(parked("1", 1))
+        model.refresh(account())
+
+        service.listError = ApiException.Transport("down")
+        val ok = model.refresh(account())
+
+        assertFalse(ok)
+        assertEquals(ParkFailure.Offline, model.failure.value)
+        assertEquals(1, model.calls.value.size)
+    }
+
+    @Test
+    fun pollingRunsOnlyWhileTheCoroutineLives() = runBlocking {
+        val job = kotlinx.coroutines.launch(this) { model.poll(account(), intervalMillis = 5) }
+        withTimeoutOrNull(2_000) { while (service.count("parked") < 3) delay(5) }
+        assertTrue("it keeps refreshing while the tab is visible", service.count("parked") >= 3)
+
+        job.cancel()
+        job.join()
+        delay(30)
+        val settled = service.count("parked")
+        delay(60)
+
+        assertEquals("no more requests after the tab went away", settled, service.count("parked"))
+    }
+
+    // MARK: Picking up
+
+    @Test
+    fun pickingUpRefreshesFirstThenDialsTheRetrieveNumber() = runBlocking {
+        service.items = listOf(parked("1", 1), parked("2", 2))
+        model.refresh(account())
+        val before = service.count("parked")
+
+        val result = model.retrieve(model.calls.value[1], account())
+
+        assertEquals(ParkModel.RetrieveResult.Dialing, result)
+        assertEquals("the list is read again right before dialling", before + 1, service.count("parked"))
+        assertEquals(listOf("*5902"), dialled.map { it.first })
+        assertEquals(listOf("a"), dialled.map { it.second })
+    }
+
+    @Test
+    fun aGoneSlotIsNotDialled() = runBlocking {
+        service.items = listOf(parked("1", 1))
+        model.refresh(account())
+        val stale = model.calls.value[0]
+        service.items = emptyList()
+
+        val result = model.retrieve(stale, account())
+
+        assertEquals(ParkModel.RetrieveResult.Gone, result)
+        assertTrue(dialled.isEmpty())
+        assertTrue("the list is refreshed", model.calls.value.isEmpty())
+    }
+
+    @Test
+    fun anotherCallInTheSameSlotIsNotDialled() = runBlocking {
+        service.items = listOf(parked("1", 1))
+        model.refresh(account())
+        val stale = model.calls.value[0]
+        service.items = listOf(parked("other", 1))
+
+        assertEquals("it matches on the call, not on the slot number", ParkModel.RetrieveResult.Gone, model.retrieve(stale, account()))
+        assertTrue(dialled.isEmpty())
+    }
+
+    @Test
+    fun aRefusedDialIsNotAGoneCall() = runBlocking {
+        service.items = listOf(parked("1", 1))
+        model.refresh(account())
+        model.dial = { _, _ -> false }
+
+        assertEquals(ParkModel.RetrieveResult.DialFailed, model.retrieve(model.calls.value[0], account()))
+    }
+
+    private fun recent(number: String, outcome: RecentCall.Outcome) =
+        RecentCall(number = number, name = null, accountId = "a", accountLabel = "Jan", direction = RecentCall.Direction.OUTGOING, outcome = outcome, startedAtMillis = 0, durationSeconds = 0)
+
+    @Test
+    fun aPickUpThatNeverConnectsSaysNoLongerParked() = runBlocking {
+        service.items = listOf(parked("1", 1))
+        model.refresh(account())
+        model.retrieve(model.calls.value[0], account())
+
+        val refresh = model.callFinished(recent("*5901", RecentCall.Outcome.FAILED))
+
+        assertEquals(1, gone)
+        assertTrue("the caller refreshes the list", refresh)
+    }
+
+    @Test
+    fun aConnectedPickUpSaysNothing() = runBlocking {
+        service.items = listOf(parked("1", 1))
+        model.refresh(account())
+        model.retrieve(model.calls.value[0], account())
+
+        assertFalse(model.callFinished(recent("*5901", RecentCall.Outcome.ANSWERED)))
+        assertEquals(0, gone)
+    }
+
+    @Test
+    fun anUnrelatedCallEndingSaysNothing() = runBlocking {
+        service.items = listOf(parked("1", 1))
+        model.refresh(account())
+        model.retrieve(model.calls.value[0], account())
+
+        assertFalse(model.callFinished(recent("0612345678", RecentCall.Outcome.NOT_ANSWERED)))
+        assertEquals(0, gone)
+    }
+
+    // MARK: Hanging up
+
+    @Test
+    fun aUserHangsUpOnlyTheirOwnCall() = runBlocking {
+        model.isAdmin = { false }
+        service.items = listOf(parked("mine", 1, mine = true), parked("theirs", 2))
+        model.refresh(account())
+        val own = model.calls.value[0]
+        val other = model.calls.value[1]
+
+        assertTrue(model.canHangUp(own, "a"))
+        assertFalse(model.canHangUp(other, "a"))
+
+        assertEquals(ParkModel.HangupResult.Failed(ParkFailure.Forbidden), model.hangUp(other, account()))
+        assertEquals("no request for a call that is not theirs", emptyList<String>(), service.hungUp)
+
+        assertEquals(ParkModel.HangupResult.Done, model.hangUp(own, account()))
+        assertEquals(listOf("mine"), service.hungUp)
+        assertEquals(listOf("theirs"), model.calls.value.map { it.id })
+    }
+
+    @Test
+    fun anAdminHangsUpAnyCall() = runBlocking {
+        model.isAdmin = { true }
+        service.items = listOf(parked("theirs", 2))
+        model.refresh(account())
+
+        assertEquals(ParkModel.HangupResult.Done, model.hangUp(model.calls.value[0], account()))
+        assertEquals(listOf("theirs"), service.hungUp)
+    }
+
+    @Test
+    fun hangingUpACallThatIsGone() = runBlocking {
+        model.isAdmin = { true }
+        service.items = listOf(parked("x", 1))
+        model.refresh(account())
+        service.hangupError = ApiException.NotFound()
+
+        assertEquals(ParkModel.HangupResult.Gone, model.hangUp(model.calls.value[0], account()))
+    }
+
+    @Test
+    fun aRevokedPairingIsReported() = runBlocking {
+        var revoked = 0
+        model.onRevoked = { revoked++ }
+        service.listError = ApiException.Unauthorized()
+
+        model.refresh(account())
+
+        assertEquals(1, revoked)
+    }
+
+    // MARK: Formatting
+
+    @Test
+    fun elapsedAndRemainingTime() {
+        val now = Instant.ofEpochSecond(1_000)
+
+        assertEquals("1:23", ParkFormat.elapsed(now.minusSeconds(83), now))
+        assertNull(ParkFormat.elapsed(null, now))
+        assertEquals("0:37", ParkFormat.remaining(now.plusSeconds(37), now))
+        assertNull("passed: nothing to count down", ParkFormat.remaining(now.minusSeconds(1), now))
+        assertEquals("1:02:03", ParkFormat.clock(3723))
+        assertEquals("01", ParkFormat.slot(1))
+    }
+}

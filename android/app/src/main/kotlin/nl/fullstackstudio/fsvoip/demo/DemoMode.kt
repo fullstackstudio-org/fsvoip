@@ -30,6 +30,7 @@ object DemoMode {
     /** In order; the first handler that answers wins. Slices append their own (one line each). */
     val handlers: MutableList<DemoHandler> = mutableListOf(
         CoreDemoHandler(),
+        CallExpDemoHandler(),
         // slice handlers are added here
     )
 
@@ -54,6 +55,25 @@ object DemoMode {
             "recents" -> model.select(AppModel.Tab.RECENTS)
             "contacts" -> model.select(AppModel.Tab.CONTACTS)
             "onhold" -> model.select(AppModel.Tab.ON_HOLD)
+            "onhold-empty", "onhold-unavailable", "onhold-user" -> {
+                CallExpDemoHandler.mode = when (screen) {
+                    "onhold-empty" -> CallExpDemoHandler.Mode.EMPTY
+                    "onhold-unavailable" -> CallExpDemoHandler.Mode.UNAVAILABLE
+                    else -> CallExpDemoHandler.Mode.NORMAL
+                }
+                if (screen == "onhold-user") model.chooseParkAccount(USER_ID)
+                model.select(AppModel.Tab.ON_HOLD)
+            }
+            "chooser" -> model.select(AppModel.Tab.DIALER)
+            "notice", "notice-contacts", "notice-home" -> main.postDelayed({
+                val href = when (screen) {
+                    "notice-contacts" -> "https://fullstackstudio.nl/portal/contacts"
+                    "notice-home" -> "https://fullstackstudio.nl/portal/content/11111111-2222-4333-8444-555555555555/orders/aaaaaaaa"
+                    else -> "https://fullstackstudio.nl/portal/voip/99999999-8888-4777-8666-555555555555/voicemail"
+                }
+                // What a tap on a portal notification does (the notification itself: DebugPushReceiver with a `notice` push).
+                model.openNotification(ADMIN_ID, href)
+            }, 800)
             "voicemail" -> model.select(AppModel.Tab.VOICEMAIL)
             "settings" -> model.openSettings()
             "scanner" -> model.presentScanner()
