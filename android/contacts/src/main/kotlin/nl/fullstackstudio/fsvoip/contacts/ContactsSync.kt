@@ -48,6 +48,9 @@ object ContactsSync {
     const val PAGE_SIZE = 500
     private const val MAX_PAGES = 200
 
+    /** For the test of the page limit. */
+    internal const val MAX_PAGES_FOR_TEST = MAX_PAGES
+
     /**
      * One run: every page of `GET /contacts`, following `nextCursor`. [since] `null` = the complete set. `serverTime` is the same on
      * every page of one run; it is taken from the FIRST page and only handed back when the LAST page succeeded (a run that fails
@@ -74,6 +77,9 @@ object ContactsSync {
             cursor = page.nextCursor
             pages++
         } while (cursor != null && pages < MAX_PAGES)
+
+        // Still a cursor: this is NOT everything. Storing it as complete (and its serverTime as the next `since`) would lose contacts.
+        check(cursor == null) { "Contacts sync stopped after $MAX_PAGES pages" }
 
         // A contact that was changed and then deleted in one run is gone.
         deleted.forEach { contacts.remove(it) }
@@ -157,11 +163,15 @@ object ContactsSync {
         var pages = 1
 
         while (cursor != null && pages < MAX_PAGES) {
-            val next = api.contactListSnapshot(list.id, cursor, etag = null) as? ContactListSnapshotOutcome.Snapshot ?: break
+            // A `304` on a continuation page makes no sense (the server ignores the ETag there): the list is incomplete, keep nothing.
+            val next = api.contactListSnapshot(list.id, cursor, etag = null) as? ContactListSnapshotOutcome.Snapshot
+                ?: error("Unexpected 304 on a continuation page of list ${list.id}")
             ids += next.snapshot.contacts.map { it.id }
             cursor = next.snapshot.nextCursor
             pages++
         }
+
+        check(cursor == null) { "Contact list ${list.id} stopped after $MAX_PAGES pages" }
 
         return MembersOutcome.Members(ids, first.snapshot.list.version, first.etag ?: ContactListETag.make(first.snapshot.list.version))
     }

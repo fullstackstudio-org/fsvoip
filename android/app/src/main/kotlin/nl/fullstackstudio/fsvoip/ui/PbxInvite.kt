@@ -71,6 +71,7 @@ private sealed interface InvitePhase {
 
 @Composable
 fun InviteScreen(model: AppModel, accountId: String, back: () -> Unit) {
+    SecureScreen()
     val accounts by model.accounts.collectAsStateWithLifecycle()
     val all by model.pbx.devices.collectAsStateWithLifecycle()
     val account = accounts.firstOrNull { it.id == accountId }

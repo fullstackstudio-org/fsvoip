@@ -202,4 +202,17 @@ class ContactListsTest {
         assertEquals(listOf("7"), outcome.ids)
         assertEquals(2, calls)
     }
+
+    @Test
+    fun aRunThatNeverEndsIsAnErrorNotAFullCopy() = runTest {
+        val api = FakeContactsApi()
+
+        repeat(ContactsSync.MAX_PAGES_FOR_TEST + 5) { api.pages += ContactsPage(listOf(contact("c$it", "N$it", "0612345678")), emptyList(), "more", "T1") }
+
+        try {
+            ContactsSync.run(api, null)
+            fail("a run with a cursor left must not count as complete")
+        } catch (_: IllegalStateException) {
+        }
+    }
 }

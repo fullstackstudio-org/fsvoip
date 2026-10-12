@@ -68,7 +68,9 @@ class MainActivity : FragmentActivity(), PermissionRequester {
         when (intent.action) {
             // https://fullstackstudio.nl/fsvoip/pair?t=… (App Link) and fsvoip://pair?t=…
             Intent.ACTION_VIEW -> intent.dataString?.let { services.model.handleIncoming(it) }
-            ACTION_ANSWER -> callUuid(intent)?.let { services.phone.answer(it) }
+            // The activity is exported (launcher, pairing links): another app can send this action too. Only a call that is ringing here
+            // right now can be answered, and only by its own id.
+            ACTION_ANSWER -> callUuid(intent)?.takeIf { services.phone.session(it)?.phase == nl.fullstackstudio.fsvoip.callcontroller.CallSession.Phase.Incoming }?.let { services.phone.answer(it) }
             ACTION_SHOW_CALL -> Unit // The call screen is on top already.
             // A tap on a portal notice: the tab its link maps to (an account that is gone opens nothing).
             ACTION_OPEN_NOTICE -> services.model.openNotice(intent.getStringExtra(EXTRA_NOTICE_ACCOUNT).orEmpty(), intent.getStringExtra(EXTRA_NOTICE_HREF).orEmpty())

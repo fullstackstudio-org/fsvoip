@@ -60,6 +60,7 @@ fun monthTitle(key: String, locale: Locale = Locale.getDefault()): String = runC
 
 @Composable
 fun RecordingsScreen(model: AppModel, accountId: String, back: () -> Unit) {
+    SecureScreen()
     val accounts by model.accounts.collectAsStateWithLifecycle()
     val account = accounts.firstOrNull { it.id == accountId }
     val nowPlaying by model.nowPlaying.collectAsStateWithLifecycle()

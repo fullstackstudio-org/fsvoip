@@ -114,7 +114,7 @@ fun SoundsScreen(model: AppModel, accountId: String, back: () -> Unit) {
         }
 
         scope.launch {
-            val bytes = withContext(Dispatchers.IO) { runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull() }
+            val bytes = withContext(Dispatchers.IO) { runCatching { context.contentResolver.openInputStream(uri)?.use { readAtMost(it, (SoundRecordingRules.MAX_UPLOAD_BYTES + 1).toInt()) } }.getOrNull() }
 
             if (bytes == null || bytes.isEmpty()) {
                 error = unreadable
@@ -288,6 +288,22 @@ fun SoundsScreen(model: AppModel, accountId: String, back: () -> Unit) {
 }
 
 private var inUsePlaces by mutableStateOf<Pair<List<UsePlace>, String>?>(null)
+
+/** Reads at most [limit] bytes: a file that is larger shows as `limit` bytes, so the caller can refuse it without holding it all in memory. */
+private fun readAtMost(input: java.io.InputStream, limit: Int): ByteArray {
+    val out = java.io.ByteArrayOutputStream()
+    val buffer = ByteArray(64 * 1024)
+
+    while (out.size() < limit) {
+        val count = input.read(buffer, 0, minOf(buffer.size, limit - out.size()))
+
+        if (count < 0) break
+
+        out.write(buffer, 0, count)
+    }
+
+    return out.toByteArray()
+}
 
 private class PendingSound(
     val name: String,
