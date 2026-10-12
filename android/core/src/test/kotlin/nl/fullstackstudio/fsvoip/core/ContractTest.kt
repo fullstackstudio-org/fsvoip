@@ -383,11 +383,15 @@ class ContractTest {
         assertFalse(ParkFailure.outcomeIsUncertain(ApiException.CallNotFound()))
     }
 
-    /** Fixtures of the "Centrale" section (numbers, sounds, groups): typed in part 2; here they only have to be valid JSON. */
+    /**
+     * Fixtures of the "Centrale" section (numbers, sounds, groups): typed in part 2; here they only have to be valid JSON.
+     * Also the live-calls fixtures (`live-*`, `error-call-not-ringing|transferable`, `error-live-unavailable`): iOS has them typed, Android
+     * follows (plan fss-features-2026-10, Task 4).
+     */
     @Test
     fun partTwoFixturesAreValidJson() {
         val names = Fixtures.all().filter { name ->
-            listOf("pbx-", "chain-step-", "number-", "numbers-", "sound").any { name.startsWith(it) }
+            listOf("pbx-", "chain-step-", "number-", "numbers-", "sound", "live-", "error-call-not-ringing", "error-call-not-transferable", "error-live-unavailable").any { name.startsWith(it) }
         }
         assertTrue(names.size >= 20)
 

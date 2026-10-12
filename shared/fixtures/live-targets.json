@@ -1,0 +1,29 @@
+{
+  "readOnly": false,
+  "targets": [
+    {
+      "type": "extension",
+      "id": "3f0c2b1e-8a4d-4d6f-9b7a-1c2d3e4f5a01",
+      "name": "Receptie",
+      "extension": "101"
+    },
+    {
+      "type": "extension",
+      "id": "3f0c2b1e-8a4d-4d6f-9b7a-1c2d3e4f5a02",
+      "name": "Jan (balie)",
+      "extension": "102"
+    },
+    {
+      "type": "ring_group",
+      "id": "3f0c2b1e-8a4d-4d6f-9b7a-1c2d3e4f5a03",
+      "name": "Iedereen",
+      "extension": "200"
+    },
+    {
+      "type": "voicemail",
+      "id": "3f0c2b1e-8a4d-4d6f-9b7a-1c2d3e4f5a04",
+      "name": "Voicemail Algemeen",
+      "extension": "900"
+    }
+  ]
+}

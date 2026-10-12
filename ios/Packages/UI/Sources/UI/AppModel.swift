@@ -79,6 +79,15 @@ public final class FSVoipAppModel: ObservableObject {
     @Published public private(set) var internalContacts: [String: [InternalContact]] = [:]
     @Published public var notice: Notice?
     @Published public var selectedTab: Tab = .dialer
+
+    /// The two sections of the "On hold" tab: the calls parked on the PBX, and the live calls (plan `fss-features-2026-10`, Task 4).
+    public enum OnHoldSection: Hashable {
+        case parked
+        case live
+    }
+
+    /// Which section of the "On hold" tab is showing.
+    @Published public var onHoldSection: OnHoldSection = .parked
     @Published public var isSettingsPresented = false
     @Published public var settingsStart: SettingsStart = .root
     /// What `GET /me` said each pairing may do (role and capabilities), from the last refresh. Not stored on the phone: after a restart
@@ -96,6 +105,8 @@ public final class FSVoipAppModel: ObservableObject {
     public let media: MediaHub?
     /// Parking and the "On hold" tab; `nil` = not offered.
     public let park: ParkModel?
+    /// Live calls (the "Live" section of the "On hold" tab); `nil` = not offered.
+    public let live: LiveModel?
     /// Do-not-disturb of the own extension ("Beschikbaar"); `nil` = not offered.
     public let availability: AvailabilityHub?
     /// The own extension (e-mail, forwarding, voicemail) and inviting a colleague. Never `nil`: without a service it simply has nothing.
@@ -126,7 +137,9 @@ public final class FSVoipAppModel: ObservableObject {
     private var outboundChanges: AnyCancellable?
     private var selfExtensionChanges: AnyCancellable?
     private var parkChanges: AnyCancellable?
+    private var liveChanges: AnyCancellable?
     @Published private var chosenParkAccountId: String?
+    @Published private var chosenLiveAccountId: String?
 
     public init(
         phone: PhoneController,
@@ -144,6 +157,7 @@ public final class FSVoipAppModel: ObservableObject {
         availability: AvailabilityHub? = nil,
         selfExtension: SelfExtensionHub? = nil,
         park: ParkServicing? = nil,
+        live: LiveServicing? = nil,
         outboundNumbers: OutboundNumbersServicing? = nil,
         customerCards: CustomerCardServicing? = nil,
         logger: FSLogger = FSLogger(category: "app")
@@ -156,6 +170,7 @@ public final class FSVoipAppModel: ObservableObject {
         self.availability = availability
         self.selfExtension = selfExtension ?? .unavailable
         self.park = park.map { ParkModel(service: $0) }
+        self.live = live.map { LiveModel(service: $0) }
         outbound = OutboundChoiceModel(service: outboundNumbers, preferences: preferences)
         history = HistoryModel(media: media)
         self.accountStore = accountStore
@@ -170,6 +185,7 @@ public final class FSVoipAppModel: ObservableObject {
 
         outbound.capabilities = { [weak self] accountId in self?.capabilities(for: accountId) }
         parkChanges = self.park?.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        liveChanges = self.live?.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         outboundChanges = outbound.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         history.nameLookup = { [weak self] number in self?.name(forNumber: number) }
         phone.anonymousCallerText = L10n.string("call.anonymous")
@@ -200,6 +216,12 @@ public final class FSVoipAppModel: ObservableObject {
             self?.meByAccount[accountId]?.effectiveRole == .admin
         }
         self.park?.onRevoked = { [weak self] in
+            Task { await self?.refreshAccounts() }
+        }
+        self.live?.notify = { [weak self] message, isError in
+            self?.notice = Notice(message: message, isError: isError)
+        }
+        self.live?.onRevoked = { [weak self] in
             Task { await self?.refreshAccounts() }
         }
         pbx?.onRevoked = { [weak self] in
@@ -427,6 +449,42 @@ public final class FSVoipAppModel: ObservableObject {
 
     func chooseParkAccount(_ accountId: String) {
         chosenParkAccountId = accountId
+    }
+
+    // MARK: Live calls
+
+    /// Does this pairing offer the Live section (running calls of the PBX)?
+    public func canLive(_ accountId: String) -> Bool {
+        live != nil && (meByAccount[accountId]?.canLive ?? false)
+    }
+
+    /// Does any pairing offer the Live section?
+    public var canLive: Bool {
+        accounts.contains { canLive($0.id) }
+    }
+
+    /// The accounts that offer Live, in the order of the accounts.
+    var liveAccounts: [StoredAccount] {
+        accounts.filter { canLive($0.id) }
+    }
+
+    /// The account the Live section shows: the one the user chose, else the default outgoing one if it offers Live, else the first.
+    var liveAccount: StoredAccount? {
+        let candidates = liveAccounts
+
+        if let chosenLiveAccountId, let chosen = candidates.first(where: { $0.id == chosenLiveAccountId }) {
+            return chosen
+        }
+
+        if let preferred = defaultOutgoingAccountId, let account = candidates.first(where: { $0.id == preferred }) {
+            return account
+        }
+
+        return candidates.first
+    }
+
+    func chooseLiveAccount(_ accountId: String) {
+        chosenLiveAccountId = accountId
     }
 
     /// Parks the running call of `session` and says what happened. The PBX ends our leg of the call after a successful park; this
@@ -780,6 +838,7 @@ public final class FSVoipAppModel: ObservableObject {
         selfExtension.forget(accountId: accountId)
         outbound.forget(accountId: accountId)
         park?.forget(accountId: accountId)
+        live?.forget(accountId: accountId)
         history.forget(accountId: accountId)
         // Unpairing removes the address book of that account from this phone.
         contacts.forget(accountId: accountId)

@@ -1056,6 +1056,162 @@ paths:
           $ref: "#/components/responses/RateLimited"
         "503":
           $ref: "#/components/responses/Unavailable"
+  /pbx/live:
+    get:
+      tags: [calls]
+      operationId: getLiveCalls
+      summary: The calls that are running on the PBX right now (every role).
+      description: |
+        Poll every ~3 seconds while the screen is visible and stop when it is not (there is no push for this). `enabled: false` = live
+        calls are switched off for this PBX (hide the screen). `ref` is sealed per PBX and **changes with every response**, also for the
+        same call: always send the `ref` of the **latest** list. Match rows between polls on `startedAt` + `callerNumber` + `calleeNumber`.
+
+        `canPickup` = the call is ringing and can be taken over to the own extension. `canTransfer` = somebody answered and the call
+        can be transferred; for a `user` this is only `true` for the call the **own** extension answered (`mine`), for an `admin` for every
+        answered call. Both are `false` while the PBX is frozen. `mine` = the call rings at, or runs on, the own extension.
+      security:
+        - deviceToken: []
+      responses:
+        "200":
+          description: The running calls.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LiveCallsPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: "`live_unavailable`: the PBX module is too old or live calls are off. Treat as `enabled: false`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /pbx/live/targets:
+    get:
+      tags: [calls]
+      operationId: getLiveTargets
+      summary: The internal destinations a call can be transferred to (every role).
+      description: |
+        Extensions, ring groups, queues, menus, opening hours and voicemail boxes of this PBX, each with the internal number. A call can
+        **not** be transferred to an external number, and there is no hang-up target. Attended transfer (talking to the colleague first)
+        is done by the app itself over SIP on its own call; the server only knows the blind transfer.
+      security:
+        - deviceToken: []
+      responses:
+        "200":
+          description: The destinations.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LiveTargetsPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /pbx/live/pickup:
+    post:
+      tags: [calls]
+      operationId: pickupLiveCall
+      summary: Take a ringing call over to the OWN extension (every role).
+      description: |
+        The extension is never in the request: it comes from the pairing. A sleeping FSVoip app on that extension is woken by push when the
+        call arrives there. `409 call_not_ringing` = somebody else answered or the caller hung up (refresh the list), `404 call_not_found` =
+        the call is gone or the `ref` is not of this PBX. 30 per 10 minutes per device (with transfer).
+      security:
+        - deviceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LivePickupRequest"
+      responses:
+        "200":
+          description: Taken over.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LivePickupResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: "`call_not_found`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: "`call_not_ringing`, `live_unavailable` or `read_only` (the PBX is frozen)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /pbx/live/transfer:
+    post:
+      tags: [calls]
+      operationId: transferLiveCall
+      summary: Transfer an answered call blind to an internal destination.
+      description: |
+        `user`: only the call the own extension answered (`403 forbidden` otherwise, before anything happens); `admin`: every answered call.
+        `target` is an entry of `GET /pbx/live/targets`. `409 call_not_transferable` = nobody answered (yet) or the call cannot be
+        transferred now. An external number is not possible here: `400 invalid_request`. 30 per 10 minutes per device (with pickup).
+      security:
+        - deviceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LiveTransferRequest"
+      responses:
+        "200":
+          description: Transferred.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LiveTransferResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: "`call_not_found`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: "`call_not_transferable`, `live_unavailable` or `read_only`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
   /calls/{id}/recording:
     get:
       tags: [calls]
@@ -1587,6 +1743,11 @@ components:
           description: |
             The PBX understands the `X-FSS-From` header and has two or more numbers (last known state). Only then may the app choose the
             number to call out with, see "Caller choice header" in `shared/README.md`. `false` = never send the header.
+        live:
+          type: boolean
+          description: |
+            Live calls (`/pbx/live/**`) work on this PBX (flag of the PBX and emergency switch; last known state, no PBX call). `false` =
+            do not show the Live screen. Every role may read the list and take a ringing call over to the own extension.
     PbxState:
       type: string
       enum: [active, frozen, setup, error]
@@ -3568,6 +3729,149 @@ components:
         available:
           type: boolean
           description: "`false` = parking does not work on this PBX right now: hide the section."
+    LiveParty:
+      type: object
+      required: [number]
+      properties:
+        number:
+          type: string
+        name:
+          type: ["string", "null"]
+    LiveParked:
+      type: object
+      required: [slot]
+      properties:
+        slot:
+          type: integer
+        retrieveNumber:
+          type: ["string", "null"]
+    LiveCall:
+      type: object
+      required: [ref, direction, state, ringing, startedAt, canPickup, canTransfer]
+      properties:
+        ref:
+          type: string
+          description: "Sealed per PBX (never a channel id) and different in every response. Send the `ref` of the latest list."
+        direction:
+          type: string
+          enum: [inbound, outbound, internal]
+        state:
+          type: string
+          enum: [ringing, active, held, parked]
+        callerNumber:
+          type: ["string", "null"]
+        callerName:
+          type: ["string", "null"]
+        calleeNumber:
+          type: ["string", "null"]
+          description: The number that was called (an own number) or the destination.
+        ringing:
+          type: array
+          description: "The extensions that are ringing (`state: ringing`)."
+          items:
+            $ref: "#/components/schemas/LiveParty"
+        answeredBy:
+          oneOf: [{ $ref: "#/components/schemas/LiveParty" }, { type: "null" }]
+        startedAt:
+          type: string
+          format: date-time
+        answeredAt:
+          type: ["string", "null"]
+          format: date-time
+        parked:
+          oneOf: [{ $ref: "#/components/schemas/LiveParked" }, { type: "null" }]
+        canPickup:
+          type: boolean
+        canTransfer:
+          type: boolean
+        mine:
+          type: boolean
+          description: "The call rings at, or runs on, the own extension."
+    LiveCallsPage:
+      type: object
+      required: [enabled, fresh, calls]
+      properties:
+        enabled:
+          type: boolean
+          description: "`false` = live calls are off for this PBX: hide the screen (the list is empty)."
+        fresh:
+          type: boolean
+          description: "`false` = built from the call events only (the PBX module did not answer): it may lag a few seconds."
+        calls:
+          type: array
+          items:
+            $ref: "#/components/schemas/LiveCall"
+    LiveTarget:
+      type: object
+      required: [type, id, name, extension]
+      properties:
+        type:
+          type: string
+          enum: [extension, ring_group, queue, ivr, business_hours, voicemail]
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        extension:
+          type: string
+          description: The internal number.
+    LiveTargetsPage:
+      type: object
+      required: [readOnly, targets]
+      properties:
+        readOnly:
+          type: boolean
+        targets:
+          type: array
+          items:
+            $ref: "#/components/schemas/LiveTarget"
+    LivePickupRequest:
+      type: object
+      additionalProperties: false
+      required: [ref]
+      properties:
+        ref:
+          type: string
+          pattern: "^[A-Za-z0-9_-]{40,400}$"
+    LivePickupResponse:
+      type: object
+      required: [ok, pickedBy]
+      properties:
+        ok:
+          type: boolean
+        pickedBy:
+          $ref: "#/components/schemas/LiveParty"
+    LiveTransferTarget:
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          type: string
+          enum: [extension, ring_group, queue, ivr, business_hours, voicemail]
+        id:
+          type: string
+          format: uuid
+    LiveTransferRequest:
+      type: object
+      additionalProperties: false
+      required: [ref, target]
+      properties:
+        ref:
+          type: string
+          pattern: "^[A-Za-z0-9_-]{40,400}$"
+        target:
+          $ref: "#/components/schemas/LiveTransferTarget"
+    LiveTransferResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+        destinationType:
+          type: ["string", "null"]
+          enum: [internal, voicemail, null]
     Error:
       type: object
       required: [error]
@@ -3578,7 +3882,7 @@ components:
             Machine-readable code. Known values: `invalid_request`, `invalid_json`, `not_found`, `unauthorized`,
             `rate_limited`, `payload_too_large`, `unavailable`, `not_ready`, `forbidden`, `read_only`, `stale`, `in_use`,
             `conflict`, `blocked_destination`, `gone`, `busy`, `advanced`, `cost_not_accepted`, `invalid_audio`, `too_large`, `too_many`,
-            `call_not_found`, `no_free_slot`, `park_unavailable`, `park_busy`, `park_uncertain`. An unknown value must be treated as a
+            `call_not_found`, `no_free_slot`, `park_unavailable`, `park_busy`, `park_uncertain`, `call_not_ringing`, `call_not_transferable`, `live_unavailable`. An unknown value must be treated as a
             plain failure of that HTTP status.
         message:
           type: string

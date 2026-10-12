@@ -16,6 +16,8 @@ final class V2ContractTests: XCTestCase {
         "sounds-page", "sound-upload-response", "sound-rename-request", "app-pairing-response",
         "park-request", "park-response", "parked-calls", "parked-calls-unavailable",
         "error-advanced", "error-greeting-required", "error-cost-not-accepted", "error-stale-chain", "error-forbidden-field",
+        "live-calls", "live-calls-disabled", "live-targets", "live-pickup-request", "live-pickup-response", "live-transfer-request", "live-transfer-response",
+        "error-call-not-ringing", "error-call-not-transferable", "error-live-unavailable",
         "error-invalid-audio", "error-too-large", "error-too-many", "error-call-not-found", "error-no-free-slot", "error-park-unavailable", "error-park-uncertain",
     ]
 
@@ -50,12 +52,14 @@ final class V2ContractTests: XCTestCase {
         XCTAssertFalse(user.canPark)
         XCTAssertEqual(user.capabilities?.invite, false)
         XCTAssertEqual(user.capabilities?.callerChoice, false)
+        XCTAssertTrue(user.canLive, "every role sees the live calls")
 
         XCTAssertEqual(admin.capabilities?.calls, .all)
         XCTAssertEqual(admin.capabilities?.sounds, .manage)
         XCTAssertTrue(admin.canPark)
         XCTAssertEqual(admin.capabilities?.invite, true)
         XCTAssertEqual(admin.capabilities?.callerChoice, true)
+        XCTAssertTrue(admin.canLive)
     }
 
     func testOldCapabilitiesFixturesStillDecodeWithTheRestrictiveDefaults() throws {
@@ -409,6 +413,85 @@ final class V2ContractTests: XCTestCase {
         XCTAssertEqual(page.calls.count, 1)
         XCTAssertNil(page.calls[0].parkedAt)
         XCTAssertNil(page.calls[0].expiresAt)
+    }
+
+    // MARK: Live calls
+
+    func testLiveCallsPage() throws {
+        let page = try decode(LiveCallsPage.self, "live-calls")
+
+        XCTAssertTrue(page.enabled)
+        XCTAssertTrue(page.fresh)
+        XCTAssertEqual(page.calls.map(\.state), [.ringing, .active, .parked])
+        XCTAssertEqual(page.calls.map(\.canPickup), [true, false, false])
+        XCTAssertEqual(page.calls.map(\.canTransfer), [false, true, false])
+        XCTAssertEqual(page.calls.map(\.mine), [false, true, false])
+        XCTAssertEqual(page.calls[0].ringing.map(\.number), ["101", "102"])
+        XCTAssertEqual(page.calls[1].answeredBy, LiveParty(number: "102", name: "Jan (balie)"))
+        XCTAssertEqual(page.calls[1].direction, .outbound)
+        XCTAssertNil(page.calls[2].callerNumber, "an anonymous caller")
+        XCTAssertEqual(page.calls[2].parked, LiveParked(slot: 1, retrieveNumber: "*5901"))
+        XCTAssertEqual(page.calls[0].clockStart, page.calls[0].startedAt)
+        XCTAssertEqual(page.calls[1].clockStart, page.calls[1].answeredAt)
+
+        let disabled = try decode(LiveCallsPage.self, "live-calls-disabled")
+        XCTAssertFalse(disabled.enabled)
+        XCTAssertTrue(disabled.calls.isEmpty)
+    }
+
+    func testLiveCallIdIsStableWhileTheRefChanges() throws {
+        let page = try decode(LiveCallsPage.self, "live-calls")
+        var again = page.calls[0]
+        again.ref = "een-andere-ref"
+
+        XCTAssertEqual(again.id, page.calls[0].id)
+        XCTAssertEqual(Set(page.calls.map(\.id)).count, 3)
+    }
+
+    func testLiveTargetsAndRequests() throws {
+        let targets = try decode(LiveTargetsPage.self, "live-targets")
+
+        XCTAssertFalse(targets.readOnly)
+        XCTAssertEqual(targets.targets.map(\.type), [.extension, .extension, .ringGroup, .voicemail])
+        XCTAssertEqual(targets.targets[2].extension, "200")
+
+        try assertJSONEqual(LivePickupRequest(ref: "bGl2ZS1maXh0dXJlLXJpbmdpbmctY2FsbC1yZWZlcmVuY2UtMDAx"), "live-pickup-request")
+        try assertJSONEqual(
+            LiveTransferRequest(ref: "bGl2ZS1maXh0dXJlLWFjdGl2ZS1jYWxsLXJlZmVyZW5jZS0wMDI", target: .init(type: .extension, id: "3f0c2b1e-8a4d-4d6f-9b7a-1c2d3e4f5a01")),
+            "live-transfer-request"
+        )
+
+        XCTAssertEqual(try decode(LivePickupResponse.self, "live-pickup-response").pickedBy, LiveParty(number: "102", name: "Jan (balie)"))
+        XCTAssertEqual(try decode(LiveTransferResponse.self, "live-transfer-response").destinationType, "internal")
+    }
+
+    func testUnknownLiveValuesAreTolerated() throws {
+        let json = Data(#"{"enabled":true,"fresh":true,"calls":[{"ref":"r","direction":"sideways","state":"teleporting","startedAt":"2026-10-12T09:00:00Z"}]}"#.utf8)
+        let page = try decoder.decode(LiveCallsPage.self, from: json)
+
+        XCTAssertEqual(page.calls[0].state, .unknown)
+        XCTAssertEqual(page.calls[0].direction, .unknown)
+        XCTAssertFalse(page.calls[0].canPickup, "a missing flag is the restrictive choice")
+
+        let targets = try decoder.decode(LiveTargetsPage.self, from: Data(#"{"readOnly":false,"targets":[{"type":"hologram","id":"x","name":"X","extension":"1"}]}"#.utf8))
+        XCTAssertTrue(targets.targets.isEmpty, "a type this version cannot send is not offered")
+    }
+
+    func testLiveFailuresAreClassified() throws {
+        XCTAssertEqual(LiveFailure.classify(try errorFor(fixture: "error-call-not-found", status: 404)), .callNotFound)
+        XCTAssertEqual(LiveFailure.classify(try errorFor(fixture: "error-call-not-ringing", status: 409)), .notRinging)
+        XCTAssertEqual(LiveFailure.classify(try errorFor(fixture: "error-call-not-transferable", status: 409)), .notTransferable)
+        XCTAssertEqual(LiveFailure.classify(try errorFor(fixture: "error-live-unavailable", status: 409)), .unavailable)
+        XCTAssertEqual(LiveFailure.classify(APIError.forbidden), .forbidden)
+        XCTAssertEqual(LiveFailure.classify(APIError.unauthorized), .revoked)
+        XCTAssertEqual(LiveFailure.classify(APIError.readOnly), .readOnly)
+        XCTAssertEqual(LiveFailure.classify(APIError.transport("x")), .offline)
+    }
+
+    private func errorFor(fixture: String, status: Int) throws -> APIError {
+        let response = try XCTUnwrap(HTTPURLResponse(url: URL(string: "https://x.test/")!, statusCode: status, httpVersion: nil, headerFields: nil))
+
+        return FSVoipAPIClient.error(for: response, data: try Fixtures.data(fixture))
     }
 
     // MARK: Error bodies

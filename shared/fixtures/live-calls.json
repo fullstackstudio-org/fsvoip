@@ -1,0 +1,69 @@
+{
+  "enabled": true,
+  "fresh": true,
+  "calls": [
+    {
+      "ref": "bGl2ZS1maXh0dXJlLXJpbmdpbmctY2FsbC1yZWZlcmVuY2UtMDAx",
+      "direction": "inbound",
+      "state": "ringing",
+      "callerNumber": "0701234567",
+      "callerName": "Bakkerij Smit",
+      "calleeNumber": "0850000001",
+      "ringing": [
+        {
+          "number": "101",
+          "name": "Receptie"
+        },
+        {
+          "number": "102",
+          "name": "Jan (balie)"
+        }
+      ],
+      "answeredBy": null,
+      "startedAt": "2026-10-12T09:15:30.000Z",
+      "answeredAt": null,
+      "parked": null,
+      "canPickup": true,
+      "canTransfer": false,
+      "mine": false
+    },
+    {
+      "ref": "bGl2ZS1maXh0dXJlLWFjdGl2ZS1jYWxsLXJlZmVyZW5jZS0wMDI",
+      "direction": "outbound",
+      "state": "active",
+      "callerNumber": "0850000001",
+      "callerName": null,
+      "calleeNumber": "0207654321",
+      "ringing": [],
+      "answeredBy": {
+        "number": "102",
+        "name": "Jan (balie)"
+      },
+      "startedAt": "2026-10-12T09:10:02.000Z",
+      "answeredAt": "2026-10-12T09:10:09.000Z",
+      "parked": null,
+      "canPickup": false,
+      "canTransfer": true,
+      "mine": true
+    },
+    {
+      "ref": "bGl2ZS1maXh0dXJlLXBhcmtlZC1jYWxsLXJlZmVyZW5jZS0wMDM",
+      "direction": "inbound",
+      "state": "parked",
+      "callerNumber": null,
+      "callerName": null,
+      "calleeNumber": "0850000001",
+      "ringing": [],
+      "answeredBy": null,
+      "startedAt": "2026-10-12T09:05:00.000Z",
+      "answeredAt": null,
+      "parked": {
+        "slot": 1,
+        "retrieveNumber": "*5901"
+      },
+      "canPickup": false,
+      "canTransfer": false,
+      "mine": false
+    }
+  ]
+}

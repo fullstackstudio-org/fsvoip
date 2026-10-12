@@ -56,7 +56,8 @@
     "sounds": "none",
     "invite": false,
     "park": false,
-    "callerChoice": false
+    "callerChoice": false,
+    "live": true
   },
   "pbx": {
     "name": "Voorbeeld Bouw",

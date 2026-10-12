@@ -393,6 +393,7 @@ final class DemoPbxService: PbxServicing, @unchecked Sendable {
   "selfExtension": true,
   "callerChoice": true,
   "park": true,
+  "live": true,
   "contacts": {
    "read": true,
    "write": true,
@@ -460,6 +461,7 @@ final class DemoPbxService: PbxServicing, @unchecked Sendable {
   "selfExtension": true,
   "callerChoice": true,
   "park": true,
+  "live": true,
   "contacts": {
    "read": true,
    "write": true,
