@@ -40,6 +40,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -67,6 +68,10 @@ import nl.fullstackstudio.fsvoip.sipengine.RegistrationState
 @Composable
 fun SettingsNavigation(model: AppModel, stack: SnapshotStateList<SettingsPage>, close: () -> Unit = {}) {
     BackHandler(enabled = stack.isNotEmpty()) { stack.removeAt(stack.lastIndex) }
+
+    // The role was taken away (portal, `GET /me`): the administrator pages close at once, and with them an invite link on show.
+    val me by model.me.collectAsStateWithLifecycle()
+    LaunchedEffect(me) { stack.removeAll { page -> page.adminAccountId?.let { !model.canManagePbx(it) } ?: false } }
 
     when (val page = stack.lastOrNull()) {
         null -> SettingsScreen(model, open = { stack.add(it) }, close = close)

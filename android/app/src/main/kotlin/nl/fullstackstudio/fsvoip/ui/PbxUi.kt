@@ -32,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -96,6 +97,13 @@ fun AdminPage(
     }
 
     LaunchedEffect(Unit) { attempt() }
+
+    // Back in the app after the five minutes: the check is asked again before anything shows (and before anything can change).
+    LifecycleResumeEffect(Unit) {
+        if (gate == GateState.Open && !model.localAccess.isUnlocked) attempt()
+
+        onPauseOrDispose { }
+    }
 
     SubpageScaffold(title, back, bottomBar = bottomBar) {
         when (gate) {
@@ -176,6 +184,7 @@ fun syncNote(sync: SyncState): String? = when (sync) {
 @Composable
 fun pbxFailureText(failure: PbxFailure): String = when (failure) {
     PbxFailure.AccessDenied -> stringResource(R.string.pbx_error_accessLost)
+    PbxFailure.Locked -> stringResource(R.string.pbx_lock_message)
     PbxFailure.Revoked -> stringResource(R.string.pbx_error_revoked)
     PbxFailure.ReadOnly -> stringResource(R.string.pbx_error_readOnly)
     is PbxFailure.Stale -> stringResource(R.string.pbx_error_stale)

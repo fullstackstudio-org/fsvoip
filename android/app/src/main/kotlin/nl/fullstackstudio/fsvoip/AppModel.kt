@@ -429,6 +429,9 @@ class AppModel(
         scope.launch { for (account in _accounts.value) if (canPark(account.id)) park.refresh(account) }
     }
 
+    /** The SIP Call-ID of the phone's own leg of this call, `null` while it is not known. */
+    fun sipCallId(session: nl.fullstackstudio.fsvoip.callcontroller.CallSession): String? = phone.sipCallId(session)
+
     /**
      * Parks the running call with the SIP Call-ID of the phone's own leg (never the internal id).
      * 🚨 `Uncertain` means the call may be parked: the list is refreshed and the request is not repeated.
@@ -513,11 +516,24 @@ class AppModel(
 
     /** Plays the recording of a call (admin only; the server refuses anyone else). */
     fun playRecording(account: StoredAccount, callId: String, title: String, subtitle: String) {
+        if (!requireLocalAccess()) return
         playMedia("${account.id}/recording/$callId", mediaService.recordingSource(account, callId), title, subtitle)
+    }
+
+    /** What a recording or an administrator sound plays behind: the local check must still be open. */
+    private fun requireLocalAccess(): Boolean {
+        if (localAccess.isUnlocked) {
+            localAccess.touch()
+            return true
+        }
+
+        _notice.value = Notice(string(R.string.pbx_lock_message), isError = true)
+        return false
     }
 
     /** Plays a sound of the PBX (welcome message, music, greeting). */
     fun playSound(account: StoredAccount, sound: nl.fullstackstudio.fsvoip.core.PbxSound) {
+        if (!requireLocalAccess()) return
         playMedia("${account.id}/sound/${sound.id}", pbx.soundSource(account, sound.id), sound.name, string(R.string.settings_admin_sounds))
     }
 

@@ -110,14 +110,15 @@ class AppServices private constructor(context: Context) {
         )
         val media = LiveMediaService(api, locale = { if (java.util.Locale.getDefault().language == "nl") "nl" else "en" })
 
+        val localAccess = nl.fullstackstudio.fsvoip.core.LocalAccessGate(biometric)
         model = AppModel(
             context = appContext,
             phone = phone,
             accountStore = accounts,
             service = AccountService(api, accounts),
             selfExtension = SelfExtensionHub(LiveSelfExtensionService(api)),
-            pbx = nl.fullstackstudio.fsvoip.core.PbxHub(nl.fullstackstudio.fsvoip.core.LivePbxService(api)),
-            localAccess = nl.fullstackstudio.fsvoip.core.LocalAccessGate(biometric),
+            pbx = nl.fullstackstudio.fsvoip.core.PbxHub(nl.fullstackstudio.fsvoip.core.LivePbxService(api), isUnlocked = { localAccess.isUnlocked }),
+            localAccess = localAccess,
             history = HistoryModel(media),
             park = nl.fullstackstudio.fsvoip.core.ParkModel(nl.fullstackstudio.fsvoip.core.LiveParkService(api)),
             mediaService = media,

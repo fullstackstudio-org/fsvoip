@@ -16,6 +16,9 @@ sealed interface PbxFailure {
     /** 403: this pairing is not (or no longer) an administrator. */
     data object AccessDenied : PbxFailure
 
+    /** The local check (fingerprint, face or screen lock) is no longer open: nothing was sent. */
+    data object Locked : PbxFailure
+
     /** 401: the pairing is gone. */
     data object Revoked : PbxFailure
 
@@ -196,7 +199,11 @@ sealed interface ChainSaveOutcome {
 }
 
 /** The PBX objects per account id. Every `suspend` function returns `null` when it worked, otherwise the reason. */
-class PbxHub(private val service: PbxServicing) {
+class PbxHub(
+    private val service: PbxServicing,
+    /** The local check is open. Every change (and the invite link) asks first, like iOS: a screen left open must not change anything. */
+    private val isUnlocked: () -> Boolean = { true },
+) {
     private val _devices = MutableStateFlow<Map<String, PbxDevices>>(emptyMap())
     private val _ringGroups = MutableStateFlow<Map<String, PbxRingGroups>>(emptyMap())
 
@@ -225,17 +232,17 @@ class PbxHub(private val service: PbxServicing) {
 
     suspend fun loadDevices(account: StoredAccount): PbxFailure? = guarded { _devices.value = _devices.value + (account.id to service.devices(account)) }
 
-    suspend fun saveDevice(account: StoredAccount, id: String, patch: PbxDevicePatch): PbxFailure? = guarded {
+    suspend fun saveDevice(account: StoredAccount, id: String, patch: PbxDevicePatch): PbxFailure? = mutating {
         service.patchDevice(account, id, patch)
     }.also { refreshAfterSave(it) { loadDevices(account) } }
 
     suspend fun loadRingGroups(account: StoredAccount): PbxFailure? = guarded { _ringGroups.value = _ringGroups.value + (account.id to service.ringGroups(account)) }
 
-    suspend fun saveRingGroup(account: StoredAccount, id: String, patch: PbxRingGroupPatch): PbxFailure? = guarded {
+    suspend fun saveRingGroup(account: StoredAccount, id: String, patch: PbxRingGroupPatch): PbxFailure? = mutating {
         service.patchRingGroup(account, id, patch)
     }.also { refreshAfterSave(it) { loadRingGroups(account) } }
 
-    suspend fun createRingGroup(account: StoredAccount, create: PbxRingGroupCreate): PbxFailure? = guarded {
+    suspend fun createRingGroup(account: StoredAccount, create: PbxRingGroupCreate): PbxFailure? = mutating {
         service.createRingGroup(account, create)
     }.also { refreshAfterSave(it) { loadRingGroups(account) } }
 
@@ -243,13 +250,13 @@ class PbxHub(private val service: PbxServicing) {
 
     suspend fun loadOverview(account: StoredAccount): PbxFailure? = guarded { _overview.value = _overview.value + (account.id to service.overview(account)) }
 
-    suspend fun changeRouting(account: StoredAccount, numberId: String, patch: PbxRoutingPatch): PbxFailure? = guarded {
+    suspend fun changeRouting(account: StoredAccount, numberId: String, patch: PbxRoutingPatch): PbxFailure? = mutating {
         service.patchRouting(account, numberId, patch)
     }.also { refreshAfterSave(it) { loadOverview(account) } }
 
     suspend fun loadHours(account: StoredAccount): PbxFailure? = guarded { _hours.value = _hours.value + (account.id to service.hours(account)) }
 
-    suspend fun saveHours(account: StoredAccount, id: String, patch: PbxHoursPatch): PbxFailure? = guarded {
+    suspend fun saveHours(account: StoredAccount, id: String, patch: PbxHoursPatch): PbxFailure? = mutating {
         service.patchHours(account, id, patch)
     }.also { refreshAfterSave(it) { loadHours(account) } }
 
@@ -268,7 +275,10 @@ class PbxHub(private val service: PbxServicing) {
     suspend fun saveRecording(account: StoredAccount, numberId: String, patch: NumberRecordingPatch): ChainSaveOutcome =
         chainCall(account, numberId) { service.patchRecording(account, numberId, patch) }
 
-    private suspend fun chainCall(account: StoredAccount, numberId: String, block: suspend () -> NumberChain): ChainSaveOutcome = try {
+    private suspend fun chainCall(account: StoredAccount, numberId: String, block: suspend () -> NumberChain): ChainSaveOutcome =
+        if (isUnlocked()) sendChain(account, numberId, block) else ChainSaveOutcome.Failed(PbxFailure.Locked)
+
+    private suspend fun sendChain(account: StoredAccount, numberId: String, block: suspend () -> NumberChain): ChainSaveOutcome = try {
         val fresh = block()
         putChain(account.id, fresh)
         refreshNumbers(account)
@@ -301,14 +311,14 @@ class PbxHub(private val service: PbxServicing) {
 
     suspend fun loadSounds(account: StoredAccount): PbxFailure? = guarded { _sounds.value = _sounds.value + (account.id to service.sounds(account).sounds) }
 
-    suspend fun uploadSound(account: StoredAccount, name: String, fileName: String, contentType: String, bytes: ByteArray): PbxFailure? = guarded {
+    suspend fun uploadSound(account: StoredAccount, name: String, fileName: String, contentType: String, bytes: ByteArray): PbxFailure? = mutating {
         service.uploadSound(account, name, fileName, contentType, bytes)
     }.also { if (it == null) loadSounds(account) }
 
-    suspend fun renameSound(account: StoredAccount, id: String, name: String): PbxFailure? = guarded { service.renameSound(account, id, name) }.also { if (it == null) loadSounds(account) }
+    suspend fun renameSound(account: StoredAccount, id: String, name: String): PbxFailure? = mutating { service.renameSound(account, id, name) }.also { if (it == null) loadSounds(account) }
 
     /** A sound that is still used is `PbxFailure.InUse` with the places; nothing is deleted then. */
-    suspend fun deleteSound(account: StoredAccount, id: String): PbxFailure? = guarded { service.deleteSound(account, id) }.also {
+    suspend fun deleteSound(account: StoredAccount, id: String): PbxFailure? = mutating { service.deleteSound(account, id) }.also {
         if (it == null || it is PbxFailure.NotFound) loadSounds(account)
     }
 
@@ -317,7 +327,10 @@ class PbxHub(private val service: PbxServicing) {
     // MARK: Inviting a colleague
 
     /** The link is a credential: the caller shows it once and never keeps or logs it. */
-    suspend fun invite(account: StoredAccount, deviceId: String): Pair<AppPairingResponse?, PbxFailure?> = try {
+    suspend fun invite(account: StoredAccount, deviceId: String): Pair<AppPairingResponse?, PbxFailure?> =
+        if (isUnlocked()) sendInvite(account, deviceId) else null to PbxFailure.Locked
+
+    private suspend fun sendInvite(account: StoredAccount, deviceId: String): Pair<AppPairingResponse?, PbxFailure?> = try {
         service.invite(account, deviceId) to null
     } catch (error: CancellationException) {
         throw error
@@ -339,6 +352,9 @@ class PbxHub(private val service: PbxServicing) {
     private suspend fun refreshAfterSave(failure: PbxFailure?, reload: suspend () -> PbxFailure?) {
         if (failure == null || failure is PbxFailure.Stale) reload()
     }
+
+    /** A change: only while the local check is open. */
+    private suspend fun mutating(block: suspend () -> Unit): PbxFailure? = if (isUnlocked()) guarded(block) else PbxFailure.Locked
 
     private suspend fun guarded(block: suspend () -> Unit): PbxFailure? = try {
         block()

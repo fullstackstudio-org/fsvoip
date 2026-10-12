@@ -120,6 +120,26 @@ private fun NoticeBanner(notice: AppModel.Notice, dismiss: () -> Unit) {
 
 /** Settings has sub pages; a tiny back stack in state (no navigation library needed for three screens). */
 sealed interface SettingsPage {
+    /** The account an administrator page belongs to; `null` for the pages every role has. */
+    val adminAccountId: String?
+        get() = when (this) {
+            is Devices -> id
+            is DeviceEdit -> id
+            is RingGroups -> id
+            is RingGroupEdit -> id
+            is Recordings -> id
+            is Overview -> id
+            is Hours -> id
+            is HoursEdit -> id
+            is TemporaryClosed -> id
+            is Numbers -> id
+            is Number -> id
+            is NumberStep -> id
+            is Sounds -> id
+            is Invite -> id
+            is Account, Licenses, is CallPreferences -> null
+        }
+
     data class Account(val id: String) : SettingsPage
 
     data object Licenses : SettingsPage
