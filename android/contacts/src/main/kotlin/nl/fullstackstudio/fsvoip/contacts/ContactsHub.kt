@@ -167,9 +167,11 @@ class ContactsHub(
                 listsFailed = true
             }
 
-            withContext(Dispatchers.IO) { store.save(accountId, updated) }
-
             lock.withLock {
+                // The account was unpaired while this ran: nothing of it is written back (not to memory, not to disk).
+                if (accountId !in accountIds) return ContactsSyncOutcome.SKIPPED
+
+                withContext(Dispatchers.IO) { store.save(accountId, updated) }
                 data[accountId] = updated
                 if (listsFailed) failed.add(accountId) else failed.remove(accountId)
                 publish()
@@ -217,15 +219,14 @@ class ContactsHub(
 
     /** Switch a list on or off on this phone. A list that is off is not downloaded and not offered in the filter. */
     suspend fun setListEnabled(accountId: String, listId: String, enabled: Boolean) {
-        val updated = lock.withLock {
+        lock.withLock {
             val current = data[accountId] ?: return
+            if (accountId !in accountIds) return
             val next = current.copy(lists = current.lists.map { if (it.id == listId) it.copy(isEnabled = enabled) else it })
             data[accountId] = next
             publish()
-            next
+            withContext(Dispatchers.IO) { store.save(accountId, next) }
         }
-
-        withContext(Dispatchers.IO) { store.save(accountId, updated) }
     }
 
     // MARK: Changes
@@ -251,18 +252,18 @@ class ContactsHub(
         return try {
             client.deleteContact(contactId)
 
-            val updated = lock.withLock {
+            lock.withLock {
                 val current = data[accountId] ?: return null
+                if (accountId !in accountIds) return null
                 val next = current.copy(
                     contacts = current.contacts.filterNot { it.id == contactId },
                     lists = current.lists.map { list -> list.copy(memberIds = list.memberIds - contactId) },
                 )
                 data[accountId] = next
                 publish()
-                next
+                withContext(Dispatchers.IO) { store.save(accountId, next) }
             }
 
-            withContext(Dispatchers.IO) { store.save(accountId, updated) }
             null
         } catch (error: CancellationException) {
             throw error
@@ -294,7 +295,10 @@ class ContactsHub(
 
     /** Puts a contact the server just gave us into the stored copy (and its list memberships, when the answer carries them). */
     private suspend fun upsert(accountId: String, contact: nl.fullstackstudio.fsvoip.core.Contact) {
-        val updated = lock.withLock {
+        lock.withLock {
+            // An account that is no longer paired is not written again (the data and file went with setAccounts).
+            if (accountId !in accountIds) return
+
             val current = data[accountId] ?: AccountContactsData()
             val stored = StoredContact(contact)
             val contacts = if (current.contacts.any { it.id == contact.id }) current.contacts.map { if (it.id == contact.id) stored else it } else current.contacts + stored
@@ -309,10 +313,8 @@ class ContactsHub(
             val next = current.copy(contacts = contacts, lists = lists)
             data[accountId] = next
             publish()
-            next
+            withContext(Dispatchers.IO) { store.save(accountId, next) }
         }
-
-        withContext(Dispatchers.IO) { store.save(accountId, updated) }
     }
 
     // MARK: Publishing

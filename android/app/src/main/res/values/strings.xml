@@ -507,6 +507,12 @@
     <string name="media_recordings_empty_message">In deze maand zijn er geen gesprekken opgenomen.</string>
     <string name="media_recordings_footer">Opnames worden 90 dagen bewaard.</string>
     <string name="media_recordings_truncated">Alleen de meest recente gesprekken van deze maand staan in de lijst.</string>
+    <string name="media_voicemail_scope_own">Mijn voicemail</string>
+    <string name="media_voicemail_scope_all">Alle voicemail</string>
+    <string name="media_lock_title">Vergrendeld</string>
+    <string name="media_lock_reason_voicemail">Open de voicemail van collega\'s</string>
+    <string name="media_lock_message_voicemail">Ontgrendel met je vingerafdruk, gezicht of schermvergrendeling om de voicemail van collega\'s te beluisteren.</string>
+    <string name="media_lock_noScreenLock_voicemail">Stel eerst een schermvergrendeling in op deze telefoon (Instellingen > Beveiliging). Daarna kun je dit hier beluisteren.</string>
     <string name="media_lock_reason_recordings">Open de opnames van gesprekken</string>
     <string name="media_lock_message_recordings">Ontgrendel met je vingerafdruk, gezicht of schermvergrendeling om opnames te beluisteren.</string>
     <string name="media_direction_inbound">Inkomend</string>

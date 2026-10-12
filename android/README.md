@@ -21,8 +21,11 @@ mock of the API (see "Testing without production") on the emulator; calls, push 
 | Local check | every administrator screen, recordings and the invite link sit behind a biometric / screen-lock check (5 minutes), like Face ID on iOS; a phone without a screen lock does not offer them |
 | Portal notices | a `notice` push becomes a notification; a tap opens the tab its link maps to (`NoticeRoute`). There is no API to fetch notices when the app opens, so nothing is polled |
 
-What iOS has and Android does not: a country picker for numbers typed in national form in the contact form (numbers with `+` or `00`
-work; a number without is read as Dutch), and "Alle voicemail" for administrators (the own box only).
+| Contact form | a country picker per number (Netherlands first, a number with `+` or `00` shows its own country); a number typed in national form gets the picked country code (`PhoneCountry`, same rules as iOS) |
+| Voicemail (admin) | "Voicemail van": my own, all voicemail, or one box (colleague or shared). Everything but the own box sits behind the local check (5 minutes); when it runs out the screen falls back to the own box and stops a colleague's message. Deleting a colleague's message needs the check too |
+
+What iOS has and Android does not: nothing known in the calls/contacts/voicemail/admin parts. Still open: the live-calls list in On hold
+(another branch) and everything under "What is still needed before a release".
 
 ## What is still needed before a release
 

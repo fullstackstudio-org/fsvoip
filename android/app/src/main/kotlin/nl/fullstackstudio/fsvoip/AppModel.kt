@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import nl.fullstackstudio.fsvoip.callcontroller.CallDisplay
 import nl.fullstackstudio.fsvoip.callcontroller.PhoneController
 import nl.fullstackstudio.fsvoip.callcontroller.PhoneException
@@ -210,12 +211,15 @@ class AppModel(
 
     fun registration(accountId: String): RegistrationState = phone.registrationState(accountId)
 
+    private val refreshLock = kotlinx.coroutines.sync.Mutex()
+
     /** `GET /me` for every account: labels, SIP server, internal contacts. Revoked accounts are removed. */
-    suspend fun refreshAccounts() {
-        for (account in _accounts.value) {
+    suspend fun refreshAccounts() = refreshLock.withLock {
+        // One refresh at a time: two overlapping runs (resume, a refresh push, a 401) must not put back what the other removed.
+        for (account in _accounts.value.toList()) {
             try {
                 when (val result = service.refresh(account)) {
-                    is AccountRefreshResult.Updated -> {
+                    is AccountRefreshResult.Updated -> if (account(result.account.id) != null) {
                         _internalContacts.value = _internalContacts.value + (result.account.id to result.internalContacts)
                         val wasAdmin = _me.value[result.account.id]?.canManagePbx == true
                         _me.value = _me.value + (result.account.id to result.me)
@@ -506,11 +510,26 @@ class AppModel(
     fun canSeeVoicemail(accountId: String): Boolean = capabilities(accountId)?.voicemail?.let { it != VoicemailAccess.NONE } ?: true
 
     fun voicemailModel(account: StoredAccount): VoicemailModel = voicemailModels.getOrPut(account.id) {
-        VoicemailModel(account, mediaService) { canSeeVoicemail(account.id) }.also { model -> model.onRevoked = { scope.launch { refreshAccounts() } } }
+        VoicemailModel(
+            account,
+            mediaService,
+            access = { capabilities(account.id)?.voicemail ?: VoicemailAccess.OWN },
+            gate = localAccess,
+            authReason = { string(R.string.media_lock_reason_voicemail) },
+            canSeeVoicemail = { canSeeVoicemail(account.id) },
+        ).also { model -> model.onRevoked = { scope.launch { refreshAccounts() } } }
     }
 
     /** Plays a message. Not during a call; the audio bar shows what plays. */
     fun playVoicemail(account: StoredAccount, message: VoicemailMessage, title: String, subtitle: String) {
+        val model = voicemailModel(account)
+
+        // A colleague's message plays only while the local check is open.
+        if (model.page.value?.let { !model.isOwn(it, message) } == true && !model.mayUseOthers()) {
+            _notice.value = Notice(string(R.string.media_lock_message_voicemail), isError = true)
+            return
+        }
+
         playMedia("${account.id}/${message.key}", voicemailModel(account).source(message), title, subtitle)
     }
 

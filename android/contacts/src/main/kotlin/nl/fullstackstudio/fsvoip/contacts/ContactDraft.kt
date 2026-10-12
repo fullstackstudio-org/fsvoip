@@ -16,7 +16,13 @@ data class ContactDraftPhone(
     val key: Long,
     val number: String = "",
     val label: ContactPhoneLabel = ContactPhoneLabel.MOBILE,
-)
+    /** The country picked for a number typed in national form (`null`: the Netherlands). A number with its own code ignores it. */
+    val countryRegion: String? = null,
+) {
+    /** A number that carries its own code shows that country; otherwise the one picked (default the Netherlands). */
+    val country: PhoneCountry
+        get() = PhoneCountry.detect(number) ?: PhoneCountry.forRegion(countryRegion) ?: PhoneCountry.NETHERLANDS
+}
 
 data class ContactDraft(
     val firstName: String = "",
@@ -48,7 +54,7 @@ data class ContactDraft(
 
     /** Numbers go to the server in the `+31...` form when they can be written that way; short numbers stay as typed. */
     fun requestPhones(): List<ContactPhone> = filledPhones.mapIndexed { index, row ->
-        val typed = row.number.trim()
+        val typed = (PhoneCountry.forRegion(row.countryRegion) ?: PhoneCountry.NETHERLANDS).apply(row.number)
 
         ContactPhone(PhoneNumberMatcher.e164(typed) ?: typed, row.label, isPrimary = index == 0)
     }

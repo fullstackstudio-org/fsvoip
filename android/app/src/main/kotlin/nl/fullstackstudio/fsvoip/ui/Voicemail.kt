@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Forward10
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.PlayArrow
@@ -29,6 +30,8 @@ import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.Voicemail
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -66,6 +69,9 @@ import nl.fullstackstudio.fsvoip.core.MediaFailure
 import nl.fullstackstudio.fsvoip.core.MediaFormat
 import nl.fullstackstudio.fsvoip.core.PlayerSnapshot
 import nl.fullstackstudio.fsvoip.core.VoicemailMessage
+import nl.fullstackstudio.fsvoip.core.VoicemailModel
+import nl.fullstackstudio.fsvoip.core.VoicemailPage
+import nl.fullstackstudio.fsvoip.core.VoicemailScope
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -94,6 +100,9 @@ fun VoicemailScreen(model: AppModel) {
     val failure by voicemail.failure.collectAsStateWithLifecycle()
     val banner by voicemail.banner.collectAsStateWithLifecycle()
     val gone by voicemail.goneIds.collectAsStateWithLifecycle()
+    val voicemailScope by voicemail.scope.collectAsStateWithLifecycle()
+    val othersUnlocked by voicemail.othersUnlocked.collectAsStateWithLifecycle()
+    val noScreenLock by voicemail.noScreenLock.collectAsStateWithLifecycle()
     val snapshot by model.player.snapshot.collectAsStateWithLifecycle()
 
     LaunchedEffect(account.id) { voicemail.load() }
@@ -105,13 +114,50 @@ fun VoicemailScreen(model: AppModel) {
         }
     }
 
+    // The five minutes of the local check run out while the screen stays open (and when the app comes back).
+    fun refreshLock() {
+        if (voicemail.refreshLock()) {
+            val playingId = nowPlaying?.id
+            val playing = page?.messages?.firstOrNull { "${account.id}/${it.key}" == playingId }
+
+            if (playing != null && page?.let { !voicemail.isOwn(it, playing) } == true) model.stopPlayer()
+        }
+    }
+
+    LaunchedEffect(voicemail) {
+        while (true) {
+            kotlinx.coroutines.delay(10_000)
+            refreshLock()
+        }
+    }
+
+    androidx.lifecycle.compose.LifecycleResumeEffect(voicemail) {
+        refreshLock()
+
+        onPauseOrDispose { }
+    }
+
     val current = page
+    val locked = voicemail.canChooseBox && voicemailScope != VoicemailScope.Own && !othersUnlocked
     val messages = current?.let { voicemail.messages(it) }.orEmpty().let { list -> if (onlyNew) list.filter { it.isNew } else list }
+    var choosingBox by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             FilterChip(selected = !onlyNew, onClick = { onlyNew = false }, label = { Text(stringResource(R.string.voicemail_filter_all)) })
             FilterChip(selected = onlyNew, onClick = { onlyNew = true }, label = { Text(stringResource(R.string.voicemail_filter_new)) }, modifier = Modifier.testTag("voicemail-filter-new"))
+
+            if (voicemail.canChooseBox && current != null) {
+                Box {
+                    FilterChip(
+                        selected = voicemailScope != VoicemailScope.Own,
+                        onClick = { choosingBox = true },
+                        label = { Text(scopeTitle(voicemail, current, voicemailScope), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        modifier = Modifier.testTag("voicemail-scope"),
+                    )
+                    VoicemailScopeMenu(voicemail, current, voicemailScope, choosingBox) { choosingBox = false }
+                }
+            }
         }
 
         banner?.let { problem ->
@@ -130,17 +176,19 @@ fun VoicemailScreen(model: AppModel) {
             modifier = Modifier.weight(1f).fillMaxWidth(),
         ) {
             when {
+                locked -> VoicemailLocked(noScreenLock) { scope.launch { voicemail.unlock() } }
                 loading && current == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                 failure != null && current == null -> VoicemailEmpty(stringResource(R.string.voicemail_failure_title), mediaFailureText(failure!!))
                 current != null && !current.available -> VoicemailEmpty(stringResource(R.string.media_voicemail_unavailable_title), stringResource(R.string.media_voicemail_unavailable_message))
                 !model.canSeeVoicemail(account.id) -> VoicemailEmpty(stringResource(R.string.voicemail_empty_title), stringResource(R.string.voicemail_empty_message))
                 messages.isEmpty() && onlyNew -> VoicemailEmpty(stringResource(R.string.voicemail_empty_new_title), stringResource(R.string.voicemail_empty_new_message))
-                messages.isEmpty() -> VoicemailEmpty(stringResource(R.string.media_voicemail_empty_title), stringResource(R.string.media_voicemail_empty_own))
+                messages.isEmpty() -> VoicemailEmpty(stringResource(R.string.media_voicemail_empty_title), stringResource(if (voicemailScope == VoicemailScope.Own) R.string.media_voicemail_empty_own else R.string.media_voicemail_empty_other))
                 else -> LazyColumn(Modifier.fillMaxSize().testTag("voicemail-list")) {
                     items(messages, key = { it.key }) { message ->
                         val id = "${account.id}/${message.key}"
                         val title = messageTitle(model, message)
-                        val subtitle = listOf(message.receivedLabel, message.durationLabel).filter { it.isNotEmpty() }.joinToString(" · ")
+                        val boxName = if (current != null && voicemail.showsBoxName(current, message)) message.boxName else ""
+                        val subtitle = listOf(message.receivedLabel, message.durationLabel, boxName).filter { it.isNotEmpty() }.joinToString(" · ")
 
                         VoicemailRow(
                             message = message,
@@ -188,6 +236,70 @@ fun VoicemailScreen(model: AppModel) {
             },
             dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text(stringResource(R.string.action_cancel)) } },
         )
+    }
+}
+
+@Composable
+private fun scopeTitle(voicemail: VoicemailModel, page: VoicemailPage, scope: VoicemailScope): String = when (scope) {
+    VoicemailScope.Own -> stringResource(R.string.media_voicemail_scope_own)
+    VoicemailScope.All -> stringResource(R.string.media_voicemail_scope_all)
+    is VoicemailScope.Box -> page.boxes.firstOrNull { it.id == scope.id }?.let(voicemail::boxTitle) ?: stringResource(R.string.media_voicemail_scope_all)
+}
+
+/** "Voicemail van": my own, all of them, or one box. Anything but my own asks for the local check first. */
+@Composable
+private fun VoicemailScopeMenu(voicemail: VoicemailModel, page: VoicemailPage, current: VoicemailScope, expanded: Boolean, onDismiss: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    val shared = stringResource(R.string.media_voicemail_shared)
+
+    fun choose(next: VoicemailScope) {
+        onDismiss()
+        scope.launch { voicemail.select(next) }
+    }
+
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.media_voicemail_scope_own), fontWeight = if (current == VoicemailScope.Own) FontWeight.SemiBold else FontWeight.Normal) },
+            enabled = voicemail.ownBoxId(page) != null,
+            onClick = { choose(VoicemailScope.Own) },
+            modifier = Modifier.testTag("voicemail-scope-own"),
+        )
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.media_voicemail_scope_all), fontWeight = if (current == VoicemailScope.All) FontWeight.SemiBold else FontWeight.Normal) },
+            onClick = { choose(VoicemailScope.All) },
+            modifier = Modifier.testTag("voicemail-scope-all"),
+        )
+
+        for (box in page.boxes) {
+            DropdownMenuItem(
+                text = { Text(voicemail.boxTitle(box) + if (box.shared) " ($shared)" else "", fontWeight = if (current == VoicemailScope.Box(box.id)) FontWeight.SemiBold else FontWeight.Normal) },
+                onClick = { choose(VoicemailScope.Box(box.id)) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun VoicemailLocked(noScreenLock: Boolean, onUnlock: () -> Unit) {
+    Column(Modifier.fillMaxSize().padding(32.dp).testTag("voicemail-locked"), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(Icons.Filled.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(34.dp))
+        Text(
+            stringResource(if (noScreenLock) R.string.pbx_lock_noScreenLock_title else R.string.media_lock_title),
+            style = MaterialTheme.typography.titleMedium,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 10.dp),
+        )
+        Text(
+            stringResource(if (noScreenLock) R.string.media_lock_noScreenLock_voicemail else R.string.media_lock_message_voicemail),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 6.dp),
+        )
+
+        if (!noScreenLock) {
+            TextButton(onClick = onUnlock, modifier = Modifier.padding(top = 8.dp).testTag("voicemail-unlock")) { Text(stringResource(R.string.pbx_lock_unlock)) }
+        }
     }
 }
 

@@ -507,6 +507,12 @@
     <string name="media_recordings_empty_message">No calls were recorded this month.</string>
     <string name="media_recordings_footer">Recordings are kept for 90 days.</string>
     <string name="media_recordings_truncated">Only the most recent calls of this month are in the list.</string>
+    <string name="media_voicemail_scope_own">My voicemail</string>
+    <string name="media_voicemail_scope_all">All voicemail</string>
+    <string name="media_lock_title">Locked</string>
+    <string name="media_lock_reason_voicemail">Open your colleagues\' voicemail</string>
+    <string name="media_lock_message_voicemail">Unlock with your fingerprint, face or screen lock to listen to your colleagues\' voicemail.</string>
+    <string name="media_lock_noScreenLock_voicemail">First set a screen lock on this phone (Settings > Security). Then you can listen to this here.</string>
     <string name="media_lock_reason_recordings">Open the recordings of calls</string>
     <string name="media_lock_message_recordings">Unlock with your fingerprint, face or screen lock to listen to recordings.</string>
     <string name="media_direction_inbound">Incoming</string>

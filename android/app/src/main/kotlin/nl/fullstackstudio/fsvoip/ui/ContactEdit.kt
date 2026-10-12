@@ -51,6 +51,9 @@ import nl.fullstackstudio.fsvoip.R
 import nl.fullstackstudio.fsvoip.contacts.ContactDraft
 import nl.fullstackstudio.fsvoip.contacts.ContactFailure
 import nl.fullstackstudio.fsvoip.contacts.ContactWrite
+import nl.fullstackstudio.fsvoip.contacts.PhoneCountry
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import nl.fullstackstudio.fsvoip.core.Contact
 import nl.fullstackstudio.fsvoip.core.ContactPhoneLabel
 
@@ -184,6 +187,7 @@ fun ContactEditSheet(
                 Column(Modifier.padding(horizontal = 20.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     draft.phones.forEachIndexed { index, phone ->
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            CountryPicker(phone.country) { picked -> draft = draft.withPhone(index) { it.copy(countryRegion = picked.region) } }
                             LabelPicker(phone.label) { label -> draft = draft.withPhone(index) { it.copy(label = label) } }
                             OutlinedTextField(
                                 value = phone.number,
@@ -277,6 +281,28 @@ private fun LabelPicker(label: ContactPhoneLabel, onPick: (ContactPhoneLabel) ->
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             for (choice in ContactPhoneLabel.entries) {
                 DropdownMenuItem(text = { Text(contactLabel(choice)) }, onClick = { open = false; onPick(choice) })
+            }
+        }
+    }
+}
+
+/** The country code for a number typed in national form; a number with its own code (`+32...`) shows that country. */
+@Composable
+private fun CountryPicker(country: PhoneCountry, onPick: (PhoneCountry) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    val description = stringResource(R.string.contacts_edit_country)
+    val options = remember { PhoneCountry.all { java.util.Locale("", it.region).displayCountry } }
+
+    Box {
+        FilterChip(
+            selected = false,
+            onClick = { open = true },
+            label = { Text("${country.region} ${country.dialText}") },
+            modifier = Modifier.testTag("contact-country").semantics { contentDescription = "$description: ${java.util.Locale("", country.region).displayCountry} ${country.dialText}" },
+        )
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            for (choice in options) {
+                DropdownMenuItem(text = { Text("${java.util.Locale("", choice.region).displayCountry} (${choice.dialText})") }, onClick = { open = false; onPick(choice) })
             }
         }
     }

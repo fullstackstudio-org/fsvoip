@@ -330,12 +330,17 @@ class FsVoipApiClient(
         deserializer: DeserializationStrategy<T>,
     ): T = decode(path.substringBefore('?'), deserializer, execute(method, path, body, authenticated))
 
-    private fun <T> decode(path: String, deserializer: DeserializationStrategy<T>, response: HttpResponse): T = try {
-        FsJson.default.decodeFromString(deserializer, response.body.toString(Charsets.UTF_8))
-    } catch (error: SerializationException) {
-        throw ApiException.Decoding("$path: ${error.javaClass.simpleName}")
-    } catch (error: IllegalArgumentException) {
-        throw ApiException.Decoding("$path: ${error.javaClass.simpleName}")
+    private fun <T> decode(path: String, deserializer: DeserializationStrategy<T>, response: HttpResponse): T {
+        // Only the first segment goes into the message: later segments are ids (a contact, a sealed voicemail reference).
+        val label = path.split('/').firstOrNull { it.isNotEmpty() } ?: ""
+
+        return try {
+            FsJson.default.decodeFromString(deserializer, response.body.toString(Charsets.UTF_8))
+        } catch (error: SerializationException) {
+            throw ApiException.Decoding("$label: ${error.javaClass.simpleName}")
+        } catch (error: IllegalArgumentException) {
+            throw ApiException.Decoding("$label: ${error.javaClass.simpleName}")
+        }
     }
 
     /** One exchange. A non-2xx answer (other than the statuses in [accept]) becomes an [ApiException]. */

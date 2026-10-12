@@ -121,6 +121,133 @@ class HistoryModelTest {
     }
 }
 
+private class ScriptedAuth(var result: LocalAuthResult = LocalAuthResult.SUCCESS, var availability: LocalAuthAvailability = LocalAuthAvailability.AVAILABLE) : LocalAuthenticating {
+    var prompts = 0
+
+    override fun availability() = availability
+
+    override suspend fun evaluate(reason: String): LocalAuthResult {
+        prompts++
+        return result
+    }
+}
+
+class VoicemailAllBoxesTest {
+    private val ownBox = "7a1d9c3e-5b2f-4e8a-9c01-6d3e8f2a4b57"
+    private val sharedBox = "2f4a6c8e-1b3d-4f5a-8c7e-9a0b1c2d3e4f"
+
+    private fun admin(media: FakeMedia, auth: ScriptedAuth, clock: () -> Long = { 0L }, access: VoicemailAccess = VoicemailAccess.ALL) =
+        VoicemailModel(account("102"), media, { access }, LocalAccessGate(auth, clock), { "reason" }) { true }
+
+    @Test
+    fun anAdministratorStartsOnTheOwnBoxAndOthersAreLocked() = runTest {
+        val model = admin(FakeMedia(), ScriptedAuth())
+        model.load()
+        val page = model.page.value!!
+
+        assertTrue(model.canChooseBox)
+        assertEquals(ownBox, model.ownBoxId(page))
+        assertEquals(VoicemailScope.Own, model.scope.value)
+        assertEquals(listOf("v1.Zm9vYmFyYmF6cXV4"), model.messages(page).map { it.ref })
+        assertFalse(model.needsUnlock)
+    }
+
+    @Test
+    fun allVoicemailOpensOnlyAfterTheLocalCheck() = runTest {
+        val auth = ScriptedAuth(LocalAuthResult.CANCELLED)
+        val model = admin(FakeMedia(), auth)
+        model.load()
+        val page = model.page.value!!
+
+        // Cancelled: nothing changes.
+        model.select(VoicemailScope.All)
+        assertEquals(VoicemailScope.Own, model.scope.value)
+        assertEquals(1, model.messages(page).size)
+
+        auth.result = LocalAuthResult.SUCCESS
+        model.select(VoicemailScope.All)
+        assertEquals(VoicemailScope.All, model.scope.value)
+        assertEquals(2, model.messages(page).size)
+        assertTrue(model.isOwn(page, page.messages[0]))
+        assertFalse(model.isOwn(page, page.messages[1]))
+
+        model.select(VoicemailScope.Box(sharedBox))
+        assertEquals(listOf("v1.cXV1eGNvcmdlZ3JhdWx0"), model.messages(page).map { it.ref })
+        assertTrue(model.showsBoxName(page, page.messages[1]))
+    }
+
+    @Test
+    fun theFiveMinutesRunOutAndTheScreenFallsBackToTheOwnBox() = runTest {
+        var clock = 0L
+        val model = admin(FakeMedia(), ScriptedAuth(), { clock })
+        model.load()
+        val page = model.page.value!!
+
+        model.select(VoicemailScope.All)
+        clock += 4 * 60_000
+        assertFalse(model.refreshLock())
+        assertEquals(2, model.messages(page).size)
+
+        clock += 6 * 60_000
+        assertTrue(model.refreshLock())
+        assertEquals(VoicemailScope.Own, model.scope.value)
+        assertFalse(model.othersUnlocked.value)
+        assertEquals(1, model.messages(page).size)
+    }
+
+    @Test
+    fun aColleaguesMessageIsDeletedOnlyWhileTheCheckIsOpen() = runTest {
+        val media = FakeMedia()
+        val auth = ScriptedAuth(LocalAuthResult.CANCELLED)
+        val model = admin(media, auth)
+        model.load()
+        val shared = model.page.value!!.messages[1]
+
+        // Locked, and the prompt is cancelled: nothing is deleted.
+        assertFalse(model.delete(shared))
+        assertTrue(media.deleted.isEmpty())
+
+        auth.result = LocalAuthResult.SUCCESS
+        model.select(VoicemailScope.All)
+        assertTrue(model.delete(shared))
+        assertEquals(listOf("$sharedBox/${shared.ref}"), media.deleted)
+    }
+
+    @Test
+    fun noScreenLockIsSaidAndTheOthersStayClosed() = runTest {
+        val model = admin(FakeMedia(), ScriptedAuth(availability = LocalAuthAvailability.NO_SCREEN_LOCK))
+        model.load()
+
+        model.select(VoicemailScope.All)
+        assertTrue(model.noScreenLock.value)
+        assertEquals(VoicemailScope.Own, model.scope.value)
+    }
+
+    @Test
+    fun aUserNeverChoosesABoxEvenWithAGate() = runTest {
+        val auth = ScriptedAuth()
+        val model = admin(FakeMedia(), auth, access = VoicemailAccess.OWN)
+        model.load()
+
+        model.select(VoicemailScope.All)
+        assertEquals(VoicemailScope.Own, model.scope.value)
+        assertEquals(0, auth.prompts)
+        assertFalse(model.canChooseBox)
+    }
+
+    @Test
+    fun anAdministratorWithoutAnOwnBoxStartsOnTheLockedAll() = runTest {
+        val media = FakeMedia()
+        media.voicemailPage = media.voicemailPage.copy(boxes = media.voicemailPage.boxes.filter { it.shared })
+        val model = admin(media, ScriptedAuth())
+        model.load()
+
+        assertEquals(VoicemailScope.All, model.scope.value)
+        assertTrue(model.needsUnlock)
+        assertTrue(model.messages(model.page.value!!).isEmpty())
+    }
+}
+
 class VoicemailModelTest {
     @Test
     fun anAdminPageShowsTheOwnBoxOnly() = runTest {

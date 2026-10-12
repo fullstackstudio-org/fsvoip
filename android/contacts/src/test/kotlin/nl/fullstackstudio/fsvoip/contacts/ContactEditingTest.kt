@@ -23,6 +23,43 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ContactDraftTest {
+    private val belgium = PhoneCountry("BE", "32")
+
+    @Test
+    fun theCountryCodeIsAddedToANationalNumber() {
+        assertEquals("+32471 23 45 67", belgium.apply("0471 23 45 67"))
+        assertEquals("+31612345678", belgium.apply("+31612345678"))
+        assertEquals("+32471234567", belgium.apply("0032471234567"))
+        assertEquals("0612345678", PhoneCountry.NETHERLANDS.apply("0612345678"))
+        assertEquals("", belgium.apply("  "))
+    }
+
+    @Test
+    fun theNetherlandsComesFirstInTheCountryList() {
+        val all = PhoneCountry.all()
+
+        assertEquals(PhoneCountry.NETHERLANDS, all.first())
+        assertEquals(all.size, all.map { it.region }.toSet().size)
+        assertEquals("BE", PhoneCountry.detect("+32471234567")?.region)
+        assertEquals("NL", PhoneCountry.detect("0031612345678")?.region)
+        assertEquals("LU", PhoneCountry.detect("+352621123456")?.region)
+        assertNull(PhoneCountry.detect("0612345678"))
+    }
+
+    @Test
+    fun theRequestAppliesThePickedCountryPerNumber() {
+        val draft = ContactDraft(
+            firstName = "Jan",
+            phones = listOf(ContactDraftPhone(0, "0471234567", countryRegion = "BE"), ContactDraftPhone(1, "0612345678"), ContactDraftPhone(2, "+31201234567", countryRegion = "BE")),
+        )
+
+        assertEquals(listOf("+32471234567", "+31612345678", "+31201234567"), draft.requestPhones().map { it.number })
+        // A number with its own code shows that country, whatever was picked.
+        assertEquals("NL", draft.phones[2].country.region)
+        assertEquals("BE", draft.phones[0].country.region)
+        assertEquals("NL", draft.phones[1].country.region)
+    }
+
     @Test
     fun aContactNeedsANameAndAWayToReachIt() {
         assertFalse(ContactDraft().canSave)
