@@ -2,7 +2,8 @@
 
 FSVoip is the softphone of **FullStack Studio**'s hosted telephony: customers pair a phone with an extension of
 their PBX by scanning a QR code (or tapping a link) in the customer portal, and then make and receive calls with
-the app, also when it is closed. iOS first (Swift, SwiftUI, CallKit, PushKit); Android follows later.
+the app, also when it is closed. iOS first (Swift, SwiftUI, CallKit, PushKit); Android (Kotlin, Jetpack Compose) has the same features on
+branch `feature/android-v2` and is not released yet (see [android/README.md](android/README.md)).
 
 - Native apps, no cross-platform framework.
 - Several accounts (extensions) in one app; the name of the dialled account is shown on the call screen.

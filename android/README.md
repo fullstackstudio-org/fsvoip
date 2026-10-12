@@ -5,6 +5,39 @@ extensions in one app, registration over TLS, outgoing and incoming calls, and i
 (FCM data message, self-managed Telecom call, full-screen notification). Licensed AGPL-3.0-or-later like the rest of
 the repository (see `../LICENSE`, `../NOTICE`).
 
+## Status (branch `feature/android-v2`)
+
+Feature parity with iOS 1.0 (plan `fsvoip-app-v2`), built and unit tested; **not yet released**. Everything below works against the
+mock of the API (see "Testing without production") on the emulator; calls, push and the manufacturer behaviour still need a real phone.
+
+| Area | What there is |
+| --- | --- |
+| Pairing | QR scanner, App Link, `fsvoip://`, several accounts; role and capabilities from `GET /me` (loaded right after pairing) |
+| Calls | dialler with the number to call out with (`X-FSS-From`), incoming (Telecom, full-screen), in-call controls, parking and the "On hold" tab |
+| History / voicemail | team history per month, voicemail with the player (ExoPlayer, Bearer header, `Range`); an administrator can play recordings |
+| Contacts | sync with cursor / `serverTime` / tombstones, lists with ETag, name recognition; create, edit (`expectedUpdatedAt`), delete (administrators), favourites (this phone only), copy a contact of the phone into the address book, activity of a contact |
+| Customer card | at an incoming call: name and "Klant in website: ..." from `GET /contacts/lookup`, at most one second, never in the way of the call |
+| Settings | Profile (own extension, e-mail), call preferences; for administrators: Phone system (call flow), numbers (per-number chain: hours, welcome, forwarding, recording, name), devices, ring groups, opening hours with "temporarily closed", sounds (listen, record, upload, rename, delete), invite a colleague (QR + share link), recordings |
+| Local check | every administrator screen, recordings and the invite link sit behind a biometric / screen-lock check (5 minutes), like Face ID on iOS; a phone without a screen lock does not offer them |
+| Portal notices | a `notice` push becomes a notification; a tap opens the tab its link maps to (`NoticeRoute`). There is no API to fetch notices when the app opens, so nothing is polled |
+
+What iOS has and Android does not: a country picker for numbers typed in national form in the contact form (numbers with `+` or `00`
+work; a number without is read as Dutch), and "Alle voicemail" for administrators (the own box only).
+
+## What is still needed before a release
+
+1. **Firebase project and FCM** (see below): create the project, add the Android app, put `google-services.json` in `android/app/`
+   (git-ignored), and store the **service account JSON** in the FSS vault (item tag `voip-app-push`, field `fcm_service_account_json`).
+   Without it calls only ring while the app is open and no portal notice arrives.
+2. **Play Console**: create the app `nl.fullstackstudio.fsvoip`, enrol in Play App Signing, upload an AAB (`bundleRelease`, release keystore
+   outside the repository), internal testing track, privacy form (microphone, contacts optional, notifications), data safety section.
+3. **`assetlinks.json`** on `https://fullstackstudio.nl/.well-known/assetlinks.json` with the **SHA-256 of the Play App Signing key** (and of the
+   upload/debug key for testing), see "App Links". Until then the pairing link opens the browser.
+4. **Test on a real phone** (list below) against the real PBX: FCM wake-up with the app closed, full-screen call on a locked screen,
+   Doze, battery savers, Bluetooth/car, registration over TLS, the biometric prompt on a phone with a fingerprint, the audio recorder
+   on real hardware, and a `notice` push end to end.
+5. Raise `versionCode` / `versionName` (now 1 / 1.0) and sign.
+
 ## Build
 
 Requirements: the Android SDK (platform 37) and a JDK 17 or newer. Android Studio's bundled JDK works:
@@ -99,6 +132,12 @@ adb shell "am broadcast -a nl.fullstackstudio.fsvoip.DEBUG_PUSH \
 ```
 
 Without a SIP INVITE the call ends as missed after the waiting time, like on iOS.
+
+For a quick look at the screens without a PBX, serve the files of `../shared/fixtures` from a tiny local server (one route per fixture,
+e.g. `/me` -> `me-response-admin-v2.json`) on port 8787, `adb reverse` it and pair as above. Give that server an idle timeout
+of a few minutes (Bun's default of 10 seconds closes the connection the app keeps open and the next request fails once), and put the
+emulator in airplane mode: the paired account tries to register at `sip.powervoip.nl` with the fixture password, which is a request to
+production with a made-up login. The system credential prompt is a secure window: screenshots of it are black, type the PIN blind.
 
 ## Only testable on a real phone
 

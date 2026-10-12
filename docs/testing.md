@@ -85,6 +85,19 @@ Needs notification permission (asked after the first pairing) and a notice from 
 5. A notice for an account that is no longer on the phone opens nothing.
 6. Notifications switched off in iOS Settings: nothing shows and nothing breaks; calls still ring (those are VoIP pushes).
 
+## 8. Android (emulator and real phone)
+
+On the emulator (Medium_Phone), with the debug build pointed at a local mock of the API (`android/README.md`, "Testing without production"):
+
+1. Pair, then walk the five tabs, Settings and every administrator page; Phone system, Numbers, one number, Forwarding, Sounds, Invite a user.
+2. Contacts: open a contact (notes, lists, activity), Edit, Cancel; the filter row scrolls sideways.
+3. Sounds: New recording, Start, Stop, Add recording, give a name: the mock sees a multipart upload with exactly `name` and `file` (`audio/mp4`).
+4. Invite a user: a QR code, the countdown and "Share link"; "Another invitation" removes the link.
+5. A debug push with a number the phone does not know: the call screen shows the contact's name and the "Klant in website" line.
+
+On a real phone only: FCM with the app closed, the locked-screen call, Doze and battery savers, Bluetooth and car kits, the fingerprint
+prompt, the audio recorder, a `notice` notification and its tap, and the real PBX.
+
 ## Not yet verified on the house PBX
 
 Caller choice on the callee's display, parking and ring-back, the recording announcement, the welcome message and the menu keys, opening hours on a second number, the invite flow end to end, and the push wake-up with the app closed after the server update. Anonymous calling is not part of this build. Also not verified on a device: sections 6 and 7 above (the CallKit name update, the one-second window on a real network, and a real `notice` push through APNs).
