@@ -255,6 +255,11 @@ public struct MeResponse: Decodable, Equatable, Sendable {
     public var canPark: Bool {
         capabilities?.park ?? false
     }
+
+    /// Show the Live screen (running calls of the PBX)?
+    public var canLive: Bool {
+        capabilities?.live ?? false
+    }
 }
 
 // MARK: - Role and capabilities (`/me`)
@@ -354,6 +359,8 @@ public struct AppCapabilities: Decodable, Equatable, Sendable {
     public var park: Bool
     /// The PBX understands `X-FSS-From`: only then may the app choose the number to call out with (`CallerChoice`).
     public var callerChoice: Bool
+    /// Live calls (`/pbx/live/**`) work on this PBX: show the Live screen. Every role may read it and take a ringing call over.
+    public var live: Bool
 
     public init(
         pbxManage: Bool,
@@ -365,7 +372,8 @@ public struct AppCapabilities: Decodable, Equatable, Sendable {
         sounds: SoundsAccess = .noAccess,
         invite: Bool = false,
         park: Bool = false,
-        callerChoice: Bool = false
+        callerChoice: Bool = false,
+        live: Bool = false
     ) {
         self.pbxManage = pbxManage
         self.recordings = recordings
@@ -377,10 +385,11 @@ public struct AppCapabilities: Decodable, Equatable, Sendable {
         self.invite = invite
         self.park = park
         self.callerChoice = callerChoice
+        self.live = live
     }
 
     private enum CodingKeys: String, CodingKey {
-        case pbxManage, recordings, voicemail, calls, contacts, selfExtension, sounds, invite, park, callerChoice
+        case pbxManage, recordings, voicemail, calls, contacts, selfExtension, sounds, invite, park, callerChoice, live
     }
 
     /// Every missing or unknown value falls back to the restrictive choice.
@@ -404,6 +413,7 @@ public struct AppCapabilities: Decodable, Equatable, Sendable {
         invite = try container.decodeIfPresent(Bool.self, forKey: .invite) ?? false
         park = try container.decodeIfPresent(Bool.self, forKey: .park) ?? false
         callerChoice = try container.decodeIfPresent(Bool.self, forKey: .callerChoice) ?? false
+        live = try container.decodeIfPresent(Bool.self, forKey: .live) ?? false
     }
 }
 

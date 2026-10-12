@@ -2,7 +2,7 @@
 //
 // DEBUG builds only: a demo of the app without a phone system, for the simulator, screenshots and UI checks.
 // Start with the launch argument `-FSVoipDemo YES` (two paired example extensions) or `-FSVoipDemo onboarding`
-// (nothing paired yet). `-FSVoipDemoScreen <dialer|chooser|onhold|recents|voicemail|contacts|settings|pbx|numbers|devices|ringgroups|hours|recordings|sounds|appearance|profile|callprefs|invite|incall|parkcall|incoming|push|pairing|failed|scanner>`
+// (nothing paired yet). `-FSVoipDemoScreen <dialer|chooser|onhold|live|live-transfer|live-empty|live-off|recents|voicemail|contacts|settings|pbx|numbers|devices|ringgroups|hours|recordings|sounds|appearance|profile|callprefs|invite|incall|parkcall|incoming|push|pairing|failed|scanner>`
 // opens a screen directly. `-FSVoipDemoNumber <open|name|hours|welcome|forwarding|recording>` goes inside the first number of `numbers`. `-FSVoipDemoContactsScreen <detail|edit|new|sources|phone|filter>` goes one step further inside the Contacts tab.
 // Nothing here talks to a server or a PBX, and nothing is written to the Keychain.
 
@@ -61,6 +61,7 @@ enum DemoMode {
             availability: AvailabilityHub(service: DemoAvailabilityService()),
             selfExtension: SelfExtensionHub(service: DemoSelfExtensionService()),
             park: DemoParkService(),
+            live: DemoLiveService(),
             outboundNumbers: DemoOutboundNumbersService()
         )
 
@@ -79,6 +80,9 @@ enum DemoMode {
             model.selectedTab = .contacts
         case "onhold":
             model.selectedTab = .onHold
+        case "live", "live-transfer", "live-empty", "live-off":
+            model.selectedTab = .onHold
+            model.onHoldSection = .live
         case "voicemail":
             model.selectedTab = .voicemail
         case "settings":

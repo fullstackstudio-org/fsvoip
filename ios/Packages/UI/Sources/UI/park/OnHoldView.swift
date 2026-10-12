@@ -8,9 +8,33 @@ import SwiftUI
 struct OnHoldTab: View {
     @ObservedObject var model: FSVoipAppModel
 
+    /// What the tab offers: the parked calls, the live calls, or both behind a switch.
+    private var hasPark: Bool { model.park != nil && model.parkAccount != nil }
+    private var hasLive: Bool { model.live != nil && model.liveAccount != nil }
+
+    private var section: FSVoipAppModel.OnHoldSection {
+        if hasLive, !hasPark { return .live }
+        if hasPark, !hasLive { return .parked }
+
+        return model.onHoldSection
+    }
+
     var body: some View {
-        Group {
-            if let park = model.park, let account = model.parkAccount {
+        VStack(spacing: 0) {
+            if hasPark, hasLive {
+                Picker(L10n.string("onHold.section"), selection: $model.onHoldSection) {
+                    Text(L10n.string("onHold.section.parked")).tag(FSVoipAppModel.OnHoldSection.parked)
+                    Text(L10n.string("onHold.section.live")).tag(FSVoipAppModel.OnHoldSection.live)
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, Theme.Spacing.l)
+                .padding(.top, Theme.Spacing.s)
+                .accessibilityIdentifier("onhold-sections")
+            }
+
+            if section == .live, let live = model.live, let account = model.liveAccount {
+                LiveSection(app: model, live: live, account: account)
+            } else if let park = model.park, let account = model.parkAccount {
                 OnHoldContent(app: model, park: park, account: account)
                     // Another account is another list: start over.
                     .id(account.id)
@@ -19,7 +43,7 @@ struct OnHoldTab: View {
             }
         }
         .background(Theme.background)
-        .navigationTitle(L10n.string("tab.onHold"))
+        .navigationTitle(L10n.string(section == .live ? "live.title" : "tab.onHold"))
     }
 
     private var unavailable: some View {
@@ -29,6 +53,49 @@ struct OnHoldTab: View {
             message: L10n.string("onHold.unavailable.message")
         )
         .accessibilityIdentifier("onhold-unavailable")
+    }
+}
+
+/// The Live section with the account menu (when more than one pairing offers it).
+private struct LiveSection: View {
+    @ObservedObject var app: FSVoipAppModel
+    @ObservedObject var live: LiveModel
+    let account: StoredAccount
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if app.liveAccounts.count > 1 {
+                HStack {
+                    Menu {
+                        ForEach(app.liveAccounts) { candidate in
+                            Button {
+                                app.chooseLiveAccount(candidate.id)
+                            } label: {
+                                if candidate.id == account.id {
+                                    Label(candidate.displayLabel, systemImage: "checkmark")
+                                } else {
+                                    Text(candidate.displayLabel)
+                                }
+                            }
+                        }
+                    } label: {
+                        Label(account.displayLabel, systemImage: "person.crop.circle")
+                            .font(.subheadline)
+                            .foregroundStyle(Theme.accentText)
+                            .frame(minHeight: Theme.minimumTarget)
+                    }
+                    .accessibilityLabel(L10n.string("onHold.account"))
+                    .accessibilityValue(account.displayLabel)
+
+                    Spacer()
+                }
+                .padding(.horizontal, Theme.Spacing.l)
+            }
+
+            LiveCallsContent(app: app, live: live, account: account)
+                // Another account is another list: start over.
+                .id(account.id)
+        }
     }
 }
 

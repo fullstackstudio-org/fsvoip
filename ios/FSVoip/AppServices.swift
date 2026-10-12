@@ -106,6 +106,7 @@ final class AppServices {
             availability: AvailabilityHub(service: LiveAvailabilityService(api: api)),
             selfExtension: SelfExtensionHub(service: LiveSelfExtensionService(api: api)),
             park: LiveParkService(api: api),
+            live: LiveLiveService(api: api),
             outboundNumbers: LiveOutboundNumbersService(api: api),
             customerCards: LiveCustomerCardService(api: api)
         )
