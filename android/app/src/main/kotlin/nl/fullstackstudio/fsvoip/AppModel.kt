@@ -22,6 +22,8 @@ import nl.fullstackstudio.fsvoip.core.AppCapabilities
 import nl.fullstackstudio.fsvoip.core.AudioPlayerModel
 import nl.fullstackstudio.fsvoip.core.HistoryModel
 import nl.fullstackstudio.fsvoip.core.MediaServicing
+import nl.fullstackstudio.fsvoip.core.NoticeDestination
+import nl.fullstackstudio.fsvoip.core.NoticeRoute
 import nl.fullstackstudio.fsvoip.core.VoicemailModel
 import nl.fullstackstudio.fsvoip.core.VoicemailMessage
 import nl.fullstackstudio.fsvoip.core.VoicemailAccess
@@ -583,9 +585,36 @@ class AppModel(
         when (message) {
             is PushMessage.Revoked -> removeRevoked(message.revoked.accountId)
             is PushMessage.Refresh -> scope.launch { refreshAccounts() }
-            is PushMessage.Notice -> logger.notice("A portal notice arrived: shown in part 2")
+            // Showing it is the notification's job (PortalNotices); opening the right screen happens on the tap (`openNotice`).
+            is PushMessage.Notice -> Unit
             is PushMessage.Ring -> logger.notice("A ring message arrived as a notice: ignored")
         }
+    }
+
+    /** A tap on a portal notice: the screen its link maps to. An account that is no longer on this phone opens nothing. */
+    fun openNotice(accountId: String, href: String) {
+        val destination = NoticeRoute.resolve(_accounts.value.map { it.id }, accountId, href)
+
+        if (destination == null) {
+            logger.notice("Notice for an account that is not on this phone: ignored")
+            return
+        }
+
+        open(destination)
+    }
+
+    /** Show the screen for a notice destination: the settings sheet closes, the tab opens. HOME is the dialler. */
+    fun open(destination: NoticeDestination) {
+        closeSettings()
+
+        select(
+            when (destination) {
+                NoticeDestination.HOME -> Tab.DIALER
+                NoticeDestination.RECENTS -> Tab.RECENTS
+                NoticeDestination.VOICEMAIL -> Tab.VOICEMAIL
+                NoticeDestination.CONTACTS -> Tab.CONTACTS
+            },
+        )
     }
 
     /** The server says this pairing was removed (portal, admin, or another phone took over the extension). */

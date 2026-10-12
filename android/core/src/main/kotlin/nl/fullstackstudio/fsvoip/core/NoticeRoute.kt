@@ -37,6 +37,13 @@ object NoticeRoute {
         }
     }
 
+    /**
+     * What a tap on the notification of [accountId] opens: the screen of [href], or `null` (nothing) when that account is no longer
+     * on this phone. The server's own words are never trusted as a destination: only the path is read, see [destination].
+     */
+    fun resolve(knownAccountIds: Collection<String>, accountId: String, href: String): NoticeDestination? =
+        if (accountId in knownAccountIds) destination(href) else null
+
     /** The decoded, lower-cased path segments of an absolute URL or a bare path; `null` when it is not a plain path. */
     internal fun segments(href: String): List<String>? {
         val trimmed = href.trim()
@@ -88,4 +95,16 @@ object NoticeRoute {
 @kotlinx.serialization.Serializable
 data class AppPairingResponse(val url: String, val expiresAt: String) {
     override fun toString(): String = "AppPairingResponse(expiresAt=$expiresAt)"
+}
+
+/** The text of a portal notice as the notification shows it: no control characters, no more than a notification can hold. */
+object NoticeText {
+    const val MAX_TITLE = 80
+    const val MAX_BODY = 240
+
+    fun clean(text: String, max: Int): String {
+        val flat = text.map { if (it.isISOControl()) ' ' else it }.joinToString("").replace(Regex("\\s+"), " ").trim()
+
+        return if (flat.length <= max) flat else flat.take(max - 1).trimEnd() + "\u2026"
+    }
 }

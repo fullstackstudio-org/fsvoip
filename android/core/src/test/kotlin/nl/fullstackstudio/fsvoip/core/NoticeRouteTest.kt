@@ -30,4 +30,20 @@ class NoticeRouteTest {
         assertEquals(NoticeDestination.HOME, route("/portal/contacts\u0000"))
         assertEquals(NoticeDestination.HOME, route("/" + "a".repeat(600)))
     }
+
+    @Test
+    fun aNoticeForAnAccountThatIsGoneOpensNothing() {
+        val known = listOf("acc-1")
+
+        assertEquals(NoticeDestination.VOICEMAIL, NoticeRoute.resolve(known, "acc-1", "/portal/voip/x/voicemail"))
+        assertEquals(NoticeDestination.HOME, NoticeRoute.resolve(known, "acc-1", "/portal/orders/1"))
+        assertEquals(null, NoticeRoute.resolve(known, "acc-2", "/portal/voip/x/voicemail"))
+    }
+
+    @Test
+    fun noticeTextIsOneShortLine() {
+        assertEquals("Nieuwe bestelling", NoticeText.clean("  Nieuwe\n\tbestelling \u0000", NoticeText.MAX_TITLE))
+        assertEquals("abcd\u2026", NoticeText.clean("abcdefgh", 5))
+        assertEquals("kort", NoticeText.clean("kort", 5))
+    }
 }

@@ -70,6 +70,8 @@ class MainActivity : FragmentActivity(), PermissionRequester {
             Intent.ACTION_VIEW -> intent.dataString?.let { services.model.handleIncoming(it) }
             ACTION_ANSWER -> callUuid(intent)?.let { services.phone.answer(it) }
             ACTION_SHOW_CALL -> Unit // The call screen is on top already.
+            // A tap on a portal notice: the tab its link maps to (an account that is gone opens nothing).
+            ACTION_OPEN_NOTICE -> services.model.openNotice(intent.getStringExtra(EXTRA_NOTICE_ACCOUNT).orEmpty(), intent.getStringExtra(EXTRA_NOTICE_HREF).orEmpty())
         }
 
         // Handled once: a configuration change must not answer or pair again.
@@ -105,5 +107,8 @@ class MainActivity : FragmentActivity(), PermissionRequester {
         const val ACTION_ANSWER = "nl.fullstackstudio.fsvoip.ANSWER"
         const val ACTION_SHOW_CALL = "nl.fullstackstudio.fsvoip.SHOW_CALL"
         const val EXTRA_CALL_UUID = "nl.fullstackstudio.fsvoip.CALL_UUID"
+        const val ACTION_OPEN_NOTICE = "nl.fullstackstudio.fsvoip.OPEN_NOTICE"
+        const val EXTRA_NOTICE_ACCOUNT = "nl.fullstackstudio.fsvoip.NOTICE_ACCOUNT"
+        const val EXTRA_NOTICE_HREF = "nl.fullstackstudio.fsvoip.NOTICE_HREF"
     }
 }
