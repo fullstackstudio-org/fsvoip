@@ -1128,6 +1128,8 @@ paths:
       operationId: pickupLiveCall
       summary: Take a ringing call over to the OWN extension (every role).
       description: |
+        A `user` can only take over a call that rings at a ring group or queue (several extensions at once, or the number of a ring group or
+        queue) or at the own extension (`canPickup` follows this); a call that rings only at a colleague's personal extension is `403 forbidden`.
         The extension is never in the request: it comes from the pairing. A sleeping FSVoip app on that extension is woken by push when the
         call arrives there. `409 call_not_ringing` = somebody else answered or the caller hung up (refresh the list), `404 call_not_found` =
         the call is gone or the `ref` is not of this PBX. 30 per 10 minutes per device (with transfer).
