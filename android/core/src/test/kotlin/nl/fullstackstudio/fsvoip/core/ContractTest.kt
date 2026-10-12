@@ -44,6 +44,7 @@ class ContractTest {
         tests.selfExtension()
         tests.callsAndVoicemail()
         tests.parking()
+        tests.liveCalls()
         tests.invitationLink()
         tests.contacts()
         tests.contactLists()
@@ -62,6 +63,7 @@ class ContractTest {
         assertTrue(admin.canManagePbx)
         assertTrue(admin.canEditOwnExtension)
         assertTrue(admin.canPark)
+        assertTrue(admin.canLive)
         assertEquals(CallsAccess.ALL, admin.capabilities!!.calls)
         assertEquals(VoicemailAccess.ALL, admin.capabilities!!.voicemail)
         assertEquals(SoundsAccess.MANAGE, admin.capabilities!!.sounds)
@@ -353,6 +355,95 @@ class ContractTest {
         val resync = mapped(400, "error-resync.json") as ApiException.InvalidRequest
         assertEquals("resync", resync.code)
         assertEquals("phones", (mapped(400, "error-invalid-field.json") as ApiException.InvalidRequest).field)
+    }
+
+    @Test
+    fun liveCalls() {
+        val page = json.decodeFromString(LiveCallsPage.serializer(), fixture("live-calls.json"))
+        assertTrue(page.enabled)
+        assertTrue(page.fresh)
+        assertEquals(3, page.calls.size)
+
+        val ringing = page.calls[0]
+        assertEquals(LiveState.RINGING, ringing.state)
+        assertEquals(LiveDirection.INBOUND, ringing.direction)
+        assertEquals("Bakkerij Smit", ringing.callerName)
+        assertEquals(listOf("Receptie (101)", "Jan (balie) (102)"), ringing.ringing.map { it.label })
+        assertNull(ringing.answeredBy)
+        assertNull(ringing.answeredAt)
+        assertEquals(Instant.parse("2026-10-12T09:15:30.000Z"), ringing.startedAt)
+        assertTrue(ringing.canPickup)
+        assertFalse(ringing.canTransfer)
+        assertFalse(ringing.mine)
+
+        val active = page.calls[1]
+        assertEquals(LiveState.ACTIVE, active.state)
+        assertEquals(LiveDirection.OUTBOUND, active.direction)
+        assertNull(active.callerName)
+        assertEquals("102", active.answeredBy!!.number)
+        assertEquals(Instant.parse("2026-10-12T09:10:09.000Z"), active.answeredAt)
+        assertEquals(active.answeredAt, active.clockStart)
+        assertTrue(active.canTransfer)
+        assertTrue(active.mine)
+
+        val parked = page.calls[2]
+        assertEquals(LiveState.PARKED, parked.state)
+        assertNull(parked.callerNumber)
+        assertEquals(1, parked.parked!!.slot)
+        assertEquals("*5901", parked.parked!!.retrieveNumber)
+        assertEquals(parked.startedAt, parked.clockStart)
+
+        // The `ref` differs per response; the identity does not depend on it.
+        assertFalse(ringing.id.contains(ringing.ref))
+        assertEquals(ringing.id, ringing.copy(ref = "other").id)
+
+        val off = json.decodeFromString(LiveCallsPage.serializer(), fixture("live-calls-disabled.json"))
+        assertFalse(off.enabled)
+        assertTrue(off.calls.isEmpty())
+
+        val targets = json.decodeFromString(LiveTargetsPage.serializer(), fixture("live-targets.json"))
+        assertFalse(targets.readOnly)
+        assertEquals(listOf(LiveTargetType.EXTENSION, LiveTargetType.EXTENSION, LiveTargetType.RING_GROUP, LiveTargetType.VOICEMAIL), targets.targets.map { it.type })
+        assertEquals("101", targets.targets[0].extension)
+
+        val pickupRequest = LivePickupRequest("bGl2ZS1maXh0dXJlLXJpbmdpbmctY2FsbC1yZWZlcmVuY2UtMDAx")
+        assertEquals(Fixtures.json(fixtureName("live-pickup-request.json")), pickupRequest.toJson())
+        assertFalse(pickupRequest.toString().contains("bGl2"))
+
+        val pickup = json.decodeFromString(LivePickupResponse.serializer(), fixture("live-pickup-response.json"))
+        assertEquals("Jan (balie) (102)", pickup.pickedBy!!.label)
+
+        val transfer = LiveTransferRequest("bGl2ZS1maXh0dXJlLWFjdGl2ZS1jYWxsLXJlZmVyZW5jZS0wMDI", LiveTargetType.EXTENSION, "3f0c2b1e-8a4d-4d6f-9b7a-1c2d3e4f5a01")
+        assertEquals(Fixtures.json(fixtureName("live-transfer-request.json")), transfer.toJson())
+
+        assertEquals("internal", json.decodeFromString(LiveTransferResponse.serializer(), fixture("live-transfer-response.json")).destinationType)
+        assertEquals("live_unavailable", json.decodeFromString(ApiErrorBody.serializer(), fixture("error-live-unavailable.json")).error)
+    }
+
+    @Test
+    fun liveCallsAreTolerant() {
+        val text = """{"enabled":true,"fresh":true,"calls":[
+            {"ref":"a","state":"on-the-moon","direction":"sideways","startedAt":"2026-10-12T09:15:30.000Z"},
+            {"ref":"b","state":"ringing"},
+            {"ref":"c","state":"active","startedAt":"2026-10-12T09:00:00.000Z","answeredAt":"garbage","answeredBy":{"number":"101"}}
+        ]}"""
+        val page = json.decodeFromString(LiveCallsPage.serializer(), text)
+        // The row without a start time cannot be shown; the others stay. Unknown values and missing flags are the restrictive choice.
+        assertEquals(listOf("a", "c"), page.calls.map { it.ref })
+        assertEquals(LiveState.UNKNOWN, page.calls[0].state)
+        assertEquals(LiveDirection.UNKNOWN, page.calls[0].direction)
+        assertFalse(page.calls[0].canPickup)
+        assertNull(page.calls[1].answeredAt)
+        assertEquals("101", page.calls[1].answeredBy!!.label)
+
+        val targets = json.decodeFromString(
+            LiveTargetsPage.serializer(),
+            """{"targets":[{"type":"hologram","id":"x","name":"X","extension":"1"},{"type":"queue","id":"q","name":"Q","extension":"300"}]}""",
+        )
+        assertEquals(listOf("q"), targets.choosable.map { it.id })
+
+        // A missing `enabled` is "off".
+        assertFalse(json.decodeFromString(LiveCallsPage.serializer(), "{}").enabled)
     }
 
     @Test

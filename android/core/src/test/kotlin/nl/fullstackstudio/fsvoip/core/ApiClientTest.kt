@@ -152,6 +152,43 @@ class ApiClientTest {
     }
 
     @Test
+    fun liveCallsUseTheirOwnPathsAndSendTheLatestRef() = runTest {
+        val transport = FakeTransport { request ->
+            when {
+                request.url.endsWith("/pbx/live/targets") -> response(200, Fixtures.text("live-targets.json"))
+                request.url.endsWith("/pbx/live/pickup") -> response(200, Fixtures.text("live-pickup-response.json"))
+                request.url.endsWith("/pbx/live/transfer") -> response(200, Fixtures.text("live-transfer-response.json"))
+                else -> response(200, Fixtures.text("live-calls.json"))
+            }
+        }
+        val client = authenticated(transport)
+
+        assertEquals(3, client.liveCalls().calls.size)
+        assertEquals(4, client.liveTargets().targets.size)
+        assertEquals("102", client.pickupLiveCall("ref-1").pickedBy!!.number)
+        val target = client.liveTargets().targets.first()
+        assertEquals("internal", client.transferLiveCall("ref-2", target).destinationType)
+
+        assertEquals(listOf("GET", "GET", "POST", "GET", "POST"), transport.requests.map { it.method })
+        assertEquals("https://example.test/v1/pbx/live", transport.requests[0].url)
+        val pickupBody = FsJson.default.parseToJsonElement(transport.requests[2].body!!.toString(Charsets.UTF_8)).jsonObject
+        assertEquals(setOf("ref"), pickupBody.keys)
+        val transferBody = FsJson.default.parseToJsonElement(transport.requests[4].body!!.toString(Charsets.UTF_8)).jsonObject
+        assertEquals(setOf("ref", "target"), transferBody.keys)
+        // Refs are not written to the log.
+        assertFalse(sink.messages.any { it.contains("ref-1") || it.contains("ref-2") })
+
+        val unavailable = authenticated(FakeTransport { response(409, Fixtures.text("error-live-unavailable.json")) })
+
+        try {
+            unavailable.liveCalls()
+            fail()
+        } catch (e: ApiException.Conflict) {
+            assertEquals(LiveFailure.Unavailable, LiveFailure.classify(e))
+        }
+    }
+
+    @Test
     fun parkSendsTheCallIdAndUncertaintyIsATypedError() = runTest {
         val transport = FakeTransport { request ->
             if (request.method == "POST") response(201, Fixtures.text("park-response.json")) else response(200, Fixtures.text("parked-calls.json"))

@@ -12,6 +12,7 @@ Branch `feature/android-v2`. Same features as iOS 1.0, same server (API v2). Nee
 - **Klantkaart** bij een inkomend gesprek en **Activiteit** bij een contact, zoals op iOS.
 - **Landkeuze bij een telefoonnummer** in het contactformulier (Nederland eerst); een nummer in nationale vorm krijgt de gekozen landcode, net als op iOS.
 - **Alle voicemail voor beheerders:** kies de eigen box, alle voicemail of de box van een collega of een gedeelde box. Alles behalve de eigen box zit achter vingerafdruk, gezicht of schermvergrendeling (vijf minuten).
+- **Live gesprekken** in het tabblad On hold (naast de geparkeerde gesprekken, alleen als de centrale het aanbiedt): wie er nu belt, een overgaand gesprek overnemen op je eigen toestel en een gesprek blind doorverbinden naar een intern toestel, belgroep, wachtrij, keuzemenu, openingstijden of voicemail. De lijst ververst elke 3 seconden zolang het scherm zichtbaar is; wat mag bepaalt de server per rol.
 - **Meldingen uit het portaal** verschijnen als melding en een tik opent het juiste tabblad (zodra het Firebase-project er is).
 
 ### Changed / fixed

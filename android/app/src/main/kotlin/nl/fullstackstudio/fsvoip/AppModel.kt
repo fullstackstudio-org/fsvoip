@@ -70,6 +70,7 @@ class AppModel(
     val localAccess: nl.fullstackstudio.fsvoip.core.LocalAccessGate,
     val history: HistoryModel,
     val park: nl.fullstackstudio.fsvoip.core.ParkModel,
+    val live: nl.fullstackstudio.fsvoip.core.LiveModel,
     val mediaService: MediaServicing,
     val player: AudioPlayerModel,
     val contacts: ContactsHub,
@@ -176,6 +177,7 @@ class AppModel(
         selfExtension.onRevoked = { scope.launch { refreshAccounts() } }
         history.onRevoked = { scope.launch { refreshAccounts() } }
         park.onRevoked = { scope.launch { refreshAccounts() } }
+        live.onRevoked = { scope.launch { refreshAccounts() } }
         contacts.onUnauthorized = { scope.launch { refreshAccounts() } }
 
         // A 401 on the "Centrale" routes: the pairing is gone. A 403: the role was taken away; `GET /me` shows what it is now.
@@ -486,6 +488,49 @@ class AppModel(
         else -> R.string.park_error_other
     }
 
+    // MARK: Live calls
+
+    /** Whether this pairing shows the Live section (the server says; an older server says nothing and it stays hidden). */
+    fun canLive(accountId: String): Boolean = _me.value[accountId]?.canLive ?: false
+
+    /** Picks a ringing call up to the own extension and tells the user what happened. */
+    fun pickUpLive(accountId: String, call: nl.fullstackstudio.fsvoip.core.LiveCall) {
+        val account = account(accountId) ?: return
+        scope.launch {
+            when (val result = live.pickup(call, account)) {
+                nl.fullstackstudio.fsvoip.core.LiveModel.PickupResult.PickedUp -> _notice.value = Notice(string(R.string.live_notice_pickedUp), isError = false)
+                is nl.fullstackstudio.fsvoip.core.LiveModel.PickupResult.Failed -> _notice.value = Notice(string(liveErrorRes(result.failure)), isError = true)
+                nl.fullstackstudio.fsvoip.core.LiveModel.PickupResult.Ignored -> Unit
+            }
+        }
+    }
+
+    /** Blind transfer of a call to an internal target. */
+    fun transferLive(accountId: String, call: nl.fullstackstudio.fsvoip.core.LiveCall, target: nl.fullstackstudio.fsvoip.core.LiveTarget) {
+        val account = account(accountId) ?: return
+        scope.launch {
+            when (val result = live.transfer(call, target, account)) {
+                is nl.fullstackstudio.fsvoip.core.LiveModel.TransferResult.Transferred -> _notice.value = Notice(string(R.string.live_notice_transferred, target.name), isError = false)
+                is nl.fullstackstudio.fsvoip.core.LiveModel.TransferResult.Failed -> _notice.value = Notice(string(liveErrorRes(result.failure)), isError = true)
+                nl.fullstackstudio.fsvoip.core.LiveModel.TransferResult.Ignored -> Unit
+            }
+        }
+    }
+
+    private fun liveErrorRes(failure: nl.fullstackstudio.fsvoip.core.LiveFailure): Int = when (failure) {
+        nl.fullstackstudio.fsvoip.core.LiveFailure.CallNotFound -> R.string.live_error_callNotFound
+        nl.fullstackstudio.fsvoip.core.LiveFailure.NotRinging -> R.string.live_error_notRinging
+        nl.fullstackstudio.fsvoip.core.LiveFailure.NotTransferable -> R.string.live_error_notTransferable
+        nl.fullstackstudio.fsvoip.core.LiveFailure.Unavailable -> R.string.live_error_unavailable
+        nl.fullstackstudio.fsvoip.core.LiveFailure.Forbidden -> R.string.live_error_forbidden
+        nl.fullstackstudio.fsvoip.core.LiveFailure.Revoked -> R.string.media_error_revoked
+        nl.fullstackstudio.fsvoip.core.LiveFailure.ReadOnly -> R.string.media_error_readOnly
+        nl.fullstackstudio.fsvoip.core.LiveFailure.InvalidTarget -> R.string.live_error_invalidTarget
+        is nl.fullstackstudio.fsvoip.core.LiveFailure.RateLimited -> R.string.media_error_rateLimited
+        nl.fullstackstudio.fsvoip.core.LiveFailure.Offline -> R.string.media_error_offline
+        nl.fullstackstudio.fsvoip.core.LiveFailure.Other -> R.string.error_generic
+    }
+
     // MARK: History and voicemail
 
     /** The calls of this phone, as lines of "Geschiedenis" (shown while the PBX cannot say, and the ones it has not caught up with). */
@@ -780,6 +825,7 @@ class AppModel(
         selfExtension.forget(accountId)
         history.forget(accountId)
         park.forget(accountId)
+        live.forget(accountId)
         pbx.forget(accountId)
         voicemailModels.remove(accountId)
         if (_nowPlaying.value?.id?.startsWith("$accountId/") == true) stopPlayer()

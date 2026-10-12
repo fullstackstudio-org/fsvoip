@@ -14,6 +14,7 @@ mock of the API (see "Testing without production") on the emulator; calls, push 
 | --- | --- |
 | Pairing | QR scanner, App Link, `fsvoip://`, several accounts; role and capabilities from `GET /me` (loaded right after pairing) |
 | Calls | dialler with the number to call out with (`X-FSS-From`), incoming (Telecom, full-screen), in-call controls, parking and the "On hold" tab |
+| Live calls | Section "Live gesprekken" in the "On hold" tab (a switch when parking is offered too), only when `capabilities.live`: running calls polled every 3 s while the screen is visible (stops on background / leaving the tab), take a ringing call over to the own extension (`canPickup`), blind transfer to an internal target (`canTransfer`); who may is decided by the server per role, `live_unavailable` = hidden. No demo mode on Android. |
 | History / voicemail | team history per month, voicemail with the player (ExoPlayer, Bearer header, `Range`); an administrator can play recordings |
 | Contacts | sync with cursor / `serverTime` / tombstones, lists with ETag, name recognition; create, edit (`expectedUpdatedAt`), delete (administrators), favourites (this phone only), copy a contact of the phone into the address book, activity of a contact |
 | Customer card | at an incoming call: name and "Klant in website: ..." from `GET /contacts/lookup`, at most one second, never in the way of the call |
