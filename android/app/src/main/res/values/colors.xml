@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<resources>
+    <color name="brand_lime">#C7FF4A</color>
+    <color name="brand_ink">#101317</color>
+</resources>

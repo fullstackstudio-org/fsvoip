@@ -1,5 +1,22 @@
 # Changelog
 
+## Android 1.0 (not released) — pariteit met iOS v2
+
+Branch `feature/android-v2`. Same features as iOS 1.0, same server (API v2). Needs a Firebase project, Play Console and `assetlinks.json` before it can ship, see `android/README.md`.
+
+### Nieuw (NL)
+
+- **Alles uit iOS v2** in een Android-schil met vijf tabs: Bellen (met keuze van het uitbelnummer), On hold (parkeren), Geschiedenis (team, per maand), Voicemail met speler en Contacten.
+- **Beheerders:** Centrale (belstroom), nummers met hun keten, toestellen, belgroepen, openingstijden met tijdelijk gesloten, geluiden (beluisteren, opnemen, uploaden), collega's uitnodigen met QR en deelbare link, opnames beluisteren. Alles achter vingerafdruk, gezicht of schermvergrendeling (vijf minuten), net als Face ID op iOS.
+- **Contacten** aanmaken, wijzigen en (beheerders) verwijderen, favorieten, en een telefooncontact overnemen in het adresboek. Een nummer uit de geschiedenis wordt met één naam een contact.
+- **Klantkaart** bij een inkomend gesprek en **Activiteit** bij een contact, zoals op iOS.
+- **Meldingen uit het portaal** verschijnen als melding en een tik opent het juiste tabblad (zodra het Firebase-project er is).
+
+### Changed / fixed
+
+- The role and capabilities are read right after pairing (the administrator sections used to appear only after the next start).
+- The filter chips in Contacts scroll sideways instead of squeezing the last chip.
+
 ## 0.2.0 (build 9) — klantkaart en meldingen
 
 ### Nieuw (NL)
