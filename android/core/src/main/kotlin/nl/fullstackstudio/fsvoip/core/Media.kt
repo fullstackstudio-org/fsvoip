@@ -268,17 +268,45 @@ class HistoryModel(private val service: MediaServicing) {
 
 // MARK: Voicemail
 
+/** Whose voicemail an administrator looks at: the own box, every box, or the box of one colleague / a shared mailbox. */
+sealed interface VoicemailScope {
+    data object Own : VoicemailScope
+
+    data object All : VoicemailScope
+
+    data class Box(val id: String) : VoicemailScope
+}
+
 /**
- * The "Voicemail" screen of ONE paired account. A `user` pairing sees its own box only (the server decides). An admin's page lists
- * every box; this part of the app shows the own box only (the box of the own extension), "Alle voicemail" comes with the local
- * check in part 2.
+ * The "Voicemail" screen of ONE paired account.
+ *
+ * - A `user` pairing (`capabilities.voicemail = own`) sees its own box only; nothing here asks for the screen lock.
+ * - An administrator (`all`) starts on the own box (found by the extension number). "Alle voicemail" and the box of a colleague
+ *   open only after the local check ([LocalAccessGate], five minutes); when it expires the screen falls back to the own box.
+ * - Deleting is possible in the own box (everyone) and, after the check, in the others (administrator).
+ *
+ * Mirror of the iOS `VoicemailModel`. Without a [gate] (tests, older callers) the "other boxes" can never be opened.
  */
-class VoicemailModel(private val account: StoredAccount, private val service: MediaServicing, private val canSeeVoicemail: () -> Boolean) {
+class VoicemailModel(
+    private val account: StoredAccount,
+    private val service: MediaServicing,
+    private val access: () -> VoicemailAccess = { VoicemailAccess.OWN },
+    private val gate: LocalAccessGate? = null,
+    private val authReason: () -> String = { "" },
+    private val canSeeVoicemail: () -> Boolean,
+) {
+    /** The older form: the server (or an older server) only says whether voicemail may be opened at all. */
+    constructor(account: StoredAccount, service: MediaServicing, canSeeVoicemail: () -> Boolean) :
+        this(account, service, { VoicemailAccess.OWN }, null, { "" }, canSeeVoicemail)
+
     private val _page = MutableStateFlow<VoicemailPage?>(null)
     private val _isLoading = MutableStateFlow(false)
     private val _failure = MutableStateFlow<MediaFailure?>(null)
     private val _banner = MutableStateFlow<MediaFailure?>(null)
     private val _goneIds = MutableStateFlow<Set<String>>(emptySet())
+    private val _scope = MutableStateFlow<VoicemailScope>(VoicemailScope.Own)
+    private val _othersUnlocked = MutableStateFlow(false)
+    private val _noScreenLock = MutableStateFlow(false)
 
     val page: StateFlow<VoicemailPage?> = _page.asStateFlow()
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -289,12 +317,36 @@ class VoicemailModel(private val account: StoredAccount, private val service: Me
     /** Something went wrong while a good list is on screen: say so without taking the list away. */
     val banner: StateFlow<MediaFailure?> = _banner.asStateFlow()
     val goneIds: StateFlow<Set<String>> = _goneIds.asStateFlow()
+    val scope: StateFlow<VoicemailScope> = _scope.asStateFlow()
+
+    /** The local check is open for the boxes of colleagues. */
+    val othersUnlocked: StateFlow<Boolean> = _othersUnlocked.asStateFlow()
+
+    /** The phone has no screen lock, so the check can never open: say that instead of asking again. */
+    val noScreenLock: StateFlow<Boolean> = _noScreenLock.asStateFlow()
 
     var onRevoked: (() -> Unit)? = null
 
-    /** The box of the extension of this phone. A `user` page lists that box only; an admin's page lists every box, the number tells which one is ours. */
+    /** An administrator sees every box and can choose. */
+    val canChooseBox: Boolean
+        get() = access() == VoicemailAccess.ALL
+
+    /** The administrator asked for more than the own box and has not unlocked (yet): show the lock instead of a list. */
+    val needsUnlock: Boolean
+        get() = canChooseBox && _scope.value != VoicemailScope.Own && !_othersUnlocked.value
+
+    /**
+     * The box of the extension of this phone. A `user` page lists that box only; an administrator's page lists every box, the number
+     * tells which one is ours (a shared mailbox is never "ours").
+     */
     fun ownBoxId(page: VoicemailPage): String? {
         val boxes = page.boxes
+
+        if (canChooseBox) {
+            val number = account.extensionNumber ?: return null
+
+            return boxes.firstOrNull { !it.shared && it.number == number }?.id
+        }
 
         if (boxes.size == 1) return boxes.first().id
 
@@ -303,12 +355,29 @@ class VoicemailModel(private val account: StoredAccount, private val service: Me
         return boxes.firstOrNull { !it.shared && it.number == number }?.id
     }
 
-    /** The messages the screen may show: the own box, newest first. */
-    fun messages(page: VoicemailPage): List<VoicemailMessage> {
-        val own = ownBoxId(page)
+    fun isOwn(page: VoicemailPage, message: VoicemailMessage): Boolean = !canChooseBox || message.boxId == ownBoxId(page)
 
-        return page.messages.filter { own == null || it.boxId == own }.sortedByDescending { it.receivedSort.orEmpty() }
+    /** The messages the screen may show right now, newest first (never a colleague's while locked). */
+    fun messages(page: VoicemailPage): List<VoicemailMessage> {
+        val sorted = page.messages.sortedByDescending { it.receivedSort.orEmpty() }
+
+        if (!canChooseBox) {
+            val own = ownBoxId(page)
+
+            return sorted.filter { own == null || it.boxId == own }
+        }
+
+        return when (val scope = _scope.value) {
+            VoicemailScope.Own -> sorted.filter { isOwn(page, it) }
+            VoicemailScope.All -> if (_othersUnlocked.value) sorted else emptyList()
+            is VoicemailScope.Box -> if (_othersUnlocked.value) sorted.filter { it.boxId == scope.id } else emptyList()
+        }
     }
+
+    fun boxTitle(box: VoicemailBox): String = listOf(box.name, box.number.orEmpty()).filter { it.isNotEmpty() }.joinToString(" · ")
+
+    /** The name of the box a message sits in, shown next to it when the list is not the own box only. */
+    fun showsBoxName(page: VoicemailPage, message: VoicemailMessage): Boolean = canChooseBox && (!isOwn(page, message) || _scope.value != VoicemailScope.Own)
 
     fun isGone(message: VoicemailMessage): Boolean = message.key in _goneIds.value || (message.daysLeft ?: 0) < 0
 
@@ -325,8 +394,14 @@ class VoicemailModel(private val account: StoredAccount, private val service: Me
         _isLoading.value = _page.value == null
 
         try {
-            _page.value = service.voicemail(account, null)
+            val result = service.voicemail(account, null)
+            _page.value = result
             _failure.value = null
+
+            // An administrator without a box of the own extension has only the locked "all" to show.
+            if (canChooseBox && ownBoxId(result) == null && _scope.value == VoicemailScope.Own) _scope.value = VoicemailScope.All
+
+            dropVanishedSelection(result)
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
@@ -336,9 +411,83 @@ class VoicemailModel(private val account: StoredAccount, private val service: Me
         }
     }
 
+    private fun dropVanishedSelection(page: VoicemailPage) {
+        val scope = _scope.value
+
+        if (scope is VoicemailScope.Box && page.boxes.none { it.id == scope.id }) {
+            _scope.value = if (ownBoxId(page) != null) VoicemailScope.Own else VoicemailScope.All
+        }
+    }
+
+    // MARK: The local check
+
+    /** Choose another box; anything but the own box asks for the screen lock first. */
+    suspend fun select(newScope: VoicemailScope) {
+        _banner.value = null
+
+        if (newScope == VoicemailScope.Own) {
+            _scope.value = newScope
+            return
+        }
+
+        if (!canChooseBox) return
+
+        val gate = gate ?: return
+
+        when (val outcome = gate.ensureUnlocked(authReason())) {
+            LocalAccessOutcome.Unlocked -> {
+                _othersUnlocked.value = true
+                _noScreenLock.value = false
+                _scope.value = newScope
+            }
+            is LocalAccessOutcome.Unavailable -> _noScreenLock.value = outcome.availability == LocalAuthAvailability.NO_SCREEN_LOCK
+            else -> Unit
+        }
+    }
+
+    /** The lock card asks to open what is chosen. */
+    suspend fun unlock() {
+        select(if (_scope.value == VoicemailScope.Own) VoicemailScope.All else _scope.value)
+    }
+
+    /**
+     * The five minutes are over (or the app came back): fall back to the own box. Returns `true` when the check just closed, so the
+     * caller can stop the sound of a colleague's message.
+     */
+    fun refreshLock(): Boolean {
+        val gate = gate ?: return false
+
+        if (!_othersUnlocked.value || gate.isUnlocked) return false
+
+        _othersUnlocked.value = false
+
+        if (_scope.value != VoicemailScope.Own) {
+            _scope.value = if (_page.value?.let { ownBoxId(it) } != null) VoicemailScope.Own else VoicemailScope.All
+        }
+
+        return true
+    }
+
+    /** Whether a colleague's message may be played or deleted right now; keeps the window open when it may. */
+    fun mayUseOthers(): Boolean {
+        val gate = gate ?: return false
+
+        if (!gate.isUnlocked) return false
+
+        gate.touch()
+        return true
+    }
+
     /** Delete one message (the own box). A 404 means it was gone already: the list was out of date. */
     suspend fun delete(message: VoicemailMessage): Boolean {
         _banner.value = null
+
+        // A colleague's message: the check has to be open now (otherwise ask for it and delete nothing).
+        if (_page.value?.let { !isOwn(it, message) } == true && !mayUseOthers()) {
+            refreshLock()
+            select(VoicemailScope.All)
+            return false
+        }
 
         return try {
             service.deleteVoicemail(account, message.boxId, message.ref)

@@ -28,13 +28,15 @@ class FsMessagingService : FirebaseMessagingService() {
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
-        val decoded = runCatching { PushMessage.decodeFcm(message.data) }
-            .onFailure { logger.notice("Push without a readable payload: ${it.javaClass.simpleName}") }
-            .getOrNull()
+        val result = runCatching { PushMessage.decodeFcm(message.data) }
+        val decoded = result.getOrNull()
+        val failure = result.exceptionOrNull()?.also { logger.notice("Push without a readable payload: ${it.javaClass.simpleName}") }
 
         when (decoded) {
             is PushMessage.Ring, null -> {
-                if (decoded == null && message.data["fsvoip"] == null) {
+                // Only something that can be a call is rung: a broken ring or an unreadable envelope. A message of a type this app
+                // version does not know (or a broken notice) must never start the call service.
+                if (decoded == null && (message.data["fsvoip"] == null || !PushMessage.mayBeRing(failure))) {
                     return
                 }
 

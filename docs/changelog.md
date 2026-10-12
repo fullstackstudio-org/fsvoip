@@ -10,9 +10,13 @@ Branch `feature/android-v2`. Same features as iOS 1.0, same server (API v2). Nee
 - **Beheerders:** Centrale (belstroom), nummers met hun keten, toestellen, belgroepen, openingstijden met tijdelijk gesloten, geluiden (beluisteren, opnemen, uploaden), collega's uitnodigen met QR en deelbare link, opnames beluisteren. Alles achter vingerafdruk, gezicht of schermvergrendeling (vijf minuten), net als Face ID op iOS.
 - **Contacten** aanmaken, wijzigen en (beheerders) verwijderen, favorieten, en een telefooncontact overnemen in het adresboek. Een nummer uit de geschiedenis wordt met één naam een contact.
 - **Klantkaart** bij een inkomend gesprek en **Activiteit** bij een contact, zoals op iOS.
+- **Landkeuze bij een telefoonnummer** in het contactformulier (Nederland eerst); een nummer in nationale vorm krijgt de gekozen landcode, net als op iOS.
+- **Alle voicemail voor beheerders:** kies de eigen box, alle voicemail of de box van een collega of een gedeelde box. Alles behalve de eigen box zit achter vingerafdruk, gezicht of schermvergrendeling (vijf minuten).
 - **Meldingen uit het portaal** verschijnen als melding en een tik opent het juiste tabblad (zodra het Firebase-project er is).
 
 ### Changed / fixed
+
+- Reviewpunten uit de eerdere Android-branch overgenomen: een bericht van een type dat de app niet kent start nooit de gesprekservice, de ververs-ronde van de accounts loopt één voor één, contacten van een ontkoppeld account worden niet meer teruggeschreven, en een decodeerfout noemt geen id's meer.
 
 - The role and capabilities are read right after pairing (the administrator sections used to appear only after the next start).
 - The filter chips in Contacts scroll sideways instead of squeezing the last chip.
