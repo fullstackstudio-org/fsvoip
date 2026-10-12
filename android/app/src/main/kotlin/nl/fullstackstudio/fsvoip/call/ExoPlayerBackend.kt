@@ -13,16 +13,20 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
-import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import java.util.concurrent.TimeUnit
+import nl.fullstackstudio.fsvoip.BuildConfig
 import nl.fullstackstudio.fsvoip.core.AudioBackend
 import nl.fullstackstudio.fsvoip.core.AudioBackendListener
 import nl.fullstackstudio.fsvoip.core.MediaFailure
 import nl.fullstackstudio.fsvoip.core.MediaSource
+import okhttp3.OkHttpClient
 
-class ExoPlayerBackend(context: Context, private val userAgent: String) : AudioBackend {
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+class ExoPlayerBackend(context: Context, private val userAgent: String, private val apiBaseUrl: String = BuildConfig.API_BASE_URL) : AudioBackend {
+    private val client = OkHttpClient.Builder().followRedirects(false).followSslRedirects(false).connectTimeout(15, TimeUnit.SECONDS).readTimeout(20, TimeUnit.SECONDS).build()
     private val context = context.applicationContext
     private val handler = Handler(Looper.getMainLooper())
     private var player: ExoPlayer? = null
@@ -41,13 +45,8 @@ class ExoPlayerBackend(context: Context, private val userAgent: String) : AudioB
     override fun prepare(source: MediaSource, playWhenReady: Boolean) {
         stop()
 
-        val http = DefaultHttpDataSource.Factory()
-            .setUserAgent(userAgent)
-            .setDefaultRequestProperties(source.headers)
-            // The token must not follow a redirect to plain http.
-            .setAllowCrossProtocolRedirects(false)
-            .setConnectTimeoutMs(15_000)
-            .setReadTimeoutMs(20_000)
+        // The token goes to the host of the API only, also after a redirect (see AuthorizedHttpDataSource).
+        val http = AuthorizedHttpDataSource.Factory(client, apiBaseUrl, source.headers, userAgent)
 
         val exo = ExoPlayer.Builder(context)
             .setMediaSourceFactory(DefaultMediaSourceFactory(http))
