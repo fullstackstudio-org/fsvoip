@@ -871,4 +871,15 @@
     <string name="contacts_edit_removeNumber">Nummer verwijderen</string>
     <string name="contacts_import_action">Toevoegen aan adresboek</string>
     <string name="contacts_import_note">Het contact blijft ook op je telefoon staan. Er komt een kopie in het adresboek van je bedrijf, dat ook in het portaal staat.</string>
+    <string name="callcard_prefix">Klant in website: %1$s</string>
+    <string name="callcard_known">Klant in website</string>
+    <string name="callcard_orders_one">%1$d open bestelling</string>
+    <string name="callcard_orders_other">%1$d open bestellingen</string>
+    <string name="callcard_requests_one">%1$d open verzoek</string>
+    <string name="callcard_requests_other">%1$d open verzoeken</string>
+    <string name="timeline_title">Activiteit</string>
+    <string name="timeline_loading">Activiteit ophalen…</string>
+    <string name="timeline_empty">Nog geen activiteit.</string>
+    <string name="timeline_more">Meer laden</string>
+    <string name="timeline_error">Activiteit ophalen mislukt. Tik om opnieuw te proberen.</string>
 </resources>

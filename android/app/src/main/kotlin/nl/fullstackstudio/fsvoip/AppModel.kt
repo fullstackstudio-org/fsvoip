@@ -70,6 +70,7 @@ class AppModel(
     val mediaService: MediaServicing,
     val player: AudioPlayerModel,
     val contacts: ContactsHub,
+    val customerCards: nl.fullstackstudio.fsvoip.core.CustomerCardServicing,
     val favorites: nl.fullstackstudio.fsvoip.contacts.FavoriteContacts,
     val deviceContacts: DeviceContactsReader,
     private val preferences: PreferencesStore,
@@ -153,6 +154,16 @@ class AppModel(
 
     init {
         phone.anonymousCallerText = string(R.string.call_anonymous)
+        // Best effort and capped at one second by the phone: a failed or slow lookup never touches the call.
+        phone.lookupCaller = { number, account ->
+            try {
+                nl.fullstackstudio.fsvoip.core.CallerContext.from(customerCards.lookup(number, account))
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                null
+            }
+        }
         phone.onCallFinished = { call ->
             recentsStore.add(call)
             _recents.value = recentsStore.all()

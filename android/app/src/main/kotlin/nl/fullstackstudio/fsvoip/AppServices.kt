@@ -93,6 +93,8 @@ class AppServices private constructor(context: Context) {
             preferences = preferences,
             scheduler = AndroidMain.scheduler,
             mainExecutor = AndroidMain.executor,
+            // The customer card of an incoming call runs on the main thread, like every other change of a call.
+            lookupScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main.immediate),
         )
         pushTokens = PushTokenReporter(api, accounts, PushTokenLedger(plain))
 
@@ -121,6 +123,7 @@ class AppServices private constructor(context: Context) {
             mediaService = media,
             player = AudioPlayerModel(ExoPlayerBackend(appContext, userAgent = "FSVoip/$version (Android)")),
             contacts = contactsHub,
+            customerCards = nl.fullstackstudio.fsvoip.core.LiveCustomerCardService(api),
             favorites = nl.fullstackstudio.fsvoip.contacts.FavoriteContacts(plain),
             deviceContacts = deviceContactsReader,
             preferences = preferences,

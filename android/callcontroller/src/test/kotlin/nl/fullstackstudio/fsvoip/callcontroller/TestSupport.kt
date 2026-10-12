@@ -172,7 +172,7 @@ fun storedAccount(id: String, pairedAt: Long = 0, label: String? = null): Stored
     return if (label != null) account.copy(label = label) else account
 }
 
-class Harness(accountIds: List<String> = listOf(ACCOUNT)) {
+class Harness(accountIds: List<String> = listOf(ACCOUNT), lookupScope: kotlinx.coroutines.CoroutineScope? = null) {
     val engine = FakeSipEngine()
     val system = ImmediateCallSystem()
     val clock = TestClock()
@@ -189,6 +189,7 @@ class Harness(accountIds: List<String> = listOf(ACCOUNT)) {
         now = { clock.now },
         scheduler = clock,
         mainExecutor = { it() },
+        lookupScope = lookupScope,
     ).also { phone ->
         phone.onCallFinished = { recents += it }
         phone.anonymousCallerText = "Onbekend nummer"

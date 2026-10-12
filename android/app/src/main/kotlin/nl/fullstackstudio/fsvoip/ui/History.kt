@@ -25,6 +25,7 @@ import androidx.compose.material.icons.automirrored.filled.CallMade
 import androidx.compose.material.icons.automirrored.filled.CallReceived
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -34,11 +35,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -59,6 +62,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import nl.fullstackstudio.fsvoip.AppModel
 import nl.fullstackstudio.fsvoip.R
+import nl.fullstackstudio.fsvoip.contacts.ContactDraft
+import nl.fullstackstudio.fsvoip.contacts.ContactDraftPhone
+import nl.fullstackstudio.fsvoip.contacts.ContactFailure
+import nl.fullstackstudio.fsvoip.contacts.ContactWrite
+import nl.fullstackstudio.fsvoip.core.LocalAccessOutcome
 import nl.fullstackstudio.fsvoip.core.HistoryEntry
 import nl.fullstackstudio.fsvoip.core.HistoryModel
 import nl.fullstackstudio.fsvoip.core.MediaFailure
@@ -289,6 +297,19 @@ private fun HistoryDetail(model: AppModel, entry: HistoryEntry, onDismiss: () ->
         },
     )
     val copied = stringResource(R.string.history_action_copied)
+    val scope = rememberCoroutineScope()
+    val nowPlaying by model.nowPlaying.collectAsStateWithLifecycle()
+    val account = model.account(entry.accountId)
+    val callId = entry.id.substringAfter('/')
+    val recordingId = "${entry.accountId}/recording/$callId"
+    val lockReason = stringResource(R.string.media_lock_reason_recordings)
+    val isUnnamed = entry.number != null && title == entry.number
+    val canAddContact = isUnnamed && model.writableContactAccounts().isNotEmpty()
+    // Only an administrator pairing is offered a recording; for a `user` nothing here exists, not even a disabled button.
+    val showsRecording = !entry.isLocal && model.canPlayRecordings(entry.accountId) && (entry.hasRecording || entry.recordingExpired)
+    var addsContact by remember { mutableStateOf(false) }
+
+    DisposableEffect(Unit) { onDispose { if (model.nowPlaying.value?.id == recordingId) model.stopPlayer() } }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet) {
         Column(Modifier.padding(bottom = 24.dp).verticalScroll(rememberScrollState()).testTag("history-detail")) {
@@ -305,6 +326,10 @@ private fun HistoryDetail(model: AppModel, entry: HistoryEntry, onDismiss: () ->
             DetailLine(stringResource(R.string.history_detail_country), entry.countryName.orEmpty())
 
             val number = entry.number
+
+            if (canAddContact) {
+                TextButton(onClick = { addsContact = true }, modifier = Modifier.padding(horizontal = 12.dp).testTag("history-add-contact")) { Text(stringResource(R.string.history_action_addContact)) }
+            }
 
             if (number != null) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -327,8 +352,87 @@ private fun HistoryDetail(model: AppModel, entry: HistoryEntry, onDismiss: () ->
                     )
                 }
             }
+
+            if (showsRecording) {
+                if (entry.recordingExpired) {
+                    Text(stringResource(R.string.history_recording_gone), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+                } else {
+                    SecondaryButton(
+                        stringResource(R.string.history_recording_play),
+                        icon = Icons.Filled.PlayCircle,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).testTag("history-play-recording"),
+                        onClick = {
+                            val target = account ?: return@SecondaryButton
+
+                            scope.launch {
+                                // A recording is what was said in a call: the same check as the Opnames screen.
+                                if (model.localAccess.ensureUnlocked(lockReason) == LocalAccessOutcome.Unlocked) {
+                                    model.playRecording(target, callId, title, entry.whenLabel)
+                                }
+                            }
+                        },
+                    )
+                }
+            }
+
+            if (nowPlaying?.id == recordingId) {
+                AudioPlayerBar(model, nowPlaying!!.title, nowPlaying!!.subtitle)
+            }
         }
     }
+
+    if (addsContact && entry.number != null) {
+        AddContactDialog(model, entry.number!!, onDismiss = { addsContact = false }, onSaved = { addsContact = false })
+    }
+}
+
+/** A number from the history becomes a contact of the customer's address book: a name and the number, nothing else. */
+@Composable
+private fun AddContactDialog(model: AppModel, number: String, onDismiss: () -> Unit, onSaved: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var name by remember { mutableStateOf("") }
+    var saving by remember { mutableStateOf(false) }
+    var failure by remember { mutableStateOf<ContactFailure?>(null) }
+    val draft = ContactDraft(firstName = name, phones = listOf(ContactDraftPhone(0, number)))
+
+    AlertDialog(
+        onDismissRequest = { if (!saving) onDismiss() },
+        title = { Text(stringResource(R.string.history_addContact_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text(stringResource(R.string.history_addContact_name)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("history-contact-name"),
+                )
+                Text(number, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                failure?.let { Text(contactFailureText(it), style = MaterialTheme.typography.bodySmall, color = Brand.hangUp) }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = draft.canSave && !saving,
+                modifier = Modifier.testTag("history-contact-save"),
+                onClick = {
+                    val target = model.writableContactAccounts().firstOrNull()?.id ?: return@TextButton
+                    saving = true
+                    failure = null
+
+                    scope.launch {
+                        when (val result = model.contacts.create(draft, target)) {
+                            is ContactWrite.Done -> onSaved()
+                            is ContactWrite.Failed -> failure = result.failure
+                        }
+
+                        saving = false
+                    }
+                },
+            ) { Text(stringResource(R.string.action_save)) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
+    )
 }
 
 @Composable

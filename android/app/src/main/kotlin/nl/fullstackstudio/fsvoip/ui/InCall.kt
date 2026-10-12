@@ -58,6 +58,7 @@ import java.time.Instant
 import kotlinx.coroutines.delay
 import nl.fullstackstudio.fsvoip.AppModel
 import nl.fullstackstudio.fsvoip.R
+import nl.fullstackstudio.fsvoip.core.CallerLine
 import nl.fullstackstudio.fsvoip.callcontroller.CallSession
 import nl.fullstackstudio.fsvoip.sipengine.CallDirection
 import nl.fullstackstudio.fsvoip.sipengine.CallEndReason
@@ -145,12 +146,32 @@ private fun Header(session: CallSession, digits: String?) {
             Text(session.remoteNumber!!, color = Color.White.copy(alpha = 0.6f), style = MaterialTheme.typography.bodyLarge)
         }
 
+        CallerCardLine(session)
+
         Text(statusText(session), color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 4.dp))
 
         if (digits != null) {
             Text(digits.takeLast(18), color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Light, maxLines = 1, modifier = Modifier.padding(top = 6.dp))
         }
     }
+}
+
+/** "Klant in website: 2 open bestellingen, 1 open verzoek": only what the server counted. Nothing for a caller it does not know. */
+@Composable
+private fun CallerCardLine(session: CallSession) {
+    val line = CallerLine.of(session.callerContext) ?: return
+    val text = if (!line.hasCounts) {
+        stringResource(R.string.callcard_known)
+    } else {
+        val parts = listOfNotNull(
+            line.openOrders.takeIf { it > 0 }?.let { stringResource(if (it == 1) R.string.callcard_orders_one else R.string.callcard_orders_other, it) },
+            line.openRequests.takeIf { it > 0 }?.let { stringResource(if (it == 1) R.string.callcard_requests_one else R.string.callcard_requests_other, it) },
+        )
+
+        stringResource(R.string.callcard_prefix, parts.joinToString(", "))
+    }
+
+    Text(text, color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 6.dp, start = 24.dp, end = 24.dp).testTag("call-card"))
 }
 
 @Composable

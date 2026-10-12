@@ -423,6 +423,10 @@ private fun ContactDetailSheet(model: AppModel, entry: ContactEntry, onDismiss: 
                 section(stringResource(R.string.contacts_detail_lists), null) { InfoRow(listNames.joinToString(", ")) }
             }
 
+            if (isBook && accountId != null) {
+                model.account(accountId)?.let { ContactTimelineSection(model, it, contactId) }
+            }
+
             if (canEdit || canDelete || canImport) {
                 section(null, if (canImport) stringResource(R.string.contacts_import_note) else null) {
                     if (canEdit) ActionRow(stringResource(R.string.contacts_detail_edit), Icons.Filled.Edit, Modifier.testTag("contact-edit-action")) { editing = true }

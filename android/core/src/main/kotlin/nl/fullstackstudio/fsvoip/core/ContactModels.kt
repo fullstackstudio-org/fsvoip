@@ -165,6 +165,42 @@ data class ContactLookup(
 @Serializable
 data class ContactTimelinePage(val items: List<TimelineItem> = emptyList(), val nextCursor: String? = null)
 
+/**
+ * What the call screen knows about the caller from the website of the customer. `null` (see [from]) when the server did not
+ * identify exactly one contact (unknown, ambiguous or suppressed): then the app shows nothing extra.
+ */
+data class CallerContext(
+    val contactId: String,
+    val name: String,
+    val company: String? = null,
+    val openRequests: Int = 0,
+    val openOrders: Int = 0,
+) {
+    val displayName: String?
+        get() = name.takeIf { it.isNotEmpty() }
+
+    companion object {
+        fun from(lookup: ContactLookup): CallerContext? {
+            val contact = lookup.contact ?: return null
+
+            if (lookup.ambiguous) return null
+
+            val company = contact.company?.trim()?.takeIf { it.isNotEmpty() }
+
+            return CallerContext(
+                contactId = contact.id,
+                name = contact.name.trim().ifEmpty { company.orEmpty() },
+                company = company,
+                openRequests = lookup.counters.openRequests,
+                openOrders = lookup.counters.openOrders,
+            )
+        }
+
+        /** Internal extension numbers (2-4 digits) are colleagues; the website knows customers. */
+        fun looksLikeExternalNumber(number: String): Boolean = number.count { it.isDigit() } >= 6
+    }
+}
+
 // MARK: Requests
 
 /** `POST /contacts`. A key left [Change.Keep] is not sent. */

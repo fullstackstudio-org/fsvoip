@@ -3,6 +3,7 @@ package nl.fullstackstudio.fsvoip.callcontroller
 
 import java.time.Instant
 import java.util.UUID
+import nl.fullstackstudio.fsvoip.core.CallerContext
 import nl.fullstackstudio.fsvoip.sipengine.CallDirection
 import nl.fullstackstudio.fsvoip.sipengine.CallEndReason
 import nl.fullstackstudio.fsvoip.sipengine.CallId
@@ -34,6 +35,8 @@ data class CallSession(
     val reportedConnected: Boolean = false,
     /** Outgoing: the number of the PBX this call goes out with (`X-FSS-From`), national. `null` = the default of the extension. */
     val viaNumber: String? = null,
+    /** Incoming: who the website of the customer says is calling (best effort; `null` = nothing known or not in time). */
+    val callerContext: CallerContext? = null,
 ) {
     sealed interface Phase {
         /** Outgoing, waiting for the system to start the call. */

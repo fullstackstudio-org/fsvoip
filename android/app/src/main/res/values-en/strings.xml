@@ -871,4 +871,15 @@
     <string name="contacts_edit_removeNumber">Remove number</string>
     <string name="contacts_import_action">Add to address book</string>
     <string name="contacts_import_note">The contact also stays on your phone. A copy goes into your company\'s address book, which is also in the portal.</string>
+    <string name="callcard_prefix">Customer on website: %1$s</string>
+    <string name="callcard_known">Customer on website</string>
+    <string name="callcard_orders_one">%1$d open order</string>
+    <string name="callcard_orders_other">%1$d open orders</string>
+    <string name="callcard_requests_one">%1$d open request</string>
+    <string name="callcard_requests_other">%1$d open requests</string>
+    <string name="timeline_title">Activity</string>
+    <string name="timeline_loading">Loading activity…</string>
+    <string name="timeline_empty">No activity yet.</string>
+    <string name="timeline_more">Load more</string>
+    <string name="timeline_error">Could not load activity. Tap to try again.</string>
 </resources>
