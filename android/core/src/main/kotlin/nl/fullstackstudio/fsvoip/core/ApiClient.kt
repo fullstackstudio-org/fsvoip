@@ -190,6 +190,21 @@ class FsVoipApiClient(
     suspend fun hangupParked(id: String): OkResponse =
         perform("DELETE", "parked/${segment(id)}", null, authenticated = true, OkResponse.serializer())
 
+    // MARK: Live calls
+
+    /** `GET /pbx/live`. `Conflict("live_unavailable")` = treat as "off". */
+    suspend fun liveCalls(): LiveCallsPage = perform("GET", "pbx/live", null, authenticated = true, LiveCallsPage.serializer())
+
+    suspend fun liveTargets(): LiveTargetsPage = perform("GET", "pbx/live/targets", null, authenticated = true, LiveTargetsPage.serializer())
+
+    /** Always the OWN extension; send the `ref` of the latest list. */
+    suspend fun pickupLiveCall(ref: String): LivePickupResponse =
+        perform("POST", "pbx/live/pickup", LivePickupRequest(ref).toJson(), authenticated = true, LivePickupResponse.serializer())
+
+    /** Blind transfer to an internal target. */
+    suspend fun transferLiveCall(ref: String, target: LiveTarget): LiveTransferResponse =
+        perform("POST", "pbx/live/transfer", LiveTransferRequest(ref, target.type, target.id).toJson(), authenticated = true, LiveTransferResponse.serializer())
+
     // MARK: The PBX (admin pairings)
 
     suspend fun pbxDevices(): PbxDevices = perform("GET", "pbx/devices", null, authenticated = true, PbxDevices.serializer())

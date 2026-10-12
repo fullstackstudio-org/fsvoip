@@ -10,6 +10,7 @@ Branch `feature/android-v2`. Same features as iOS 1.0, same server (API v2). Nee
 - **Beheerders:** Centrale (belstroom), nummers met hun keten, toestellen, belgroepen, openingstijden met tijdelijk gesloten, geluiden (beluisteren, opnemen, uploaden), collega's uitnodigen met QR en deelbare link, opnames beluisteren. Alles achter vingerafdruk, gezicht of schermvergrendeling (vijf minuten), net als Face ID op iOS.
 - **Contacten** aanmaken, wijzigen en (beheerders) verwijderen, favorieten, en een telefooncontact overnemen in het adresboek. Een nummer uit de geschiedenis wordt met één naam een contact.
 - **Klantkaart** bij een inkomend gesprek en **Activiteit** bij een contact, zoals op iOS.
+- **Live gesprekken** in het tabblad On hold (naast de geparkeerde gesprekken, alleen als de centrale het aanbiedt): wie er nu belt, een overgaand gesprek overnemen op je eigen toestel en een gesprek blind doorverbinden naar een intern toestel, belgroep, wachtrij, keuzemenu, openingstijden of voicemail. De lijst ververst elke 3 seconden zolang het scherm zichtbaar is; wat mag bepaalt de server per rol.
 - **Meldingen uit het portaal** verschijnen als melding en een tik opent het juiste tabblad (zodra het Firebase-project er is).
 
 ### Changed / fixed

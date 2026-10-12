@@ -72,6 +72,8 @@ data class AppCapabilities(
     val invite: Boolean = false,
     /** Parking works on this PBX; `false` = do not show the park button or the "On hold" tab. */
     val park: Boolean = false,
+    /** Live calls (`/pbx/live/...`) work on this PBX; `false` = do not show the Live section. Every role may use it. */
+    val live: Boolean = false,
     /** The PBX understands `X-FSS-From`: only then may the app choose the number to call out with. */
     val callerChoice: Boolean = false,
 )

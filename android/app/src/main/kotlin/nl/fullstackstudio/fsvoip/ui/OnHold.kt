@@ -6,6 +6,7 @@
 package nl.fullstackstudio.fsvoip.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,6 +20,9 @@ import androidx.compose.material.icons.filled.PauseCircle
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -28,6 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,16 +49,55 @@ import nl.fullstackstudio.fsvoip.AppModel
 import nl.fullstackstudio.fsvoip.R
 import nl.fullstackstudio.fsvoip.core.ParkedCall
 
+/** What the tab offers: the parked calls, the live calls, or both behind a switch. */
+private enum class OnHoldSection { PARKED, LIVE }
+
 @Composable
 fun OnHoldScreen(model: AppModel) {
     val accounts by model.accounts.collectAsStateWithLifecycle()
-    val calls by model.park.calls.collectAsStateWithLifecycle()
-    val availability by model.park.available.collectAsStateWithLifecycle()
     model.me.collectAsStateWithLifecycle().value
-    val scope = rememberCoroutineScope()
-    var refreshing by remember { mutableStateOf(false) }
 
     val parkable = accounts.filter { model.canPark(it.id) }
+    val liveAccounts = accounts.filter { model.canLive(it.id) }
+    var section by rememberSaveable { mutableStateOf(OnHoldSection.PARKED) }
+
+    // Only one of the two: no switch. Both: a switch on top, the parked calls first (as before).
+    val shown = when {
+        liveAccounts.isEmpty() -> OnHoldSection.PARKED
+        parkable.isEmpty() -> OnHoldSection.LIVE
+        else -> section
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        if (parkable.isNotEmpty() && liveAccounts.isNotEmpty()) {
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                SegmentedButton(
+                    selected = shown == OnHoldSection.PARKED,
+                    onClick = { section = OnHoldSection.PARKED },
+                    shape = SegmentedButtonDefaults.itemShape(0, 2),
+                    modifier = Modifier.testTag("onhold-section-parked"),
+                ) { Text(stringResource(R.string.park_title)) }
+                SegmentedButton(
+                    selected = shown == OnHoldSection.LIVE,
+                    onClick = { section = OnHoldSection.LIVE },
+                    shape = SegmentedButtonDefaults.itemShape(1, 2),
+                    modifier = Modifier.testTag("onhold-section-live"),
+                ) { Text(stringResource(R.string.live_title)) }
+            }
+        }
+
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            if (shown == OnHoldSection.LIVE) LiveSection(model, liveAccounts) else ParkedSection(model, parkable)
+        }
+    }
+}
+
+@Composable
+private fun ParkedSection(model: AppModel, parkable: List<nl.fullstackstudio.fsvoip.core.StoredAccount>) {
+    val calls by model.park.calls.collectAsStateWithLifecycle()
+    val availability by model.park.available.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+    var refreshing by remember { mutableStateOf(false) }
 
     // Refreshed when the tab opens and while it stays open (a parked call rings back or is picked up elsewhere).
     LaunchedEffect(parkable.map { it.id }) {
@@ -91,7 +135,7 @@ fun OnHoldScreen(model: AppModel) {
 }
 
 @Composable
-private fun Empty(title: String, message: String?) {
+internal fun Empty(title: String, message: String?) {
     Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
         Icon(Icons.Filled.PauseCircle, contentDescription = null, tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(34.dp))
         Text(title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 10.dp))

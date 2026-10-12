@@ -199,6 +199,10 @@ data class MeResponse(
     /** Show the park button and the "On hold" tab? */
     val canPark: Boolean
         get() = capabilities?.park ?: false
+
+    /** Show the Live section of the "On hold" tab? Only when the server says so. */
+    val canLive: Boolean
+        get() = capabilities?.live ?: false
 }
 
 /** `PATCH /me`. The key is always sent; `null` clears the alias. */
