@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package nl.fullstackstudio.fsvoip.ui
 
+import android.view.WindowManager
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -43,8 +44,14 @@ class MainActivity : FragmentActivity(), PermissionRequester {
         // A call on the screen may show over the lock screen and turn the screen on; otherwise this is a normal app.
         lifecycleScope.launch {
             combine(services.phone.sessions, services.phone.lastEnded) { sessions, ended -> sessions.isNotEmpty() || ended != null }.collect { inCall ->
-                setShowWhenLocked(inCall)
-                setTurnScreenOn(inCall)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                    setShowWhenLocked(inCall)
+                    setTurnScreenOn(inCall)
+                } else {
+                    @Suppress("DEPRECATION")
+                    val flags = WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+                    if (inCall) window.addFlags(flags) else window.clearFlags(flags)
+                }
             }
         }
 

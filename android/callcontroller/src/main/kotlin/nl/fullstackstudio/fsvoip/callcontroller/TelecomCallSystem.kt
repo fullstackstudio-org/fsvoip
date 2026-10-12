@@ -10,6 +10,8 @@
 
 package nl.fullstackstudio.fsvoip.callcontroller
 
+import androidx.annotation.RequiresApi
+import android.annotation.SuppressLint
 import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
@@ -128,6 +130,8 @@ class TelecomCallSystem(
 
     // MARK: Requests
 
+    // placeCall on a self-managed PhoneAccount needs MANAGE_OWN_CALLS (declared), not CALL_PHONE; a SecurityException is caught below.
+    @SuppressLint("MissingPermission")
     override fun requestStartCall(uuid: UUID, handle: String, displayName: String?, completion: (Throwable?) -> Unit) {
         if (!isAvailable) return fallback.requestStartCall(uuid, handle, displayName, completion)
 
@@ -390,10 +394,12 @@ internal class FsConnection(private val system: TelecomCallSystem, val uuid: UUI
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE) // Telecom calls these only on API 34+
     override fun onCallEndpointChanged(callEndpoint: CallEndpoint) {
         system.speakerChanged(callEndpoint.endpointType == CallEndpoint.TYPE_SPEAKER)
     }
 
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE) // Telecom calls these only on API 34+
     override fun onAvailableCallEndpointsChanged(availableEndpoints: MutableList<CallEndpoint>) {
         endpoints = availableEndpoints.toList()
     }

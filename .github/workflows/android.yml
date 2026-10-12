@@ -33,7 +33,7 @@ jobs:
           scripts/check-imports.sh --self-test
           scripts/check-imports.sh
       - name: Build and unit tests
-        run: ./gradlew --no-daemon assembleDebug testDebugUnitTest
+        run: ./gradlew --no-daemon assembleDebug testDebugUnitTest lintDebug
       - name: No AMR or OpenH264 in the APK
         run: |
           if unzip -l app/build/outputs/apk/debug/app-debug.apk | grep -Ei 'msamr|openh264'; then

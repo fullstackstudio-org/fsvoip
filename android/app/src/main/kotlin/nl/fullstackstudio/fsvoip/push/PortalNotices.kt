@@ -8,6 +8,10 @@
 
 package nl.fullstackstudio.fsvoip.push
 
+import androidx.core.content.ContextCompat
+import android.os.Build
+import android.content.pm.PackageManager
+import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -58,7 +62,10 @@ object PortalNotices {
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .build()
 
-        // `areNotificationsEnabled` was checked; on Android 13+ the permission can still be missing in a race: the system drops it.
+        // Android 13+: without POST_NOTIFICATIONS the notice is dropped, never shown.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) return
         runCatching { manager.notify(id, built) }
     }
 }

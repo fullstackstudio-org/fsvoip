@@ -327,12 +327,16 @@ private fun inUseText(places: List<UsePlace>): String {
 /** Names for the kinds of place a sound is used ("Keuzemenu", "Wachtrij" ...); `null` for a kind the app does not know. */
 @Composable
 private fun placeKindLabeler(): (String) -> String? {
-    val context = LocalContext.current
+    val labels = mapOf(
+        "voicemail_greeting" to stringResource(R.string.sounds_place_voicemail_greeting),
+        "extension_voicemail_greeting" to stringResource(R.string.sounds_place_extension_voicemail_greeting),
+        "queue_music" to stringResource(R.string.sounds_place_queue_music),
+        "queue_welcome" to stringResource(R.string.sounds_place_queue_welcome),
+        "menu_greeting" to stringResource(R.string.sounds_place_menu_greeting),
+        "closed_message" to stringResource(R.string.sounds_place_closed_message),
+    )
 
-    return { kind ->
-        val id = context.resources.getIdentifier("sounds_place_$kind", "string", context.packageName)
-        if (id != 0) context.getString(id) else null
-    }
+    return { kind -> labels[kind] }
 }
 
 @Composable

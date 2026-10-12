@@ -49,7 +49,7 @@ Requirements: the Android SDK (platform 37) and a JDK 17 or newer. Android Studi
 ```sh
 export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"   # macOS, if JAVA_HOME is not set
 cd android
-./run-checks.sh                 # = ./gradlew assembleDebug testDebugUnitTest
+./run-checks.sh                 # = ./gradlew assembleDebug testDebugUnitTest lintDebug
 ./gradlew :app:installDebug     # install on a running emulator or a connected phone
 ```
 
