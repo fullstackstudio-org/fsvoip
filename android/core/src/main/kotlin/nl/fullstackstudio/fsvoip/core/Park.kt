@@ -57,6 +57,10 @@ class ParkModel(private val service: ParkServicing) {
     private val _parking = MutableStateFlow(false)
     val isParking: StateFlow<Boolean> = _parking.asStateFlow()
 
+    /** SIP Call-IDs whose parking outcome is unknown: the call may already be parked, so it is never requested a second time. */
+    private val _uncertainCallIds = MutableStateFlow<Set<String>>(emptySet())
+    val uncertainCallIds: StateFlow<Set<String>> = _uncertainCallIds.asStateFlow()
+
     var onRevoked: () -> Unit = {}
 
     suspend fun refresh(account: StoredAccount) {
@@ -80,6 +84,16 @@ class ParkModel(private val service: ParkServicing) {
     /** Parks the call with this SIP `Call-ID` (never the app's internal id). */
     suspend fun park(account: StoredAccount, callId: String): ParkOutcome {
         if (_parking.value) return ParkOutcome.Failed(ParkFailure.Other)
+
+        // An earlier attempt for this very call did not say whether it worked: look, do not repeat.
+        if (callId in _uncertainCallIds.value) {
+            try {
+                refresh(account)
+            } catch (_: CancellationException) {
+            }
+            return ParkOutcome.Uncertain
+        }
+
         _parking.value = true
         try {
             val call = service.park(account, callId)
@@ -87,6 +101,7 @@ class ParkModel(private val service: ParkServicing) {
             return ParkOutcome.Parked(call)
         } catch (e: Exception) {
             if (ParkFailure.outcomeIsUncertain(e)) {
+                _uncertainCallIds.value = _uncertainCallIds.value + callId
                 // Look, do not repeat.
                 try {
                     refresh(account)
@@ -123,5 +138,6 @@ class ParkModel(private val service: ParkServicing) {
     fun forget(accountId: String) {
         _calls.value = _calls.value - accountId
         _available.value = _available.value - accountId
+        _uncertainCallIds.value = emptySet()
     }
 }

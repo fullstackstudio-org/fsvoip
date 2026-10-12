@@ -230,7 +230,10 @@ private fun Controls(session: CallSession, speaker: Boolean, ended: Boolean, onK
             }
             if (model.canPark(session.accountId.raw)) {
                 val parking by model.park.isParking.collectAsStateWithLifecycle()
-                ControlButton(Icons.Filled.LocalParking, stringResource(R.string.park_button), parking, enabled = !ended && session.phase.isConnected && !parking, tag = "park-button") {
+                val uncertain by model.park.uncertainCallIds.collectAsStateWithLifecycle()
+                // A parking attempt that did not say whether it worked is never repeated for this call.
+                val alreadyAsked = model.sipCallId(session)?.let { it in uncertain } ?: false
+                ControlButton(Icons.Filled.LocalParking, stringResource(R.string.park_button), parking, enabled = !ended && session.phase.isConnected && !parking && !alreadyAsked, tag = "park-button") {
                     model.parkCall(session)
                 }
             }

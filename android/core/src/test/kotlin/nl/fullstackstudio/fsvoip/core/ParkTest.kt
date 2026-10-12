@@ -56,6 +56,23 @@ class ParkTest {
     }
 
     @Test
+    fun anUncertainCallIsNeverRequestedAgain() = runTest {
+        val service = FakePark().apply { parkError = ApiException.ParkUncertain() }
+        val model = ParkModel(service)
+
+        assertEquals(ParkOutcome.Uncertain, model.park(account, "abc@host"))
+        // The server recovers, the user taps again: still no second POST for this Call-ID.
+        service.parkError = null
+        assertEquals(ParkOutcome.Uncertain, model.park(account, "abc@host"))
+        assertEquals(1, service.parkCalls)
+        assertEquals(setOf("abc@host"), model.uncertainCallIds.value)
+
+        // Another call is a new request.
+        assertTrue(model.park(account, "other@host") is ParkOutcome.Parked)
+        assertEquals(2, service.parkCalls)
+    }
+
+    @Test
     fun noFreeSlotIsAFailure() = runTest {
         val service = FakePark().apply { parkError = ApiException.Conflict("no_free_slot", null, null) }
         val outcome = ParkModel(service).park(account, "abc@host")
