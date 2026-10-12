@@ -681,6 +681,9 @@ class AppModel(
                 val account = service.pair(link, device())
                 reloadAccounts()
                 _pairing.value = PairingPhase.Paired(account)
+                // The role and capabilities (and the colleagues) come with `GET /me`: without this the "Beheer" sections only
+                // show after the next start of the app.
+                scope.launch { refreshAccounts() }
                 // The new account needs this phone's push token before it can ring with the app closed.
                 reportPushTokens()
                 // Calls need the microphone; ask now, not in the middle of the first call.

@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -242,7 +243,8 @@ private fun FilterRow(
     var open by remember { mutableStateOf(false) }
     val pickedList = (filter as? ContactsFilter.OfList)?.let { chosen -> lists.firstOrNull { it.first == chosen }?.second }
 
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+    // Five chips do not fit on a narrow phone: the row scrolls sideways.
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         FilterChip(selected = filter == ContactsFilter.All, onClick = { select(ContactsFilter.All) }, label = { Text(stringResource(R.string.contacts_filter_pillAll)) })
         FilterChip(selected = filter == ContactsFilter.Favorites, onClick = { select(ContactsFilter.Favorites) }, label = { Text(stringResource(R.string.contacts_filter_favorites)) }, modifier = Modifier.testTag("contacts-filter-favorites"))
         FilterChip(selected = filter == ContactsFilter.AddressBook, onClick = { select(ContactsFilter.AddressBook) }, label = { Text(stringResource(R.string.contacts_filter_customer)) })
