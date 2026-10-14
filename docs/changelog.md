@@ -2,7 +2,7 @@
 
 ## Android 1.0 (not released) — pariteit met iOS v2
 
-Branch `feature/android-v2`. Same features as iOS 1.0, same server (API v2). Needs a Firebase project, Play Console and `assetlinks.json` before it can ship, see `android/README.md`.
+Branch `release/android-1.0` (Play-voorbereiding: ondertekende AAB, Play-teksten in `docs/play-store/`). Same features as iOS 1.0, same server (API v2). Needs a Firebase project, Play Console and `assetlinks.json` before it can ship, see `android/README.md`.
 
 ### Nieuw (NL)
 

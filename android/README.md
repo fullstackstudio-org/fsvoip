@@ -25,8 +25,9 @@ mock of the API (see "Testing without production") on the emulator; calls, push 
 | Contact form | a country picker per number (Netherlands first, a number with `+` or `00` shows its own country); a number typed in national form gets the picked country code (`PhoneCountry`, same rules as iOS) |
 | Voicemail (admin) | "Voicemail van": my own, all voicemail, or one box (colleague or shared). Everything but the own box sits behind the local check (5 minutes); when it runs out the screen falls back to the own box and stops a colleague's message. Deleting a colleague's message needs the check too |
 
-What iOS has and Android does not: nothing known in the calls/contacts/voicemail/admin parts. Still open: the live-calls list in On hold
-(another branch) and everything under "What is still needed before a release".
+What iOS has and Android does not: nothing known in the calls/contacts/voicemail/admin parts (checked against `shared/openapi.yaml`: every endpoint
+has a client function). Only difference: iOS has a demo mode for the App Store review, Android has none (Play reviewers get a pairing link, see
+`../docs/play-store/app-access.md`). Release 1.0 material (AAB, listing, data safety, declarations) is prepared in `../docs/play-store/`.
 
 ## What is still needed before a release
 
@@ -40,7 +41,8 @@ What iOS has and Android does not: nothing known in the calls/contacts/voicemail
 4. **Test on a real phone** (list below) against the real PBX: FCM wake-up with the app closed, full-screen call on a locked screen,
    Doze, battery savers, Bluetooth/car, registration over TLS, the biometric prompt on a phone with a fingerprint, the audio recorder
    on real hardware, and a `notice` push end to end.
-5. Raise `versionCode` / `versionName` (now 1 / 1.0) and sign.
+5. Version is `versionCode` 1 / `versionName` 1.0 for the first upload; raise `versionCode` for every further upload. The upload keystore exists
+   (outside the repo, backup in the FSS vault item "FSVoip Android upload-sleutel"); `./gradlew :app:bundleRelease` gives a signed AAB.
 
 ## Build
 
